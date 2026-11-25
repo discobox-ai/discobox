@@ -123,10 +123,14 @@ both mounts 5 minutes after boot and every 15 minutes after that, so a removed
 box's or image's space is back on the host within minutes. A repeat is cheap,
 because ext4 skips the block groups that freed nothing since the last trim.
 Whether the host file shrinks is the hypervisor's to decide: libkrun's
-virtio-blk advertises discard and punches the hole in its raw file. A disk that
-advertises none (`discard_max_bytes` 0) is logged to the journal and skipped,
-and one that refuses the request is passed over, so the unit stays quiet on a
-backend that cannot take it, rather than failing.
+virtio-blk advertises discard and punches the hole in its raw file. The script
+names the two mounts, never the disks: it trims each on whatever device the
+mount table says is mounted there, so the disk order stays
+`discobox-mount-storage`'s alone, and it trims nothing at a path with no mount,
+where `fstrim` would trim the root. A disk that advertises no discard (a
+`DISC-MAX` of 0) is logged to the journal and skipped, and one that refuses the
+request is passed over, so the unit stays quiet on a backend that cannot take
+it, rather than failing.
 Nothing here depends on a purge being seen: the pool agent, in its container,
 is not the guest's to trim from.
 
