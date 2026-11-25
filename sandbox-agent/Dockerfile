@@ -10,9 +10,6 @@ ARG GO_VERSION=1.27.3
 ARG GO_SHA256_AMD64=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
 ARG GO_SHA256_ARM64=a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49
 
-# Global, so the platform stage picks its OS's entry by it (FROM platform-${TARGETOS}).
-ARG TARGETOS
-
 FROM --platform=$BUILDPLATFORM ${UBUNTU_IMAGE} AS go
 ARG UBUNTU_MIRROR_AMD64
 ARG UBUNTU_MIRROR_ARM64
@@ -292,4 +289,9 @@ FROM platform-features AS platform-darwin
 ARG DARWIN_IMAGE_LAYER_METADATA
 LABEL io.discobox.image.v1.10-platform="${DARWIN_IMAGE_LAYER_METADATA:?DARWIN_IMAGE_LAYER_METADATA build argument is required: pass --build-arg DARWIN_IMAGE_LAYER_METADATA=\"\$(jq -c . sandbox-agent/image.darwin.json)\"}"
 
+# Each entry picks its OS's stage by the builtin TARGETOS, which BuildKit puts
+# in the global scope itself. Never declare it there (`ARG TARGETOS` before the
+# first FROM): an older Dockerfile frontend, such as the release's depot
+# builders run, takes a bare declaration as an empty value over the builtin,
+# and the build fails on the stage name "platform-" (#1803).
 FROM platform-${TARGETOS} AS platform
