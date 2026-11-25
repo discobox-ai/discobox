@@ -79,6 +79,7 @@ COPY pkg/platform ./pkg/platform
 COPY pkg/poolassets ./pkg/poolassets
 COPY pkg/poolauth ./pkg/poolauth
 COPY pkg/pooloutbound ./pkg/pooloutbound
+COPY pkg/pprofserve ./pkg/pprofserve
 COPY proxy ./proxy
 COPY pkg/runcca ./pkg/runcca
 COPY pkg/sandboxconfig ./pkg/sandboxconfig
