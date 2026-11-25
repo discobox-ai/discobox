@@ -424,3 +424,33 @@ func TestAttachWebSocketEndsAnIdleAttachWhoseClientIsGone(t *testing.T) {
 		t.Fatal("the attach ended without closing the shim's end")
 	}
 }
+
+// A shim that stops taking input before it has sent the rest of its output
+// (its command's input closed, its exit frame still to come) fails the
+// agent's input copy on a write to the shim, not on a read of the client:
+// that must not end the attach, and the client still gets every byte the
+// shim sends after.
+func TestAttachWebSocketDeliversOutputAfterTheShimStopsTakingInput(t *testing.T) {
+	inputRefused := make(chan struct{})
+	ws, _ := websocketAttach(t, func(conn *net.UnixConn, _ *bufio.Reader) {
+		_ = conn.CloseRead()
+		<-inputRefused
+		_, _ = io.WriteString(conn, "END")
+		_ = conn.CloseWrite()
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	client := websocket.NetConn(ctx, ws, websocket.MessageBinary)
+	// Input the shim no longer takes, sent until the agent's write of it to
+	// the shim has had time to fail.
+	for range 20 {
+		_, _ = client.Write([]byte("input"))
+		time.Sleep(25 * time.Millisecond)
+	}
+	close(inputRefused)
+
+	output, err := io.ReadAll(client)
+	if string(output) != "END" {
+		t.Fatalf("got %q (err %v), want END: the attach ended when the shim stopped taking input", output, err)
+	}
+}

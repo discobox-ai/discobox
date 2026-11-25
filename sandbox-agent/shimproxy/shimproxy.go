@@ -244,11 +244,16 @@ func AttachWebSocket(ctx context.Context, w http.ResponseWriter, r *http.Request
 		defer wg.Done()
 		_, _ = io.Copy(shimConn, clientConn)
 		closeWrite(shimConn)
-		// Nothing reads the client from here on, so no pong would ever be
-		// read and the keepalive could not tell a live client from a dead
-		// one: a websocket whose reading has ended (the client closed it, or
-		// a read failed) ends the attach.
-		_ = clientConn.Close()
+		// A websocket whose reading has ended (the client closed it, or a
+		// read failed) ends the attach: nothing reads the client from here
+		// on, so no pong would ever be read, and the keepalive could not tell
+		// a live client from a dead one. A copy that ended on a write to the
+		// shim, which has stopped taking input, ends nothing: the shim's last
+		// output and its exit frame are still to come, and the output copy
+		// ends the attach once the shim has sent them.
+		if clientConn.readEnded.Load() {
+			_ = clientConn.Close()
+		}
 	}()
 	go func() {
 		defer wg.Done()
@@ -275,6 +280,9 @@ type watchedConn struct {
 	// holds the websocket's writer, and no ping or pong can be sent behind it.
 	writing atomic.Int32
 	moves   atomic.Int64
+	// readEnded is set once a Read of the client has failed: the websocket
+	// is closed or broken, and nothing more can be read from it.
+	readEnded atomic.Bool
 }
 
 func newWatchedConn() *watchedConn { return &watchedConn{epoch: time.Now()} }
@@ -291,7 +299,11 @@ func (c *watchedConn) idle() bool {
 func (c *watchedConn) Read(p []byte) (int, error) {
 	c.readingSince.Store(c.now())
 	defer c.readingSince.Store(0)
-	return c.Conn.Read(p)
+	n, err := c.Conn.Read(p)
+	if err != nil {
+		c.readEnded.Store(true)
+	}
+	return n, err
 }
 
 func (c *watchedConn) Write(p []byte) (int, error) {
