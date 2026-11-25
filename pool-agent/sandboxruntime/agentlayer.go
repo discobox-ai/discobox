@@ -38,10 +38,12 @@ import (
 // read-only into a container that is not the box (runExportMode).
 
 // AgentLayers is what the runtime reads an agent layer through: the pool's
-// asset cache, answering only the layer of a sandbox's own agent pin.
+// asset cache, answering only the layer of a sandbox's own agent pin, and
+// which sandbox.json versions that agent reads (assetcache.Cache.AgentReads).
 type AgentLayers interface {
 	AgentLayer(ctx context.Context, sandboxID string) (string, bool, error)
 	OpenAgentLayer(ctx context.Context, sandboxID, digest string) (io.ReadCloser, error)
+	AgentReads(ctx context.Context, sandboxID string) ([]string, bool, error)
 }
 
 // agentBinaryName is the agent, extracted from its layer, in agentsDir.

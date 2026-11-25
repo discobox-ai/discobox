@@ -215,6 +215,11 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 # (agentlayer.ExtractAgent). Built by name (`--target agent`).
 FROM scratch AS agent
 COPY --link --from=sandbox-agent-builder --chmod=0755 /out/discobox-sandbox-agent /features/core/discobox-sandbox-agent
+# The sandbox.json apiVersion values this agent reads, which the pool reads to
+# choose the one it writes (ADR 26-11-24-519 §1): config, not a layer, so the
+# bundle stays the agent alone. sandboxconfig.ReadAPIVersions, held equal by
+# sandbox-agent/config's TestTheAgentBundleDeclaresWhatTheAgentReads.
+LABEL io.discobox.agent.v1.sandbox-config='["discobox.ai/sandbox/v1","discobox.dev/sandbox/v1"]'
 
 # The platform bundle (ADR 26-10-16-423 §7), each COPY --link: a box fetches
 # only the layers its store lacks, and without --link every layer carries the

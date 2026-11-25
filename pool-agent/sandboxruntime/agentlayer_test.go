@@ -19,6 +19,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/discobox-ai/discobox/pkg/agentlayer"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 	"github.com/discobox-ai/discobox/pool-agent/assetcache"
@@ -29,6 +30,26 @@ type fakeAgentLayers struct {
 	digest string
 	layer  []byte
 	opened int
+	// reads is what the agent declares it reads; nil is an agent bundle
+	// without the label, which reads the legacy version alone.
+	reads []string
+	// readsAsked counts the reads of what the agent declares, each a fetch of
+	// its bundle's config where the pool's store lacks it.
+	readsAsked int
+	// readsErr is a bundle whose config cannot be read, as one its registry
+	// no longer holds.
+	readsErr error
+}
+
+func (f *fakeAgentLayers) AgentReads(context.Context, string) ([]string, bool, error) {
+	f.readsAsked++
+	if f.readsErr != nil {
+		return nil, true, f.readsErr
+	}
+	if f.reads == nil {
+		return []string{sandboxconfig.LegacyAPIVersion}, true, nil
+	}
+	return f.reads, true, nil
 }
 
 func (f *fakeAgentLayers) AgentLayer(context.Context, string) (string, bool, error) {

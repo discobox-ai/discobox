@@ -12,8 +12,10 @@ import (
 
 	"github.com/moby/moby/client"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
+	"github.com/discobox-ai/discobox/pool-agent/assetcache"
 )
 
 // A spec change that cannot get the sandbox base image must leave the sandbox
@@ -164,6 +166,169 @@ func TestACreateAskedToStartFinishesOneThatNeverStartedItsContainer(t *testing.T
 				t.Fatalf("CreateSandbox = %#v, %v; want the container it found", sb, err)
 			}
 		})
+	}
+}
+
+// A container keeps the sandbox.json it was built with when its pins move in
+// place, so pins that move to an agent that does not read that file's
+// apiVersion rebuild the container, stopped or running, which writes one the
+// agent reads (ADR 26-11-24-519 §3). Pins that move to an agent that reads it
+// leave the container as it is, for its next start to boot on them. That
+// covers a pin that moves backwards: an unlabeled agent for a file the
+// pool wrote as discobox.ai/sandbox/v1, and an agent pin that moves while
+// the bundles do not.
+func TestPinsMovedToAnAgentThatDoesNotReadTheFileRebuildTheContainer(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		written     string // "" is a container from before the record
+		reads       []string
+		wantRebuild bool
+		// agentAlone is a container recorded as booted on the create's
+		// bundles: only its agent pin can have moved.
+		agentAlone bool
+	}{
+		{"a legacy file under an agent that reads both", "", []string{sandboxconfig.APIVersion, sandboxconfig.LegacyAPIVersion}, false, false},
+		{"a legacy file under an unlabeled agent", "", nil, false, false},
+		{"a legacy file under an agent that reads only the new one", "", []string{sandboxconfig.APIVersion}, true, false},
+		{"a new file under an agent that reads both", sandboxconfig.APIVersion, []string{sandboxconfig.APIVersion, sandboxconfig.LegacyAPIVersion}, false, false},
+		{"a new file under an unlabeled agent", sandboxconfig.APIVersion, nil, true, false},
+		{"a new file under an unlabeled agent, the bundles unmoved", sandboxconfig.APIVersion, nil, true, true},
+		{"a new file under an agent that reads it, the bundles unmoved", sandboxconfig.APIVersion, sandboxconfig.ReadAPIVersions, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state := withTestRoot(t)
+			var mu sync.Mutex
+			var pulled bool
+			var inspected int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Api-Version", "1.45")
+				path := r.URL.Path
+				switch {
+				case strings.HasSuffix(path, "/_ping"):
+					w.WriteHeader(http.StatusOK)
+				case r.Method == http.MethodGet && strings.HasSuffix(path, "/containers/json"):
+					_, _ = w.Write([]byte(`[{"Id":"ctr_built","Labels":{}}]`))
+				case r.Method == http.MethodGet && strings.HasSuffix(path, "/containers/ctr_built/json"):
+					_, _ = w.Write([]byte(`{"Id":"ctr_built","Image":"sha256:same","State":{"Status":"exited"},"Config":{"Labels":{"` + sandboxLabelSpec + `":"spec-1","` + sandboxLabelSandbox + `":"sbx_1"}}}`))
+				case strings.Contains(path, "/images/") && strings.HasSuffix(path, "/json"):
+					// deliveredMoved finds the base the container runs, so
+					// only the pins moved; a rebuild then has to pull.
+					mu.Lock()
+					inspected++
+					first := inspected == 1 && !tc.agentAlone
+					mu.Unlock()
+					if first {
+						_, _ = w.Write([]byte(`{"Id":"sha256:same"}`))
+						return
+					}
+					w.WriteHeader(http.StatusNotFound)
+					_, _ = w.Write([]byte(`{"message":"not found"}`))
+				case strings.HasSuffix(path, "/images/create"):
+					mu.Lock()
+					pulled = true
+					mu.Unlock()
+					w.WriteHeader(http.StatusNotFound)
+					_, _ = w.Write([]byte(`{"message":"not found"}`))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			t.Cleanup(server.Close)
+			cli, err := client.New(client.WithHost("tcp://"+strings.TrimPrefix(server.URL, "http://")), client.WithHTTPClient(server.Client()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			layers := &fakeAgentLayers{digest: "sha256:" + strings.Repeat("d", 64), reads: tc.reads}
+			r := testDockerRuntime(&DockerSandboxRuntime{root: state, client: cli, projectID: "proj_1", poolID: "pool_1", sandboxBaseImage: "discobox-sandbox-base:test", agentLayers: layers})
+			if tc.written != "" {
+				if err := r.recordSandboxConfig("sbx_1", sandboxConfigRecord{APIVersion: tc.written, Layer: "sha256:" + strings.Repeat("e", 64), Writes: tc.written}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.agentAlone {
+				pins, _, err := applied(assetcache.Delivery{Agent: testRecordAgent, Bundles: []assetcache.Pin{{Name: "discobox-platform", Digest: replacePlatformPins()[0].Digest}}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := r.writePlaced("sbx_1", placedRecord{Container: "ctr_built", Layer: "sha256:layer", Pins: pins}); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			sb, err := r.CreateSandbox(context.Background(), &workerapimodel.PoolSandboxCreateRequest{
+				SandboxId:             "sbx_1",
+				Config:                workerapimodel.SandboxConfig{SpecFingerprint: workerclient.NewOptString("spec-1")},
+				Agent:                 workerclient.NewOptBundlePin(testAgentPin),
+				Bundles:               workerclient.NewOptNilBundlePinArray(replacePlatformPins()),
+				ResolvedHarnessConfig: workerclient.NewOptResolvedHarnessConfig(workerclient.ResolvedHarnessConfig{}),
+			})
+			mu.Lock()
+			defer mu.Unlock()
+			if pulled != tc.wantRebuild {
+				t.Fatalf("rebuilt = %v, want %v (CreateSandbox = %v, %v)", pulled, tc.wantRebuild, sb, err)
+			}
+			if !tc.wantRebuild && (err != nil || sb == nil || sb.ID != "ctr_built") {
+				t.Fatalf("CreateSandbox = %#v, %v; want the container it found", sb, err)
+			}
+		})
+	}
+}
+
+// An agent that reads no sandbox.json version this pool writes is refused,
+// and the sandbox keeps the container it had: the refusal comes before the
+// container is removed, as a base image a create cannot get does (ADR
+// 26-11-24-519 §2, ADR 26-10-01-876 §4).
+func TestAnAgentThatReadsNothingThePoolWritesKeepsTheContainer(t *testing.T) {
+	state := withTestRoot(t)
+	var mu sync.Mutex
+	var removed []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Api-Version", "1.45")
+		path := r.URL.Path
+		switch {
+		case strings.HasSuffix(path, "/_ping"):
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodGet && strings.HasSuffix(path, "/containers/json"):
+			_, _ = w.Write([]byte(`[{"Id":"ctr_built","Labels":{}}]`))
+		case r.Method == http.MethodGet && strings.HasSuffix(path, "/containers/ctr_built/json"):
+			_, _ = w.Write([]byte(`{"Id":"ctr_built","Image":"sha256:same","State":{"Status":"exited"},"Config":{"Labels":{"` + sandboxLabelSpec + `":"spec-1","` + sandboxLabelSandbox + `":"sbx_1"}}}`))
+		case strings.Contains(path, "/images/") && strings.HasSuffix(path, "/json"):
+			// The base is on the host, so the create gets as far as the
+			// container it replaces.
+			_, _ = w.Write([]byte(`{"Id":"sha256:same","RepoTags":["discobox-sandbox-base:test"]}`))
+		case r.Method == http.MethodDelete || strings.HasSuffix(path, "/stop"):
+			mu.Lock()
+			removed = append(removed, r.Method+" "+path)
+			mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	cli, err := client.New(client.WithHost("tcp://"+strings.TrimPrefix(server.URL, "http://")), client.WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	layers := &fakeAgentLayers{digest: "sha256:" + strings.Repeat("d", 64), reads: []string{"discobox.ai/sandbox/v2"}}
+	r := testDockerRuntime(&DockerSandboxRuntime{root: state, client: cli, projectID: "proj_1", poolID: "pool_1", sandboxBaseImage: "discobox-sandbox-base:test", agentLayers: layers})
+
+	_, err = r.CreateSandbox(context.Background(), &workerapimodel.PoolSandboxCreateRequest{
+		SandboxId:             "sbx_1",
+		Config:                workerapimodel.SandboxConfig{SpecFingerprint: workerclient.NewOptString("spec-1")},
+		Agent:                 workerclient.NewOptBundlePin(testAgentPin),
+		Bundles:               workerclient.NewOptNilBundlePinArray(replacePlatformPins()),
+		ResolvedHarnessConfig: workerclient.NewOptResolvedHarnessConfig(workerclient.ResolvedHarnessConfig{}),
+	})
+	if err == nil || !strings.Contains(err.Error(), "discobox.ai/sandbox/v2") {
+		t.Fatalf("CreateSandbox = %v, want the agent refused for what it reads", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(removed) != 0 {
+		t.Fatalf("the container was torn down before the agent was refused: %v", removed)
 	}
 }
 

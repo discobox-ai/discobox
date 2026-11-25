@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
@@ -248,14 +250,23 @@ func TestLoadReadsWhetherTheAgentServesTLS(t *testing.T) {
 	}
 }
 
-// sandbox.json's apiVersion is in Discobox's own namespace: a sandbox agent
-// reads discobox.ai/sandbox/v1, and still reads discobox.dev/sandbox/v1, which
-// every pool agent still writes (sandboxconfig.LegacyAPIVersion).
-func TestLoadAcceptsTheDiscoboxAIAndTheOldSandboxAPIVersion(t *testing.T) {
-	if sandboxconfig.APIVersion != "discobox.ai/sandbox/v1" {
-		t.Errorf("sandboxconfig.APIVersion = %q, want discobox.ai/sandbox/v1", sandboxconfig.APIVersion)
+// The agent bundle declares the sandbox.json versions its agent reads, from
+// which its pool chooses the one it writes (ADR 26-11-24-519 §1), and the
+// agent reads exactly those: every value the label lists loads, and a value
+// it does not list is refused.
+func TestTheAgentBundleDeclaresWhatTheAgentReads(t *testing.T) {
+	labels := agentBundleLabels(t)
+	declared, err := sandboxconfig.AgentReads(labels)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, version := range []string{"discobox.ai/sandbox/v1", "discobox.dev/sandbox/v1"} {
+	if _, ok := labels[sandboxconfig.AgentReadsLabel]; !ok || !slices.Equal(declared, sandboxconfig.ReadAPIVersions) {
+		t.Fatalf("the agent bundle declares %q (labels %v), and the agent reads %q", declared, labels, sandboxconfig.ReadAPIVersions)
+	}
+	if want := []string{"discobox.ai/sandbox/v1", "discobox.dev/sandbox/v1"}; !slices.Equal(declared, want) {
+		t.Errorf("the agent reads %q, want %q", declared, want)
+	}
+	for _, version := range append(declared, "discobox.ai/sandbox/v2") {
 		path := filepath.Join(t.TempDir(), "sandbox.json")
 		if err := os.WriteFile(path, []byte(`{
 			"apiVersion": "`+version+`",
@@ -271,8 +282,41 @@ func TestLoadAcceptsTheDiscoboxAIAndTheOldSandboxAPIVersion(t *testing.T) {
 		}`), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := Load(path); err != nil {
-			t.Errorf("apiVersion %s: %v", version, err)
+		_, err := Load(path)
+		if reads := slices.Contains(declared, version); reads != (err == nil) {
+			t.Errorf("apiVersion %s: load error %v, and the bundle declares reading it: %t", version, err, reads)
 		}
 	}
+}
+
+// agentBundleLabels is the LABELs sandbox-agent/Dockerfile's agent stage
+// sets, as a build of it labels the bundle.
+func agentBundleLabels(t *testing.T) map[string]string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "Dockerfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels := map[string]string{}
+	inAgent := false
+	for line := range strings.Lines(string(data)) {
+		line = strings.TrimSpace(line)
+		if fields := strings.Fields(line); len(fields) > 0 && strings.EqualFold(fields[0], "FROM") {
+			inAgent = len(fields) == 4 && strings.EqualFold(fields[2], "AS") && fields[3] == "agent"
+			continue
+		}
+		rest, ok := strings.CutPrefix(line, "LABEL ")
+		if !inAgent || !ok {
+			continue
+		}
+		key, value, ok := strings.Cut(rest, "=")
+		if !ok || len(value) < 2 || value[0] != '\'' || value[len(value)-1] != '\'' {
+			t.Fatalf("the agent stage's %q is not LABEL key='value'", line)
+		}
+		labels[key] = value[1 : len(value)-1]
+	}
+	if len(labels) == 0 {
+		t.Fatal("sandbox-agent/Dockerfile's agent stage sets no label")
+	}
+	return labels
 }

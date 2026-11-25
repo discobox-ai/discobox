@@ -356,7 +356,7 @@ func TestSandboxDocumentCarriesFeatures(t *testing.T) {
 	if !reflect.DeepEqual(doc.Runtime.Features, want) {
 		t.Fatalf("features = %+v, want %+v", doc.Runtime.Features, want)
 	}
-	config, _ := sandboxconfig.Effective(doc)
+	config, _ := sandboxconfig.Effective(doc, sandboxconfig.APIVersion)
 	if !reflect.DeepEqual(config.Features, want) {
 		t.Fatalf("sandbox.json features = %+v, want %+v", config.Features, want)
 	}

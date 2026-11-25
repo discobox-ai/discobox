@@ -323,7 +323,7 @@ func TestNormalizeSandboxConfigPublishesPrimaryBindRoot(t *testing.T) {
 	if buildErr != nil {
 		t.Fatal(buildErr)
 	}
-	cfg, _ := sandboxconfig.Effective(doc)
+	cfg, _ := sandboxconfig.Effective(doc, sandboxconfig.APIVersion)
 	if len(cfg.Sources) != 1 || cfg.Sources[0].Target != "/workspace" {
 		t.Fatalf("effective sources = %#v, want runtime bind root /workspace", cfg.Sources)
 	}
@@ -484,10 +484,8 @@ func TestBuildSandboxDocumentIncludesSelectedHarnessIdentityAndFiles(t *testing.
 	if buildErr != nil {
 		t.Fatal(buildErr)
 	}
-	cfg, _ := sandboxconfig.Effective(doc)
-	// A pool agent writes the legacy identifier, which every sandbox agent it
-	// may write for reads (sandboxconfig.LegacyAPIVersion).
-	if cfg.APIVersion != sandboxconfig.LegacyAPIVersion || cfg.SandboxID != "sandbox-1" {
+	cfg, _ := sandboxconfig.Effective(doc, sandboxconfig.APIVersion)
+	if cfg.APIVersion != sandboxconfig.APIVersion || cfg.SandboxID != "sandbox-1" {
 		t.Fatalf("effective identity = %#v, want v1 sandbox-1", cfg)
 	}
 	if cfg.Provider.Kind != "discobox-pool" || cfg.Provider.ProjectID != "project-1" || cfg.Provider.PoolID != "pool-1" {
@@ -526,7 +524,7 @@ func TestBuildSandboxDocumentForwardsSkills(t *testing.T) {
 	if buildErr != nil {
 		t.Fatal(buildErr)
 	}
-	cfg, _ := sandboxconfig.Effective(doc)
+	cfg, _ := sandboxconfig.Effective(doc, sandboxconfig.APIVersion)
 	want := sandboxconfig.Skills{"foo": {Skill: "# foo", Files: []sandboxconfig.SkillFile{
 		{Path: "run.sh", Content: []byte("#!/bin/sh\n"), Executable: true},
 		{Path: "logo.png", Content: []byte{0x89, 0}},
@@ -563,7 +561,7 @@ func TestBuildSandboxDocumentOverlaysConfiguredFilesOntoRuntimeLayer(t *testing.
 		t.Fatalf("runtime files = %+v, want configured settings.json alone", doc.Runtime.Files)
 	}
 
-	cfg, _ := sandboxconfig.Effective(doc)
+	cfg, _ := sandboxconfig.Effective(doc, sandboxconfig.APIVersion)
 	var settings, claudeJSON *sandboxconfig.File
 	for i := range cfg.Files {
 		switch cfg.Files[i].Path {
@@ -603,7 +601,7 @@ func TestBuildSandboxDocumentOverlaysFileOverridesOverConfiguredFiles(t *testing
 	if buildErr != nil {
 		t.Fatal(buildErr)
 	}
-	cfg, _ := sandboxconfig.Effective(doc)
+	cfg, _ := sandboxconfig.Effective(doc, sandboxconfig.APIVersion)
 	got := map[string]sandboxconfig.File{}
 	for _, file := range cfg.Files {
 		got[file.Path] = file
@@ -929,7 +927,7 @@ func TestSandboxDocumentRecordsResolvedImageIdentity(t *testing.T) {
 	if doc.Runtime.Image != "sha256:resolved" {
 		t.Fatalf("runtime image = %q, want the resolved image identity", doc.Runtime.Image)
 	}
-	_, provenance := sandboxconfig.Effective(doc)
+	_, provenance := sandboxconfig.Effective(doc, sandboxconfig.APIVersion)
 	if provenance.Runtime.Image != "sha256:resolved" {
 		t.Fatalf("provenance image = %q, want the resolved image identity", provenance.Runtime.Image)
 	}
@@ -1097,7 +1095,7 @@ func TestBuildSandboxDocumentCarriesTheMetaSeed(t *testing.T) {
 	if doc.Runtime.Description != "deliver 700" || !maps.Equal(doc.Runtime.Tags, want) || doc.Runtime.MetaName != "Fix login flake" {
 		t.Fatalf("runtime seed = %q, %v, %q; want the description, %v and the name", doc.Runtime.Description, doc.Runtime.Tags, doc.Runtime.MetaName, want)
 	}
-	effective, _ := sandboxconfig.Effective(doc)
+	effective, _ := sandboxconfig.Effective(doc, sandboxconfig.APIVersion)
 	if effective.Description != "deliver 700" || !maps.Equal(effective.Tags, want) || effective.MetaName != "Fix login flake" {
 		t.Fatalf("effective seed = %q, %v, %q; want the description, %v and the name", effective.Description, effective.Tags, effective.MetaName, want)
 	}

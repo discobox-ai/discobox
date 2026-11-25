@@ -1229,7 +1229,7 @@ func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, ins
 			return false, nil, err
 		}
 	}
-	bootstrap, bootstrapDigest, err := renderBootstrap(record)
+	bootstrap, version, bootstrapDigest, err := r.renderBootstrap(ctx, sandboxID, record)
 	if err != nil {
 		return false, nil, err
 	}
@@ -1263,6 +1263,9 @@ func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, ins
 	}
 	if err := guest.CopyTo(ctx, "/", bootstrapTree(bootstrap, keypair)); err != nil {
 		return false, nil, fmt.Errorf("place sandbox %s's bootstrap: %w", sandboxID, err)
+	}
+	if err := r.recordSandboxConfig(sandboxID, version); err != nil {
+		return false, nil, err
 	}
 	reader, writer := io.Pipe()
 	go func() {
@@ -1325,15 +1328,22 @@ const (
 	restartedForced
 )
 
-// renderBootstrap is sandbox.json as record's bootstrap renders it, and its
-// digest, which the placement record keeps.
-func renderBootstrap(record machineRecord) ([]byte, string, error) {
-	data, err := marshalSandboxDocument(record.Bootstrap)
+// renderBootstrap is sandbox.json as record's bootstrap renders it for the
+// sandbox's pinned agent, the version it was rendered as, and its digest,
+// which the placement record keeps. A machine is rendered at every placement,
+// so the version follows the agent's pin, and a pin that moves it moves the
+// digest too (ADR 26-11-24-519 §2).
+func (r *MachineSandboxRuntime) renderBootstrap(ctx context.Context, sandboxID string, record machineRecord) ([]byte, sandboxConfigRecord, string, error) {
+	version, err := r.sandboxConfigFor(ctx, sandboxID)
 	if err != nil {
-		return nil, "", err
+		return nil, sandboxConfigRecord{}, "", err
+	}
+	data, err := marshalSandboxDocument(record.Bootstrap, version.APIVersion)
+	if err != nil {
+		return nil, sandboxConfigRecord{}, "", err
 	}
 	sum := sha256.Sum256(data)
-	return data, "sha256:" + hex.EncodeToString(sum[:]), nil
+	return data, version, "sha256:" + hex.EncodeToString(sum[:]), nil
 }
 
 // placementCurrent reports whether the pool's record says the machine
@@ -1349,7 +1359,7 @@ func (r *MachineSandboxRuntime) placementCurrent(ctx context.Context, sandboxID,
 	if err != nil || !ok {
 		return false, err
 	}
-	_, digest, err := renderBootstrap(record)
+	_, _, digest, err := r.renderBootstrap(ctx, sandboxID, record)
 	if err != nil {
 		return false, err
 	}

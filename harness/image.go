@@ -24,7 +24,8 @@ const ImageAPIVersion = "discobox.ai/image/v1"
 // as it stands, not rewritten to ImageAPIVersion: the composed manifest's
 // digest is a config's pin, and rewriting it would move the pins of every
 // config snapshotted from such a bundle with nothing in the bundle changed.
-// Until when it is read is #1409.
+// It stays read until an image/v2: third-party bundles built FROM a legacy one
+// inherit its label, and nothing rewrites them (ADR 26-11-24-519 §5).
 const LegacyImageAPIVersion = "discobox.dev/image/v1"
 
 // ImageMetadata is the full non-secret payload a harness image declares: env

@@ -117,7 +117,7 @@ func TestSkillFileContentRoundTripsAsBase64(t *testing.T) {
 
 func TestEffective_SkillsAreRuntimeOnlyAndCopied(t *testing.T) {
 	doc := Document{Runtime: RuntimeLayer{Skills: Skills{"foo": {Skill: "# foo", Files: []SkillFile{{Path: "a", Content: []byte("a")}}}}}}
-	cfg, _ := Effective(doc)
+	cfg, _ := Effective(doc, APIVersion)
 	if !reflect.DeepEqual(cfg.Skills, doc.Runtime.Skills) {
 		t.Fatalf("Skills = %+v, want the runtime layer's", cfg.Skills)
 	}
@@ -126,10 +126,10 @@ func TestEffective_SkillsAreRuntimeOnlyAndCopied(t *testing.T) {
 		t.Fatal("Effective's Skills share content with the document")
 	}
 	// Once in the bootstrap, not twice: provenance leaves them out.
-	if _, prov := Effective(doc); prov.Runtime.Skills != nil {
+	if _, prov := Effective(doc, APIVersion); prov.Runtime.Skills != nil {
 		t.Fatalf("provenance skills = %+v, want none", prov.Runtime.Skills)
 	}
-	if cfg, _ := Effective(Document{}); cfg.Skills != nil {
+	if cfg, _ := Effective(Document{}, APIVersion); cfg.Skills != nil {
 		t.Fatalf("Skills = %+v, want nil when the runtime layer has none", cfg.Skills)
 	}
 }

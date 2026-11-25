@@ -165,9 +165,15 @@ read-only config volume at `SandboxConfigDir` (`/etc/discobox`) — no further
 merging happens at boot. sandbox-agent reads
 `apiVersion` `discobox.ai/sandbox/v1` (`APIVersion`) and
 `discobox.dev/sandbox/v1` (`LegacyAPIVersion`), the namespace it was first
-written in. `Effective` writes `LegacyAPIVersion`: a sandbox keeps its pinned
-agent until it is upgraded (ADR 0114), so a pool agent writes for sandbox
-agents older than itself, and those read nothing else.
+written in (`ReadAPIVersions`). The writer is the pool, not `Effective`: a
+sandbox keeps its pinned agent until it is upgraded (ADR 0114), so a pool
+agent writes for agents older than itself. The agent bundle declares what its
+agent reads in the `AgentReadsLabel` image label; `AgentReads` reads it (no
+label: `LegacyAPIVersion` alone) and `WriteAPIVersion` picks the newest of
+`ReadAPIVersions` it lists, refusing an agent that lists none, and the pool
+passes that to `Effective` ([ADR
+26-11-24-519](../../docs/adr/26-11-24-519-an-agent-bundle-declares-the-sandbox-json-versions-it-reads-and-the-pool-writes-one-it-reads.md)).
+Both values stay read until a `v2`, whose arrival the same label announces.
 `Provenance` carries the raw per-layer inputs for the diagnostic `_provenance`
 sibling key; no runtime component in the sandbox decodes it (pool-agent reads
 back its project layer to detect a change) and its shape may change freely.

@@ -36,7 +36,7 @@ func TestCaptureBootstrapReachesEffectiveHarnessAcrossPoolWire(t *testing.T) {
 	if !reflect.DeepEqual(doc.Image.SaveBack, &definition) || !reflect.DeepEqual(doc.Runtime.CaptureBaseline, &baseline) {
 		t.Fatal("pool conversion dropped registered metadata or provenance")
 	}
-	encoded, err := marshalSandboxDocument(doc)
+	encoded, err := marshalSandboxDocument(doc, sandboxconfig.APIVersion)
 	if err != nil {
 		t.Fatal(err)
 	}
