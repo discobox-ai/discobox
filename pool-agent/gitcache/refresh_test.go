@@ -145,6 +145,12 @@ func updates(result sourcecache.Refresh) string {
 // no longer has, and write nothing but the remote's branches and tags. No
 // other push deletes.
 func TestARefreshPushWritesOnlyTheRemotesRefs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// A pool agent runs only on Linux. Under Windows CI, Git does not run
+		// the cache's pre-receive hook for these pushes, so nothing this test
+		// asserts is enforced there, by the hook or by anything else.
+		t.Skip("the cache's pre-receive hook does not run under Git for Windows here; pool agents run on Linux")
+	}
 	w := newWork(t)
 	base := w.commit("base")
 	store := New(t.TempDir())

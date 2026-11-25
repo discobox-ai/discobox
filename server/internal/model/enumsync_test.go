@@ -84,6 +84,7 @@ var yamlOwnedEnums = map[string]string{
 	"Pool.health":                            "derived by Pool.Health from heartbeat freshness and reported readiness",
 	"RefreshSecretBody.via":                  "a narrowing of SecretRefreshAnswer.via: a client says it ran the command or a person entered the value; update is recorded only for an ordinary write",
 	"Job.status":                             "job status is derived from the reconcile dirty set (jobs.jobFromMark); model.Job.Status is untagged text",
+	"SourceRefresh.status":                   "a refresh's outcome, owned by pkg/sourcecache (Refreshed, NeedsCredential, Unreachable, MissingBranch) and answered by the pool; never stored, so no model holds it",
 	// Both axes now diverge per resource, which is what a single embedded tag
 	// cannot express: the shared tag is the union, and each resource's schema
 	// narrows it (ADR 0017 §2, ADR 0022 §1).

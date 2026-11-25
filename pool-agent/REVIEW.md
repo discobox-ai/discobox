@@ -163,6 +163,15 @@ reasons.
   pushed namespace's own remote-tracking branches; every git process on a
   cache waits up to 10 s for `packed-refs.lock` (`packedRefsWait`) so that
   delete and a `writeShared` write wait for each other rather than fail.
+- **The cache's pre-receive hook must be able to run wherever a pool agent
+  does.** It alone refuses a delete in a namespace (a refresh push's drop of
+  the remote's branches aside, ADR 26-11-24-142 §4) and holds a sandbox's
+  push to what it sent; `receive.denyDeletes` no longer backs it. Git skips a
+  hook it cannot execute and takes the push, so both fail open: a cache root
+  on a `noexec` mount, or a platform whose Git does not run the hook (Windows
+  CI shows it does not, which is why `TestARefreshPushWritesOnlyTheRemotesRefs`
+  skips there), loses them silently. A new platform or mount for the cache
+  proves the hook runs before it carries pushes (#1730).
 - **A sandbox's push needs both halves.** `receive.hideRefs` limits what it is
   told; the pre-receive hook, with `receive.unpackLimit=1`, limits what it can
   name. Unpacked, an object the store already holds is not written again, and
