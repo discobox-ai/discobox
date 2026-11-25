@@ -65,6 +65,7 @@ func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolv
 	}
 	recorder.ConfigureStreamSpool(cfg.Recording.StreamDir, cfg.Recording.StreamQueueSize)
 	recorder.ConfigureBodySpool(cfg.Recording.BodyDir)
+	recorder.ConfigureUnaudited(cfg.Recording.UnauditedClients)
 	recorder.ConfigureSpoolBudget(audit.SpoolBudget{
 		MaxBytes:   cfg.Recording.MaxSpoolBytes,
 		MaxPercent: cfg.Recording.MaxSpoolPercent,

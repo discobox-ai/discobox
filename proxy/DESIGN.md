@@ -217,6 +217,14 @@ the pool, so `/audit/dropped` answers a `client_id` with that client's own
 counts and a pool-wide reader with the totals; a client's counts and DNS budget
 go with its purge.
 
+A client in `Recording.UnauditedClients` is recorded not at all: no HTTP,
+SOCKS or DNS row, and no body or stream spool file (`Recorder.records`). The
+client ID is the identity of the certificate the proxy issued, never anything
+in the request, so no other client can claim the exemption. A pool lists its
+own engine (`pool-engine`): its polls of its driver's service, every machine
+every few seconds, would otherwise outnumber all sandbox traffic and hold the
+database's single writer behind them.
+
 `Server.Close` closes every client connection, then waits (at most 30s in all)
 for each connection's serving goroutine to return and for every body stream
 still to record its row, and only then closes the recorder, so a request in
