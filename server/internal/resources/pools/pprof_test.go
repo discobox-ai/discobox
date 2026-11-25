@@ -14,7 +14,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/services"
 )
 
-func (p *auditPoolProvider) OpenPprof(_ context.Context, pool *model.Pool, process, profile string, seconds int) (*sandbox.PoolProfile, error) {
+func (p *auditPoolProvider) OpenPprof(_ context.Context, pool *model.Pool, process, profile string, _ int) (*sandbox.PoolProfile, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if err := p.errs[pool.ID]; err != nil {
