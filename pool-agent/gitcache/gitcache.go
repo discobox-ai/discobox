@@ -67,7 +67,7 @@ const (
 )
 
 // packedRefsWait is how long every git process on a cache waits for
-// packed-refs.lock, which any ref delete takes. writeShared serialises this
+// packed-refs.lock, which any ref delete takes. writeShared serializes this
 // process's own writes, but a refresh push's deletes run in receive-pack,
 // outside it (ADR 26-11-24-142 §4); the lock is held for milliseconds, and
 // git's own second is too short to share it with a busy cache.

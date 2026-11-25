@@ -79,12 +79,12 @@ func RefreshSource(ctx context.Context, client sourceDeliveryClient, serverURL, 
 	if err != nil {
 		return RefreshResult{}, err
 	}
-	switch {
-	case answer.Status == apiclientgen.SourceRefreshStatusRefreshed:
+	switch answer.Status {
+	case apiclientgen.SourceRefreshStatusRefreshed:
 		return RefreshResult{By: RefreshedByPool, Updates: refUpdates(answer)}, nil
-	case answer.Status == apiclientgen.SourceRefreshStatusMissingBranch:
+	case apiclientgen.SourceRefreshStatusMissingBranch:
 		return RefreshResult{}, fmt.Errorf("%s has no branch %q", displaySafe(remote), options.Branch)
-	case answer.Status == apiclientgen.SourceRefreshStatusUnreachable:
+	case apiclientgen.SourceRefreshStatusUnreachable:
 		return r.local(ctx, true)
 	}
 	// needs_credential: the client's policy decides, as for a delivery.

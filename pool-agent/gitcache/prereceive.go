@@ -248,7 +248,7 @@ func checkRefNames(updates [][3]string, refresh bool) error {
 		switch {
 		case refresh && !remote && !strings.HasPrefix(ref, "refs/tags/"):
 			return fmt.Errorf("a refresh writes only the remote's branches and tags, not %s", ref)
-		case deleted && !(refresh && remote):
+		case deleted && (!refresh || !remote):
 			return fmt.Errorf("deleting %s is refused: only a refresh drops a branch, and only one the remote no longer has", ref)
 		}
 	}
