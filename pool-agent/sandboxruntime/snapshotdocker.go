@@ -149,7 +149,10 @@ func (r *DockerSandboxRuntime) buildSnapshot(ctx context.Context, plan snapshotP
 	// container's own filesystem, nor committed. It is the build's alone, and
 	// none of a sandbox's volumes is mounted: a build provisions as an
 	// image is built, onto the root filesystem the snapshot keeps.
-	hostCfg, netCfg := r.boxConfig([]mount.Mount{{Type: mount.TypeBind, Source: r.daemonPath(etc), Target: agentlayer.SnapshotDir}})
+	// Unlimited, whatever size the boxes asking for it are: an image
+	// carries no limit, so one snapshot serves boxes of every size (ADR
+	// 26-11-23-445 §4).
+	hostCfg, netCfg := r.boxConfig([]mount.Mount{{Type: mount.TypeBind, Source: r.daemonPath(etc), Target: agentlayer.SnapshotDir}}, boxSize{})
 	created, err := r.client.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Name: name,
 		Config: &container.Config{

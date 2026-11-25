@@ -1786,6 +1786,52 @@ func (o OptEgressPolicy) Or(d EgressPolicy) EgressPolicy {
 	return d
 }
 
+// NewOptFloat64 returns new OptFloat64 with value set to v.
+func NewOptFloat64(v float64) OptFloat64 {
+	return OptFloat64{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptFloat64 is optional float64.
+type OptFloat64 struct {
+	Value float64
+	Set   bool
+}
+
+// IsSet returns true if OptFloat64 was set.
+func (o OptFloat64) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptFloat64) Reset() {
+	var v float64
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptFloat64) SetTo(v float64) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptFloat64) Get() (v float64, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptFloat64) Or(d float64) float64 {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptGatewayHeaderModifier returns new OptGatewayHeaderModifier with value set to v.
 func NewOptGatewayHeaderModifier(v GatewayHeaderModifier) OptGatewayHeaderModifier {
 	return OptGatewayHeaderModifier{
@@ -4397,6 +4443,52 @@ func (o OptSandboxGitIdentity) Or(d SandboxGitIdentity) SandboxGitIdentity {
 	return d
 }
 
+// NewOptSandboxSize returns new OptSandboxSize with value set to v.
+func NewOptSandboxSize(v SandboxSize) OptSandboxSize {
+	return OptSandboxSize{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxSize is optional SandboxSize.
+type OptSandboxSize struct {
+	Value SandboxSize
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxSize was set.
+func (o OptSandboxSize) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxSize) Reset() {
+	var v SandboxSize
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxSize) SetTo(v SandboxSize) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxSize) Get() (v SandboxSize, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxSize) Or(d SandboxSize) SandboxSize {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxUpdateConfig returns new OptSandboxUpdateConfig with value set to v.
 func NewOptSandboxUpdateConfig(v SandboxUpdateConfig) OptSandboxUpdateConfig {
 	return OptSandboxUpdateConfig{
@@ -6250,6 +6342,11 @@ type PoolSandboxCreateRequest struct {
 	// through a channel separate from sandbox.json (docs/adr/0012 section 3), independently refreshed as
 	// secrets rotate.
 	SecretEnv OptNilPoolSandboxCreateRequestSecretEnv `json:"secretEnv"`
+	// The sandbox's size, resolved by the control plane from the sandbox's own and its pool's (ADR
+	// 26-11-23-445 §2), which the pool applies as it is and records in the sandbox's tree, so a machine
+	// or container made again for it later gets the same. Absent when it has none, which leaves its box
+	// to the runtime's default.
+	Size OptSandboxSize `json:"size"`
 }
 
 // GetPullSources returns the value of PullSources.
@@ -6337,6 +6434,11 @@ func (s *PoolSandboxCreateRequest) GetSecretEnv() OptNilPoolSandboxCreateRequest
 	return s.SecretEnv
 }
 
+// GetSize returns the value of Size.
+func (s *PoolSandboxCreateRequest) GetSize() OptSandboxSize {
+	return s.Size
+}
+
 // SetPullSources sets the value of PullSources.
 func (s *PoolSandboxCreateRequest) SetPullSources(val OptBool) {
 	s.PullSources = val
@@ -6420,6 +6522,11 @@ func (s *PoolSandboxCreateRequest) SetSentinelGenerations(val OptNilPoolSandboxC
 // SetSecretEnv sets the value of SecretEnv.
 func (s *PoolSandboxCreateRequest) SetSecretEnv(val OptNilPoolSandboxCreateRequestSecretEnv) {
 	s.SecretEnv = val
+}
+
+// SetSize sets the value of Size.
+func (s *PoolSandboxCreateRequest) SetSize(val OptSandboxSize) {
+	s.Size = val
 }
 
 // The sentinels of this sandbox's raw bindings, keyed by sentinel (ADR 26-10-27-840): handles the
@@ -7917,6 +8024,36 @@ func (s *SandboxGitIdentity) SetUserEmail(val OptString) {
 // SetUserName sets the value of UserName.
 func (s *SandboxGitIdentity) SetUserName(val OptString) {
 	s.UserName = val
+}
+
+// A sandbox's CPU and memory. A zero field is unset.
+// Ref: #/components/schemas/SandboxSize
+type SandboxSize struct {
+	// VCPUs, fractional allowed. A container is limited to it; a machine is made with it rounded up to a
+	// whole vCPU.
+	CpuVcpus OptFloat64 `json:"cpuVcpus"`
+	// Memory in bytes. A container is limited to it, swap included; a machine is made with it.
+	MemoryBytes OptInt64 `json:"memoryBytes"`
+}
+
+// GetCpuVcpus returns the value of CpuVcpus.
+func (s *SandboxSize) GetCpuVcpus() OptFloat64 {
+	return s.CpuVcpus
+}
+
+// GetMemoryBytes returns the value of MemoryBytes.
+func (s *SandboxSize) GetMemoryBytes() OptInt64 {
+	return s.MemoryBytes
+}
+
+// SetCpuVcpus sets the value of CpuVcpus.
+func (s *SandboxSize) SetCpuVcpus(val OptFloat64) {
+	s.CpuVcpus = val
+}
+
+// SetMemoryBytes sets the value of MemoryBytes.
+func (s *SandboxSize) SetMemoryBytes(val OptInt64) {
+	s.MemoryBytes = val
 }
 
 // One skill the sandbox was created with, by content, forwarded into its bootstrap verbatim.
