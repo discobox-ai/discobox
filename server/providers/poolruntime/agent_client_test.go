@@ -398,3 +398,36 @@ func TestPoolCreateRequestForwardsTheMetaSeed(t *testing.T) {
 		t.Fatalf("an untagged, unnamed sandbox sent tags %v and name %q", untagged.Config.Tags.Value, untagged.Config.MetaName.Value)
 	}
 }
+
+// A sandbox's size goes to its pool as its create resolved it, each field
+// only when set, and none at all for a sandbox without one, so a pool agent
+// from before sizes is never sent the field it would refuse (ADR
+// 26-11-23-445 §2).
+func TestPoolCreateRequestCarriesTheSandboxSize(t *testing.T) {
+	request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{
+		Size: sandbox.Size{CPUVCPUs: 2.5, MemoryBytes: 8 << 30},
+	}, false, false, routeBlocks{}, false)
+	size, ok := request.Size.Get()
+	if !ok || size.CpuVcpus.Or(0) != 2.5 || size.MemoryBytes.Or(0) != 8<<30 {
+		t.Fatalf("size = %+v (set %v), want 2.5 vCPUs and 8 GiB", size, ok)
+	}
+
+	request = poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{
+		Size: sandbox.Size{MemoryBytes: 1 << 30},
+	}, false, false, routeBlocks{}, false)
+	if size, ok := request.Size.Get(); !ok || size.CpuVcpus.Set || size.MemoryBytes.Or(0) != 1<<30 {
+		t.Fatalf("memory-only size = %+v (set %v), want memory alone", size, ok)
+	}
+
+	request = poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}, false, false, routeBlocks{}, false)
+	if request.Size.Set {
+		t.Fatalf("unsized sandbox sent size %+v, want none", request.Size.Value)
+	}
+	encoded, err := request.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), `"size"`) {
+		t.Fatalf("unsized create request = %s, want no size field", encoded)
+	}
+}

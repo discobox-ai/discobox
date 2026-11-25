@@ -207,7 +207,10 @@ func Definition() sandbox.ProviderDefinition {
 		Icon:        "server",
 		Description: "Runs one WSL Containers (wslc) VM per pool on Windows, with its own dockerd. Only /var/lib/docker persists; no host TCP port is opened.",
 		// Each pool VM is sized from the pool's own size first (see vmsize).
-		PoolSizeFields: vmsize.PoolSizeFields(),
+		// Every box of a pool is a container in its VM, so no box is larger
+		// than the VM a pool size sets.
+		SizeFields:    dockerworker.SizeFields(),
+		BoxesInPoolVM: true,
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image that every sandbox runs with its platform delivered, and the pool's own container runs provisioned as a pool.", Advanced: true},
 			{Key: "cpuCount", Label: "VM vCPUs", Type: "number", Placeholder: strconv.Itoa(vmsize.Host().VCPUs), Description: "Defaults to every host CPU. A pool's own cpuVcpus overrides it for that pool."},

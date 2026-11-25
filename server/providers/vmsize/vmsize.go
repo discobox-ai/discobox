@@ -19,8 +19,6 @@ package vmsize
 import (
 	"math"
 	"runtime"
-
-	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
 // Size is a local pool VM's vCPUs and memory. A zero field is unset at
@@ -47,14 +45,6 @@ func Host() Size {
 }
 
 const mib = 1024 * 1024
-
-// PoolSizeFields are the pool size fields a provider that sizes its VMs with this
-// package acts on, for its ProviderDefinition: the fields FromPool reads.
-// Declaring it from here keeps the declaration and the code that honors it in
-// one place, so the pool service can never accept a field no VM is sized from.
-func PoolSizeFields() []sandbox.PoolSizeField {
-	return []sandbox.PoolSizeField{sandbox.PoolSizeCPU, sandbox.PoolSizeMemory}
-}
 
 // FromPool converts a pool's size into VM units.
 //

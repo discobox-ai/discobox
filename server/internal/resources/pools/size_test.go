@@ -50,8 +50,8 @@ func newSizeFixture(t *testing.T) *Service {
 
 	manager := sandbox.NewProviderManager(appStore)
 	manager.RegisterProviderDefinition(sizedType, sandbox.ProviderDefinition{
-		Name:           sizedType,
-		PoolSizeFields: []sandbox.PoolSizeField{sandbox.PoolSizeCPU, sandbox.PoolSizeMemory},
+		Name:       sizedType,
+		SizeFields: []sandbox.SizeField{sandbox.SizeCPU, sandbox.SizeMemory},
 	})
 	manager.RegisterProviderDefinition(unsizedType, sandbox.ProviderDefinition{Name: unsizedType})
 	return NewService(appStore, manager, nil, &recordedDelivery{})
@@ -101,7 +101,7 @@ func TestCreatePoolHoldsSizesToTheProvidersDeclaration(t *testing.T) {
 		Name: "shared", ProviderInstanceId: "prov-unsized",
 		MemoryBytes: serverapi.NewOptInt64(8 << 30),
 	})
-	requireBadRequest(t, err, "memoryBytes", unsizedType, "takes no pool size settings")
+	requireBadRequest(t, err, "memoryBytes", unsizedType, "takes no size settings")
 
 	// Zero is unset, and every provider accepts unset; the copy path and older
 	// clients send explicit zeros.

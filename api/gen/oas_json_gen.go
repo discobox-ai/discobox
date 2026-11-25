@@ -21330,6 +21330,39 @@ func (s *OptPoolSnapshotPlan) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes PoolSnapshotSize as json.
+func (o OptPoolSnapshotSize) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes PoolSnapshotSize from json.
+func (o *OptPoolSnapshotSize) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptPoolSnapshotSize to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptPoolSnapshotSize) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptPoolSnapshotSize) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes PoolSnapshots as json.
 func (o OptPoolSnapshots) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -29300,6 +29333,12 @@ func (s *PoolSnapshotPlan) encodeFields(e *jx.Encoder) {
 			e.ArrEnd()
 		}
 	}
+	{
+		if s.Size.Set {
+			e.FieldStart("size")
+			s.Size.Encode(e)
+		}
+	}
 	for k, elem := range s.AdditionalProps {
 		e.FieldStart(k)
 
@@ -29309,11 +29348,12 @@ func (s *PoolSnapshotPlan) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolSnapshotPlan = [4]string{
+var jsonFieldsNameOfPoolSnapshotPlan = [5]string{
 	0: "base",
 	1: "agent",
 	2: "bundles",
 	3: "off",
+	4: "size",
 }
 
 // Decode decodes PoolSnapshotPlan from json.
@@ -29383,6 +29423,16 @@ func (s *PoolSnapshotPlan) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"off\"")
+			}
+		case "size":
+			if err := func() error {
+				s.Size.Reset()
+				if err := s.Size.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"size\"")
 			}
 		default:
 			var elem jx.Raw
@@ -29505,6 +29555,163 @@ func (s PoolSnapshotPlanAdditional) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *PoolSnapshotPlanAdditional) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *PoolSnapshotSize) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *PoolSnapshotSize) encodeFields(e *jx.Encoder) {
+	{
+		if s.Cpus.Set {
+			e.FieldStart("cpus")
+			s.Cpus.Encode(e)
+		}
+	}
+	{
+		if s.MemoryBytes.Set {
+			e.FieldStart("memoryBytes")
+			s.MemoryBytes.Encode(e)
+		}
+	}
+	for k, elem := range s.AdditionalProps {
+		e.FieldStart(k)
+
+		if len(elem) != 0 {
+			e.Raw(elem)
+		}
+	}
+}
+
+var jsonFieldsNameOfPoolSnapshotSize = [2]string{
+	0: "cpus",
+	1: "memoryBytes",
+}
+
+// Decode decodes PoolSnapshotSize from json.
+func (s *PoolSnapshotSize) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolSnapshotSize to nil")
+	}
+	s.AdditionalProps = map[string]jx.Raw{}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "cpus":
+			if err := func() error {
+				s.Cpus.Reset()
+				if err := s.Cpus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cpus\"")
+			}
+		case "memoryBytes":
+			if err := func() error {
+				s.MemoryBytes.Reset()
+				if err := s.MemoryBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"memoryBytes\"")
+			}
+		default:
+			var elem jx.Raw
+			if err := func() error {
+				v, err := d.RawAppend(nil)
+				elem = jx.Raw(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrapf(err, "decode field %q", k)
+			}
+			s.AdditionalProps[string(k)] = elem
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode PoolSnapshotSize")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *PoolSnapshotSize) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolSnapshotSize) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s PoolSnapshotSizeAdditional) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s PoolSnapshotSizeAdditional) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		if len(elem) != 0 {
+			e.Raw(elem)
+		}
+	}
+}
+
+// Decode decodes PoolSnapshotSizeAdditional from json.
+func (s *PoolSnapshotSizeAdditional) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolSnapshotSizeAdditional to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem jx.Raw
+		if err := func() error {
+			v, err := d.RawAppend(nil)
+			elem = jx.Raw(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode PoolSnapshotSizeAdditional")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s PoolSnapshotSizeAdditional) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolSnapshotSizeAdditional) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -38908,6 +39115,18 @@ func (s *SandboxConfig) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 	{
+		if s.CpuVcpus.Set {
+			e.FieldStart("cpuVcpus")
+			s.CpuVcpus.Encode(e)
+		}
+	}
+	{
+		if s.MemoryBytes.Set {
+			e.FieldStart("memoryBytes")
+			s.MemoryBytes.Encode(e)
+		}
+	}
+	{
 		if s.HarnessConfigId.Set {
 			e.FieldStart("harnessConfigId")
 			s.HarnessConfigId.Encode(e)
@@ -39045,28 +39264,30 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxConfig = [21]string{
-	0:  "harnessConfigId",
-	1:  "model",
-	2:  "modelReasoningLevel",
-	3:  "modelServiceTier",
-	4:  "env",
-	5:  "git",
-	6:  "skillNames",
-	7:  "skillsSources",
-	8:  "features",
-	9:  "image",
-	10: "imageDigest",
-	11: "bundle",
-	12: "bundleDigest",
-	13: "harnessManifestDigest",
-	14: "platformBundle",
-	15: "platformBundleDigest",
-	16: "name",
-	17: "prompt",
-	18: "source",
-	19: "sourceCodeReferences",
-	20: "user",
+var jsonFieldsNameOfSandboxConfig = [23]string{
+	0:  "cpuVcpus",
+	1:  "memoryBytes",
+	2:  "harnessConfigId",
+	3:  "model",
+	4:  "modelReasoningLevel",
+	5:  "modelServiceTier",
+	6:  "env",
+	7:  "git",
+	8:  "skillNames",
+	9:  "skillsSources",
+	10: "features",
+	11: "image",
+	12: "imageDigest",
+	13: "bundle",
+	14: "bundleDigest",
+	15: "harnessManifestDigest",
+	16: "platformBundle",
+	17: "platformBundleDigest",
+	18: "name",
+	19: "prompt",
+	20: "source",
+	21: "sourceCodeReferences",
+	22: "user",
 }
 
 // Decode decodes SandboxConfig from json.
@@ -39078,6 +39299,26 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "cpuVcpus":
+			if err := func() error {
+				s.CpuVcpus.Reset()
+				if err := s.CpuVcpus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cpuVcpus\"")
+			}
+		case "memoryBytes":
+			if err := func() error {
+				s.MemoryBytes.Reset()
+				if err := s.MemoryBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"memoryBytes\"")
+			}
 		case "harnessConfigId":
 			if err := func() error {
 				s.HarnessConfigId.Reset()
@@ -39255,7 +39496,7 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"platformBundleDigest\"")
 			}
 		case "name":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[2] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -39327,7 +39568,7 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 	for i, mask := range [3]uint8{
 		0b00000000,
 		0b00000000,
-		0b00000001,
+		0b00000100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -39547,6 +39788,18 @@ func (s *SandboxCreateConfig) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *SandboxCreateConfig) encodeFields(e *jx.Encoder) {
 	{
+		if s.CpuVcpus.Set {
+			e.FieldStart("cpuVcpus")
+			s.CpuVcpus.Encode(e)
+		}
+	}
+	{
+		if s.MemoryBytes.Set {
+			e.FieldStart("memoryBytes")
+			s.MemoryBytes.Encode(e)
+		}
+	}
+	{
 		if s.Egress.Set {
 			e.FieldStart("egress")
 			s.Egress.Encode(e)
@@ -39672,26 +39925,28 @@ func (s *SandboxCreateConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxCreateConfig = [19]string{
-	0:  "egress",
-	1:  "harnessConfigId",
-	2:  "model",
-	3:  "modelReasoningLevel",
-	4:  "modelServiceTier",
-	5:  "description",
-	6:  "env",
-	7:  "git",
-	8:  "skills",
-	9:  "skillsSources",
-	10: "features",
-	11: "metaName",
-	12: "name",
-	13: "prompt",
-	14: "secrets",
-	15: "source",
-	16: "sourceCodeReferences",
-	17: "tags",
-	18: "user",
+var jsonFieldsNameOfSandboxCreateConfig = [21]string{
+	0:  "cpuVcpus",
+	1:  "memoryBytes",
+	2:  "egress",
+	3:  "harnessConfigId",
+	4:  "model",
+	5:  "modelReasoningLevel",
+	6:  "modelServiceTier",
+	7:  "description",
+	8:  "env",
+	9:  "git",
+	10: "skills",
+	11: "skillsSources",
+	12: "features",
+	13: "metaName",
+	14: "name",
+	15: "prompt",
+	16: "secrets",
+	17: "source",
+	18: "sourceCodeReferences",
+	19: "tags",
+	20: "user",
 }
 
 // Decode decodes SandboxCreateConfig from json.
@@ -39703,6 +39958,26 @@ func (s *SandboxCreateConfig) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "cpuVcpus":
+			if err := func() error {
+				s.CpuVcpus.Reset()
+				if err := s.CpuVcpus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cpuVcpus\"")
+			}
+		case "memoryBytes":
+			if err := func() error {
+				s.MemoryBytes.Reset()
+				if err := s.MemoryBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"memoryBytes\"")
+			}
 		case "egress":
 			if err := func() error {
 				s.Egress.Reset()
@@ -39831,7 +40106,7 @@ func (s *SandboxCreateConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"metaName\"")
 			}
 		case "name":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -39929,7 +40204,7 @@ func (s *SandboxCreateConfig) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
 		0b00000000,
-		0b00010000,
+		0b01000000,
 		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {

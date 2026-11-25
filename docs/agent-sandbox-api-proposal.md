@@ -866,12 +866,13 @@ configuration inheritance, Git delivery policy, or secret ownership. The
 control plane resolves those concepts and supplies the public non-secret
 sandbox manifest and separate provider-owned bootstrap channel.
 
-The current provider input carries no per-sandbox resource fields: sandboxes
-have no per-sandbox resource requests, and a pool carries its own size
-([ADR 0029](adr/0029-sandboxes-have-no-per-sandbox-resource-requests.md)).
-The `resources` field in the sketch above and `--cpu`/`--memory` in the
-candidate CLI would reopen that decision. A contract that does so must
-supersede that ADR and represent requested and effective values clearly.
+A sandbox may ask for a CPU and memory size at create, and its pool's size is
+its default
+([ADR 26-11-23-445](adr/26-11-23-445-a-box-may-ask-for-a-cpu-and-memory-size-and-its-pools-size-is-the-default.md),
+superseding part of [ADR 0029](adr/0029-sandboxes-have-no-per-sandbox-resource-requests.md)):
+`cpuVcpus` and `memoryBytes` on create, and on the sandbox's read the size it
+was made at. It is a limit, never a reservation; nothing is gated on a pool's
+reported capacity.
 
 ## Security considerations
 

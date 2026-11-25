@@ -616,11 +616,14 @@ type PoolManifest struct {
 
 	Name               string `gorm:"column:name;not null;type:text;uniqueIndex:idx_pool_project_name,priority:2" json:"name" doc:"Pool display name" maxLength:"200"`
 	ProviderInstanceID string `gorm:"column:provider_instance_id;not null;type:text;index" json:"providerInstanceId" doc:"Backing sandbox provider instance ID. Immutable after create."`
-	// The pool's size. A provider that runs one VM per pool sizes that VM from
-	// these; a provider declares which it acts on (ProviderDefinition.
-	// PoolSizeFields), and the pool service refuses the rest. Zero is unset.
-	CPUVCPUs     float64 `gorm:"column:cpu_vcpus;not null;default:0" json:"cpuVcpus" doc:"vCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size to the provider's configuration, then the host."`
-	MemoryBytes  int64   `gorm:"column:memory_bytes;not null;default:0" json:"memoryBytes" doc:"Memory for the pool's VM in bytes. Only a provider that sizes a VM per pool accepts it; zero leaves the size to the provider's configuration, then the host."`
+	// The pool's size. A provider that sizes one VM per pool sizes that VM
+	// from CPU and memory, and its boxes share the VM; on any other provider
+	// that acts on them they are each box's default size, which a box's own
+	// overrides (ADR 26-11-23-445 §3). A provider declares which it acts on
+	// (ProviderDefinition.SizeFields), and the pool service refuses the rest.
+	// Zero is unset.
+	CPUVCPUs     float64 `gorm:"column:cpu_vcpus;not null;default:0" json:"cpuVcpus" doc:"On a provider that sizes one VM per pool, that VM's vCPUs; on any other provider that acts on it, each discobox's default vCPUs. Zero is unset."`
+	MemoryBytes  int64   `gorm:"column:memory_bytes;not null;default:0" json:"memoryBytes" doc:"On a provider that sizes one VM per pool, that VM's memory in bytes; on any other provider that acts on it, each discobox's default memory. Zero is unset."`
 	StorageBytes int64   `gorm:"column:storage_bytes;not null;default:0" json:"storageBytes" doc:"Storage for the pool in bytes. Only a provider that acts on it accepts it, and none does today; zero is unset."`
 	// DisableAgentEndpointTLS has the pool reach its sandboxes' agents over
 	// plain HTTP rather than TLS its CA issues (ADR 26-10-29-481 §3). It is
@@ -928,6 +931,19 @@ type SandboxManifest struct {
 	// Features ride the bootstrap too, and are omitted when empty for the
 	// same reason (ADR 26-10-16-423 §§4, 11).
 	Features map[string]sandboxconfig.Feature `gorm:"column:features;type:text;serializer:json" json:"features,omitempty" doc:"The repository's features by name, as its settings.json set them at create; the sandbox provisions every one but those turned off"`
+	// CPUVCPUs and MemoryBytes are the box's size as its create resolved it,
+	// field by field: its own, else its pool's then, else zero, none (ADR
+	// 26-11-23-445 §2). Its pool is sent them as they are, so a later change
+	// to the pool's size reaches new boxes only. Spec, fixed at create, and
+	// omitted when zero, which keeps the fingerprint of every sandbox created
+	// without them what it was before they existed.
+	//
+	// Their columns are not the cpu_vcpus and memory_bytes ADR 0029 retired,
+	// which an upgrade still drops (dropSandboxResourceRequestColumns): a
+	// database from before it may hold requests there that were never a box
+	// size.
+	CPUVCPUs    float64 `gorm:"column:size_cpu_vcpus;not null;default:0" json:"cpuVcpus,omitempty" doc:"The vCPUs the sandbox was made with: its own, else its pool's at its create; zero is none"`
+	MemoryBytes int64   `gorm:"column:size_memory_bytes;not null;default:0" json:"memoryBytes,omitempty" doc:"The memory in bytes the sandbox was made with: its own, else its pool's at its create; zero is none"`
 }
 
 // Fingerprint is the spec digest the runtime compares a container against

@@ -30,7 +30,6 @@ import (
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/guestimage"
 	"github.com/discobox-ai/discobox/server/providers/poolruntime"
-	"github.com/discobox-ai/discobox/server/providers/vmsize"
 	"github.com/discobox-ai/discobox/server/providers/vz/internal/vzvm"
 )
 
@@ -353,7 +352,10 @@ func Definition() sandbox.ProviderDefinition {
 		Icon:        "server",
 		Description: "Runs one Virtualization.framework VM per pool on macOS, with VSOCK control traffic and no Docker daemon on the host.",
 		// Each pool VM is sized from the pool's own size first (see vmsize).
-		PoolSizeFields: vmsize.PoolSizeFields(),
+		// Every box of a pool is a container in its VM, so no box is larger
+		// than the VM a pool size sets.
+		SizeFields:    dockerworker.SizeFields(),
+		BoxesInPoolVM: true,
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "guestImage", Label: "Guest Image", Type: "string", Placeholder: DefaultGuestImage, Description: "Published guest image carrying the kernel, initrd, and root filesystem.", Advanced: true},
 			{Key: "guestImageDir", Label: "Guest Artifact Directory", Type: "string", Description: "Boot these artifacts instead of the published image, and fail if they are missing.", Advanced: true},

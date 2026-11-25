@@ -127,6 +127,7 @@ type PoolSnapshotBuild = apigen.PoolSnapshotBuild
 type PoolSnapshotBundle = apigen.PoolSnapshotBundle
 type PoolSnapshotFailure = apigen.PoolSnapshotFailure
 type PoolSnapshotPlan = apigen.PoolSnapshotPlan
+type PoolSnapshotSize = apigen.PoolSnapshotSize
 type PoolSnapshots = apigen.PoolSnapshots
 type PoolStorageUsage = apigen.PoolStorageUsage
 type PoolStorageWalk = apigen.PoolStorageWalk

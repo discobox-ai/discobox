@@ -74,7 +74,7 @@ flowchart TD
 for pool-backed provider instances. It owns sandbox placement gating (the
 sandbox's pool must have fresh health and be schedulable — there is no candidate search
 and no capacity check; sandboxes share their pool's CPU, memory, and storage
-with no per-sandbox reservation, docs/adr/0029), capacity waits,
+with no per-sandbox reservation, docs/adr/0029 §2), capacity waits,
 the pool's maker (`PoolMaker`: its bootstrap, what its box is placed with,
 its enrollment, and `RecordHost`, which saves the provider's record of the
 pool's host on the pool's row mid-pass, for what the host's agent asks for
@@ -97,8 +97,9 @@ Docker: launching the pool's container and making it the pool's box (see
 [Pool Bundle](#pool-bundle)), its socket bind and host mounts, scoped volumes, the per-pool sandbox proxy network, health waits,
 config-revision drift detection, and container replacement during repair. It
 hands the pool's size (CPU/memory) to the driver in `VMSpec`, where it sizes
-the VM layer (see Local VM Sizing), and sets no CPU or memory limit on any
-container. The pool-agent container does not host sandboxes: it gets the
+the VM layer (see Local VM Sizing), and sets no CPU or memory limit on the
+pool's container. A sandbox container is limited by the pool agent, to the
+sandbox's size (see [Box Size](#box-size)). The pool-agent container does not host sandboxes: it gets the
 daemon's socket bound in and creates each sandbox container on that daemon, as a
 sibling of itself in the daemon's cgroup tree. A limit on the pool-agent
 container would therefore bound only the pool's own services — agent, BuildKit,
@@ -1074,6 +1075,32 @@ follows is the control plane's. Unset, the sandbox-agent's
 default of 30 minutes applies. Like every pool policy field, a change reaches a
 pool at its next reconcile; saving the provider instance does not trigger one.
 
+## Box Size
+
+A box may ask for `cpuVcpus` and `memoryBytes` at create, and its pool's are
+its default, field by field, except where the pool's size sizes the VM its
+boxes share: there an unset box has the whole VM
+([ADR 26-11-23-445](../../docs/adr/26-11-23-445-a-box-may-ask-for-a-cpu-and-memory-size-and-its-pools-size-is-the-default.md)).
+The sandbox service resolves and stores the size
+([sandboxes](../internal/resources/sandboxes/DESIGN.md#box-size)), and
+`poolruntime` sends it in the create request's `size`, omitted when the box
+has none. The pool agent applies it as sent: a container's Docker limits, or
+a machine's size ([pool-agent](../../pool-agent/DESIGN.md#a-boxs-size)).
+
+Which size fields a provider acts on is its `ProviderDefinition.SizeFields`,
+declared next to the code that honors it: every `dockerworker` provider
+declares CPU and memory (`dockerworker.SizeFields`), since each of its boxes
+is a container the pool agent limits; vz, libkrun and wslc also set
+`BoxesInPoolVM`, so a box larger than a size its pool sets for the VM is
+refused, and the pool's size, which the driver may clamp (vz to the host's
+cores), is never copied to a box. execvm and DigitalOcean size no VM from a
+pool's size, so on them it is only the boxes' default. A disco-vm provider declares none until disco-vm says which of its
+drivers size a machine; a box or a pool asking for a size there is refused.
+The pool and sandbox services refuse any non-zero field the provider does not
+declare (`ProviderDefinition.CheckSize`), so a size is never stored only to
+be ignored. Nothing is checked against what a pool reports as available
+(ADR 0029 §2).
+
 ## Local VM Sizing
 
 Every provider that runs one VM per pool on the server's own machine — vz,
@@ -1094,16 +1121,13 @@ that backend: a host bigger than it supports, or a pool size set without the
 backend's floor in mind. Explicitly configured provider values outside a
 backend's range are still refused at validation.
 
-The pool's size reaches the driver in `VMSpec` and nothing else: it sizes the
-VM layer and limits no container. `vmsize.FromPool` converts it with both
+The pool's size reaches the driver in `VMSpec`, where it sizes the VM layer;
+it is no box's default here, and a box with no size of its own has the whole
+VM (see [Box Size](#box-size)). `vmsize.FromPool`
+converts it with both
 fields rounded up, since the pool's size is fractional vCPUs and exact bytes while a
 VM is whole vCPUs and MiB, and a pool asking for 1.5 vCPUs should get 2 rather
-than 1. Which size fields a provider acts on is declared in its
-`ProviderDefinition.PoolSizeFields`; the VM providers declare `vmsize.PoolSizeFields()`.
-The pool service refuses any non-zero field a pool's provider does not declare,
-at create and update alike, so a size is never stored only to be ignored — on
-`docker`, `execvm`, and DigitalOcean, whose droplet size is provider
-configuration, every size field is refused. Unset sizing is passed through unset from provider config to
+than 1. Unset sizing is passed through unset from provider config to
 driver — a number filled in at the provider layer would outrank the host default
 it only stood in for, which is how every wslc VM once came out at 2 vCPUs and
 4 GiB.

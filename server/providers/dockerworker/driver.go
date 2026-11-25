@@ -98,10 +98,13 @@ type VMSpec struct {
 	// Metadata carries labels/tags, including the pool identity labels.
 	Metadata map[string]string
 	// CPUVCPUs and MemoryBytes are the pool's size, zero where the pool
-	// leaves it to the provider. The pool's size is for the VM layer and
-	// nothing else: a driver that runs one VM per pool on this machine sizes
-	// that VM from them first (see vmsize.Resolve), and replaces a running VM
-	// whose size no longer matches. No container is ever limited by them.
+	// leaves it to the provider. A driver that runs one VM per pool on this
+	// machine sizes that VM from them first (see vmsize.Resolve), and
+	// replaces a running VM whose size no longer matches; its boxes share the
+	// VM, unlimited unless a box asks for less. On a provider that sizes no
+	// VM from them they are each box's default size instead, which the pool
+	// agent applies to the box's container (providers/DESIGN.md, Box Size).
+	// The pool's own container is never limited by them.
 	CPUVCPUs    float64
 	MemoryBytes int64
 }

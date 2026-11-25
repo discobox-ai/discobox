@@ -306,6 +306,13 @@ func SandboxToAPI(ctx context.Context, sandbox *model.Sandbox, basis SandboxUpgr
 	if len(sandbox.Features) > 0 {
 		config["features"] = sandbox.Features
 	}
+	// The size it was made at; none is omitted.
+	if sandbox.CPUVCPUs > 0 {
+		config["cpuVcpus"] = sandbox.CPUVCPUs
+	}
+	if sandbox.MemoryBytes > 0 {
+		config["memoryBytes"] = sandbox.MemoryBytes
+	}
 	runtime := map[string]any{
 		"desiredState":       sandbox.DesiredState,
 		"displayState":       sandbox.DisplayState(),

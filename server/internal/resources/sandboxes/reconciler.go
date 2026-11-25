@@ -700,6 +700,7 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	opts.Skills = sb.Skills
 	opts.SkillsSources = append([]model.SkillsSource(nil), sb.SkillsSources...)
 	opts.Features = maps.Clone(sb.Features)
+	opts.Size = Size{CPUVCPUs: sb.CPUVCPUs, MemoryBytes: sb.MemoryBytes}
 	if sb.HarnessConfigID != nil && r.store != nil {
 		// A load failure is not swallowed: the pool agent refuses a create with
 		// no resolved harness config, so quietly omitting one would turn a

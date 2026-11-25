@@ -305,6 +305,16 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 	if err != nil {
 		return nil, err
 	}
+	// The size the archive's discobox was made at was resolved against the
+	// pool it left, and is most often that pool's default, which it never
+	// asked for; an import has no size of its own to ask. So it takes its new
+	// pool's default as a create asking for none does (ADR 26-11-23-445
+	// §2), and a move is never refused for the size of the pool it came
+	// from.
+	specManifest := spec.Manifest
+	if specManifest.CPUVCPUs, specManifest.MemoryBytes, err = s.resolveSandboxSize(instance, pool, 0, 0); err != nil {
+		return nil, err
+	}
 	sandboxID, err := id.New(id.PrefixSandbox)
 	if err != nil {
 		return nil, err
@@ -317,7 +327,7 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 		Platform:        spec.Platform,
 		Name:            name,
 		Description:     spec.Description,
-		SandboxManifest: spec.Manifest,
+		SandboxManifest: specManifest,
 		// The origin is the client this discobox belongs to, which a move does
 		// not change. Carrying it is what gives the imported discobox a source
 		// data key -- without which its primary comes up with an empty private
