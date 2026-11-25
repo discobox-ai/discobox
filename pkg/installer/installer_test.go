@@ -1,21 +1,26 @@
 package installer
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 const digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -121,6 +126,27 @@ type server struct {
 	// mainSlash ends the page latest redirects to in a slash, as a static
 	// file server serving a directory does.
 	mainSlash bool
+	// cuts is how many more asset downloads, from any source, are cut off
+	// halfway: the length of the whole file announced, half of it sent, and
+	// the connection closed, as an unstable connection drops one.
+	cuts atomic.Int32
+	// resetFor closes every resume, a request carrying a Range, that comes
+	// within this long of the last cut before any answer, as reconnects fail
+	// while a connection comes back. The installers wait a second before
+	// their first retry and three before their second, so two seconds fails
+	// one try of theirs whatever the HTTP client retries by itself.
+	resetFor time.Duration
+	cutMu    sync.Mutex
+	cutAt    time.Time
+	// cutWrong makes a cut transfer send the first half of other bytes, as
+	// a file replaced between a transfer and its resume would.
+	cutWrong bool
+	// noRanges ignores a Range header and sends the whole file, as a source
+	// that cannot resume does.
+	noRanges bool
+	// ranges records the Range header of every binary download, "" for none.
+	rangesMu sync.Mutex
+	ranges   []string
 }
 
 func newServer(t *testing.T, releases []release) *server {
@@ -177,13 +203,35 @@ func newServer(t *testing.T, releases []release) *server {
 	serve := func(mode *string) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			body, ok := s.files[r.PathValue("tag")][r.PathValue("asset")]
+			if ok && r.PathValue("asset") == hostAsset() {
+				s.rangesMu.Lock()
+				s.ranges = append(s.ranges, r.Header.Get("Range"))
+				s.rangesMu.Unlock()
+			}
 			switch {
 			case !ok || *mode == "missing":
 				http.NotFound(w, r)
 			case *mode == "corrupt":
 				_, _ = w.Write(append([]byte("not "), body...))
+			case r.Header.Get("Range") != "" && s.resetFor > 0 && time.Since(s.lastCut()) < s.resetFor:
+				if conn, _, err := http.NewResponseController(w).Hijack(); err == nil {
+					_ = conn.Close()
+				}
 			default:
-				_, _ = w.Write(body)
+				out := w
+				if s.cuts.Add(-1) >= 0 {
+					if s.cutWrong {
+						body = append(bytes.Repeat([]byte{'x'}, len(body)/2), body[len(body)/2:]...)
+					}
+					out = &cutWriter{ResponseWriter: w, left: -1, cut: s.markCut}
+				}
+				if s.noRanges {
+					out.Header().Set("Content-Length", strconv.Itoa(len(body)))
+					_, _ = out.Write(body)
+					return
+				}
+				// Ranges are served, as both real sources serve them.
+				http.ServeContent(out, r, "", time.Time{}, bytes.NewReader(body))
 			}
 		}
 	}
@@ -234,6 +282,51 @@ func newServer(t *testing.T, releases []release) *server {
 	s.Server = httptest.NewServer(mux)
 	t.Cleanup(s.Close)
 	return s
+}
+
+func (s *server) markCut() {
+	s.cutMu.Lock()
+	defer s.cutMu.Unlock()
+	s.cutAt = time.Now()
+}
+
+func (s *server) lastCut() time.Time {
+	s.cutMu.Lock()
+	defer s.cutMu.Unlock()
+	return s.cutAt
+}
+
+// cutWriter sends the first half of the body its response announces, whole
+// file or range, then closes the connection, as an unstable connection drops a
+// transfer: the client has the headers and some of the bytes, and an error.
+type cutWriter struct {
+	http.ResponseWriter
+	// left is how many more bytes go out before the cut, -1 until the first
+	// write reads the announced length.
+	left int64
+	// cut is called once the connection is closed.
+	cut func()
+}
+
+func (c *cutWriter) Write(p []byte) (int, error) {
+	if c.left < 0 {
+		n, _ := strconv.ParseInt(c.Header().Get("Content-Length"), 10, 64)
+		c.left = n / 2
+	}
+	if int64(len(p)) > c.left {
+		p = p[:c.left]
+	}
+	n, err := c.ResponseWriter.Write(p)
+	c.left -= int64(n)
+	if err == nil && c.left == 0 {
+		c.ResponseWriter.(http.Flusher).Flush()
+		if conn, _, herr := http.NewResponseController(c.ResponseWriter).Hijack(); herr == nil {
+			_ = conn.Close()
+		}
+		err = errors.New("cut")
+		c.cut()
+	}
+	return n, err
 }
 
 // githubRelease is a release as the Releases API lists it, in GitHub's field
@@ -917,4 +1010,111 @@ func TestPowerShellRefusesAReleaseListItCannotRead(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A download the connection drops partway through is retried, from where it
+// stopped, rather than ending the install: the mirror dropping the transfer
+// twice, the second time a resume of it, must not be the end of it, and the
+// file is finished by a resume rather than fetched again from the start. The
+// mirror alone, so falling back to the next source cannot pass for resuming.
+func TestInstallersRetryADroppedDownload(t *testing.T) {
+	for name, install := range bothInstallers(t) {
+		t.Run(name, func(t *testing.T) {
+			s := newServer(t, ladder)
+			s.cuts.Store(2)
+			s.github = "missing"
+			got := install(t, s)
+			s.rangesMu.Lock()
+			ranges := s.ranges
+			s.rangesMu.Unlock()
+			if got.err != nil || got.version != "v1.1.0" {
+				t.Fatalf("two dropped downloads ended the install: installed %q, err %v, requests' ranges %q:\n%s",
+					got.version, got.err, ranges, got.output)
+			}
+			if len(ranges) != 3 || ranges[0] != "" || !isResume(ranges[1]) || !isResume(ranges[2]) || ranges[1] == ranges[2] {
+				t.Fatalf("the retries did not each resume where the last one stopped: requests' ranges %q", ranges)
+			}
+		})
+	}
+}
+
+// A resume that goes wrong does not end the install or move on from a source
+// that has already sent part of the file: a source that ignores the range, and
+// resumed bytes that miss the digest because the half already downloaded was
+// of something else, start over from nothing; a resume that cannot connect is
+// tried again.
+func TestInstallersRecoverFromAResumeThatGoesWrong(t *testing.T) {
+	for name, install := range bothInstallers(t) {
+		for _, tc := range []struct {
+			name  string
+			setup func(s *server)
+		}{
+			{"the source ignores the range", func(s *server) { s.noRanges = true }},
+			{"the resumed bytes miss the digest", func(s *server) { s.cutWrong = true }},
+			// A source that has sent part of the file is not given up on
+			// because a resume of it could not connect.
+			{"a resume cannot connect", func(s *server) { s.resetFor = 2 * time.Second }},
+		} {
+			t.Run(name+"/"+tc.name, func(t *testing.T) {
+				s := newServer(t, ladder)
+				s.cuts.Store(1)
+				// The mirror alone, so falling back to the next source
+				// cannot pass for starting over.
+				s.github = "missing"
+				tc.setup(s)
+				got := install(t, s)
+				if got.err != nil || got.version != "v1.1.0" {
+					t.Fatalf("installed %q, err %v:\n%s", got.version, got.err, got.output)
+				}
+			})
+		}
+	}
+}
+
+// A mirror that cannot be reached at all is no transfer to resume: the next
+// source is tried at once, with no retry and no warning, rather than after
+// five tries of a source that never answered.
+func TestInstallersMoveOnFromASourceTheyCannotReach(t *testing.T) {
+	closed, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unreachable := "http://" + closed.Addr().String() + "/mirror"
+	_ = closed.Close()
+	for name, install := range bothInstallers(t) {
+		t.Run(name, func(t *testing.T) {
+			s := newServer(t, ladder)
+			got := install(t, s, "DISCOBOX_INSTALL_SOURCES="+unreachable+" "+s.URL+"/github")
+			if got.err != nil || got.version != "v1.1.0" {
+				t.Fatalf("installed %q, err %v:\n%s", got.version, got.err, got.output)
+			}
+			if strings.Contains(got.output, "the download from") {
+				t.Fatalf("a source that never answered was tried again:\n%s", got.output)
+			}
+		})
+	}
+}
+
+// isResume says whether a Range header asks for the rest of a file from
+// somewhere past its start.
+func isResume(r string) bool {
+	return strings.HasPrefix(r, "bytes=") && !strings.HasPrefix(r, "bytes=0-")
+}
+
+// bothInstallers runs the v1.1.0 installer in each language this machine can
+// run, keyed by name, with env added to the fake's.
+func bothInstallers(t *testing.T) map[string]func(t *testing.T, s *server, env ...string) installResult {
+	t.Helper()
+	run := map[string]func(t *testing.T, s *server, env ...string) installResult{}
+	if _, err := exec.LookPath("curl"); err == nil && runtime.GOOS != "windows" {
+		run["install.sh"] = func(t *testing.T, s *server, env ...string) installResult {
+			return runShell(t, s, s.script(t, "v1.1.0", ShellName), env)
+		}
+	}
+	for _, shell := range powerShells(t) {
+		run[filepath.Base(shell)+"/install.ps1"] = func(t *testing.T, s *server, env ...string) installResult {
+			return runPowerShell(t, shell, s, s.script(t, "v1.1.0", PowerShellName), false, env, "")
+		}
+	}
+	return run
 }

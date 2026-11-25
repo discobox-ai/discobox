@@ -60,6 +60,19 @@ flowchart TD
   Windows refusal is that script's alone. The winget manifest's
   `MinimumOSVersion` is the same build, but winget cannot tell editions apart,
   so winget also refuses Server 2019 and 2022, which the script accepts.
+- **A dropped transfer resumes.** Each source gets up to five tries. Once a
+  source has sent part of the file, a failed try (a dropped or stalled
+  transfer, a reconnect that fails) is retried with a `Range` from the bytes
+  on disk. A source that has sent nothing yet, because it cannot be reached or
+  answers with an HTTP error other than a transient 408, 429 or 5xx, ends at
+  once and the next source is tried. A source that ignores or refuses the
+  range, and a resumed file that misses the digest, start over from nothing on
+  the same source before it is judged. install.sh runs its own loop around
+  `curl -C -` rather than `--retry-all-errors` (curl 7.71+); install.ps1 uses
+  `HttpWebRequest`, since `Invoke-WebRequest -Resume` is PowerShell 7's and
+  `curl.exe` is neither on every Windows nor the same program elsewhere. The
+  partial file lives in the run's temporary directory, so a rerun starts over:
+  keeping it would be a new leftover for `discobox admin uninstall`.
 - **Verification** runs `discobox version --client`, checking the installed
   binary without contacting or starting the server.
 - **The server is not part of the install.** Both scripts close by saying what

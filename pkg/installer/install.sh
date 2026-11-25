@@ -438,8 +438,62 @@ newer() {
 		}'
 }
 
+# download saves one URL to a file. Once the source has sent part of the file,
+# a try that fails (a transfer dropped part way, one that stalls under 1 KiB/s
+# for a minute, a reconnect that fails) is tried again, up to five tries in all,
+# resuming from the bytes the file already has, so an unstable connection costs
+# what it dropped rather than the whole file. This is its own loop rather than
+# curl's --retry-all-errors, which curl before 7.71 refuses. A source that has
+# sent nothing yet (it cannot be reached, or answers with an HTTP error, curl's
+# own --retry having retried the transient ones) ends at once, so the next
+# source is tried. A resume the source refuses (22 on a partial file) or
+# ignores (33) starts over from nothing. It sets resumed when the file was
+# finished by a resume.
+download() {
+	rm -f "$2"
+	resumed=
+	tries=0
+	while [ "$tries" -lt 5 ]; do
+		tries=$((tries + 1))
+		have=$(size "$2")
+		if curl -fsL --retry 2 -C - --speed-limit 1024 --speed-time 60 -o "$2" "$1"; then
+			[ "$have" -eq 0 ] || resumed=1
+			return 0
+		else
+			status=$?
+		fi
+		case $status in
+			22 | 33)
+				[ "$have" -gt 0 ] || return 1
+				rm -f "$2"
+				why="could not resume; starting over"
+				;;
+			*)
+				[ "$(size "$2")" -gt 0 ] || return 1
+				why="stopped part way; resuming"
+				;;
+		esac
+		[ "$tries" -lt 5 ] || break
+		warn "the download from $1 $why"
+		sleep "$tries"
+	done
+	return 1
+}
+
+# size prints a file's length in bytes, 0 when it does not exist. wc pads it
+# with spaces on macOS; the arithmetic drops them.
+size() {
+	if [ -e "$1" ]; then
+		echo $(($(wc -c <"$1")))
+	else
+		echo 0
+	fi
+}
+
 # fetch downloads <tag>/<asset> to a file from the first source that has it
-# and, given a digest, whose bytes match it.
+# and, given a digest, whose bytes match it. A resumed file that misses the
+# digest is downloaded whole once more before the source is judged, since a
+# resume joins two responses that need not be of the same file.
 fetch() {
 	from=$sources
 	case $1 in
@@ -448,11 +502,17 @@ fetch() {
 	# shellcheck disable=SC2086 # the list is split on whitespace on purpose
 	for base in $from; do
 		url=$base/$1/$2
-		if curl -fsL --retry 2 -o "$3" "$url"; then
+		again=1
+		while download "$url" "$3"; do
 			[ -n "$4" ] || return 0
 			[ "$(sha256 "$3")" = "$4" ] && return 0
+			if [ -n "$resumed" ] && [ -n "$again" ]; then
+				again=
+				continue
+			fi
 			warn "$url is not the file $release was released with; trying the next source"
-		fi
+			break
+		done
 	done
 	return 1
 }
