@@ -145,14 +145,8 @@ func (m *Message) holds(name, scalar string) bool {
 	return ok && value == scalar
 }
 
-// EscapePointer is a member name as one segment of a JSON pointer (RFC 6901):
-// "~" is "~0" and "/" is "~1".
-func EscapePointer(name string) string {
-	return string(appendPointerSegment(nil, name))
-}
-
-// appendPointerSegment appends name to b as one JSON pointer segment
-// (EscapePointer).
+// appendPointerSegment appends name to b as one segment of a JSON pointer
+// (RFC 6901): "~" is "~0" and "/" is "~1".
 func appendPointerSegment(b []byte, name string) []byte {
 	for i := 0; i < len(name); i++ {
 		switch c := name[i]; c {
