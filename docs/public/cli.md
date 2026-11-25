@@ -784,6 +784,7 @@ discobox admin box create --name NAME [flags]
 | --- | --- | --- | --- |
 | --bind | stringArray | [] | Bind a project secret to the new discobox, as SECRET[:VAR][@ROUTE,...]: the variable it receives the sentinel in (default the secret's name upper-snaked), and routes that narrow where it may be sent; repeat for more. A discobox creating one binds only what it may delegate |
 | --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --cpu-vcpus | float64 | 0 | vCPUs for the discobox, such as 2 or 0.5, overriding its pool's; a provider that does not size a discobox refuses it (0 = the pool's, else the provider's default) |
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
 | --delegate | stringArray | [] | Let the new discobox give a project secret to the discoboxes it leads, as SECRET[@ROUTE,...]; repeat for more. A person's to give |
 | --description | string |  | Discobox description |
@@ -797,6 +798,7 @@ discobox admin box create --name NAME [flags]
 | --harness | string |  | Harness to run, by slug (e.g. codex), name, or ID; defaults to the project default |
 | --help, -h | bool | false | help for create Value when passed without an argument: true. |
 | --home-directory | string |  | User home directory to use inside the discobox |
+| --memory | size |  | Memory for the discobox, such as 8g or 512m, overriding its pool's; a provider that does not size a discobox refuses it (0 = the pool's, else the provider's default) |
 | --model | string |  | Model the harness should use |
 | --model-reasoning-level | string |  | Model reasoning level the harness should use |
 | --model-service-tier | string |  | Model service tier the harness should use |
@@ -2436,11 +2438,11 @@ discobox admin pool create NAME [flags]
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
-| --cpu-vcpus | float64 | 0 | vCPUs for the pool's VM, on providers that size a VM per pool (0 = provider and host default) |
+| --cpu-vcpus | float64 | 0 | On providers that size one VM per pool, the VM's vCPUs, which its discoboxes share; on other providers that size discoboxes, each one's default vCPUs, which its own --cpu-vcpus overrides (0 = the provider's and host's default VM, and no limit on a discobox) |
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
 | --disable-agent-endpoint-tls | bool | false | Reach the pool's discoboxes' agents over plain HTTP instead of TLS; a discobox takes a change when its box is next made (a VM discobox at its next start, a container when it is replaced) Value when passed without an argument: true. |
 | --help, -h | bool | false | help for create Value when passed without an argument: true. |
-| --memory | size |  | Memory for the pool's VM, such as 8g or 512m, on providers that size a VM per pool (0 = provider and host default) |
+| --memory | size |  | On providers that size one VM per pool, the VM's memory, such as 8g or 512m, which its discoboxes share; on other providers that size discoboxes, each one's default memory, which its own --memory overrides (0 = the provider's and host's default VM, and no limit on a discobox) |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --provider | string |  | Backing provider instance, by name or ID (required) |
 | --sandbox-os | string | linux | The OS the pool's discoboxes run: linux, or darwin on a VM provider whose driver boots macOS. It cannot change after the pool is created |
@@ -2698,14 +2700,14 @@ discobox admin pool update POOL [flags]
 | --clear-egress-allow | bool | false | Empty the pool's allow list Value when passed without an argument: true. |
 | --clear-egress-passthrough | bool | false | Empty the pool's passthrough list Value when passed without an argument: true. |
 | --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
-| --cpu-vcpus | float64 | 0 | vCPUs for the pool's VM, on providers that size a VM per pool (0 = provider and host default) |
+| --cpu-vcpus | float64 | 0 | On providers that size one VM per pool, the VM's vCPUs, which its discoboxes share; on other providers that size discoboxes, each one's default vCPUs, which its own --cpu-vcpus overrides (0 = the provider's and host's default VM, and no limit on a discobox) |
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
 | --disable-agent-endpoint-tls | bool | false | Reach the pool's discoboxes' agents over plain HTTP instead of TLS; a discobox takes a change when its box is next made (a VM discobox at its next start, a container when it is replaced) Value when passed without an argument: true. |
 | --egress-allow | stringSlice | [] | Destinations the pool adds to a restricted discobox's allow list (repeatable or comma-separated) |
 | --egress-deny-by-default | bool | false | Restrict the pool's discoboxes to the allow lists of their levels; --egress-deny-by-default=false lifts this level's restriction Value when passed without an argument: true. |
 | --egress-passthrough | stringSlice | [] | Hosts whose HTTPS CONNECT the pool passes through unread instead of intercepting (repeatable or comma-separated) |
 | --help, -h | bool | false | help for update Value when passed without an argument: true. |
-| --memory | size |  | Memory for the pool's VM, such as 8g or 512m, on providers that size a VM per pool (0 = provider and host default) |
+| --memory | size |  | On providers that size one VM per pool, the VM's memory, such as 8g or 512m, which its discoboxes share; on other providers that size discoboxes, each one's default memory, which its own --memory overrides (0 = the provider's and host's default VM, and no limit on a discobox) |
 | --name | string |  | Pool display name |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
@@ -5320,6 +5322,8 @@ its handle. No argument or other run flag may be given beside it:
       {"secret": "github", "delegate": true}
     ],
     "discoboxApi": false,
+    "cpuVcpus": 4,
+    "memory": "8g",
     "name": "Fix the pkg/foo tests",
     "tags": {"ticket": "ENG-12", "wip": ""},
     "description": "Fix the failing tests in pkg/foo",
@@ -5371,6 +5375,7 @@ Examples:
 | --- | --- | --- | --- |
 | --bind | stringArray | [] | Bind a project secret to the new discobox, as SECRET[:VAR][@ROUTE,...]: the variable it receives the sentinel in (default the secret's name upper-snaked), and routes that narrow where it may be sent; or SECRET[:VAR],policy=FILE,NAME=VALUE (repeat policy=FILE to merge files, arguments follow each file). Repeat for more. A discobox creating one binds only what it may delegate |
 | --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --cpu-vcpus | float64 | 0 | vCPUs for the discobox, such as 2 or 0.5, overriding its pool's; a provider that does not size a discobox refuses it (0 = the pool's, else the provider's default) |
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
 | --declared-sources | bool | true | Bring in the sources the repository declares in .discobox/settings.json, using a local checkout beside the source directory when there is one Value when passed without an argument: true. |
 | --delegate | stringArray | [] | Let the new discobox give a project secret to the discoboxes it leads, as SECRET[@ROUTE,...]; repeat for more. A person's to give |
@@ -5385,6 +5390,7 @@ Examples:
 | --include, -i | stringArray | [] | Additional source to bring into the discobox, DIR, URL or GitHub OWNER/REPO, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox where the discobox can hold that path, and is placed under the discobox's working root (/workspace on Linux) where it cannot; either way it is named after itself, so -i ../foo is the source foo |
 | --include-dirty | bool | false | Carry the uncommitted changes in each local source into the discobox, as a snapshot on top of its checked-out commit; without it only committed history goes in. A directory in no Git repository has no commit to start from, and is copied whatever this says Value when passed without an argument: true. |
 | --lend-git-credentials | bool | false | Deprecated: use --git-credentials=lend (false means ask) Value when passed without an argument: true. |
+| --memory | size |  | Memory for the discobox, such as 8g or 512m, overriding its pool's; a provider that does not size a discobox refuses it (0 = the pool's, else the provider's default) |
 | --name | string |  | Name the new discobox from its creation, as "discobox rename" would afterwards: the name it is listed by, not its handle |
 | --no-project-skills | bool | false | Leave the project's skills repositories (discobox admin skills) out of this discobox. Otherwise they are added ahead of any --skills, which win on a skill of the same name Value when passed without an argument: true. |
 | --no-source | bool | false | Create the discobox with nothing checked out in it, in place of SOURCE, so every argument is the prompt; the directory you run in still decides where it is filed and what Git authorship it commits under Value when passed without an argument: true. |

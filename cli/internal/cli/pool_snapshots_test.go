@@ -30,7 +30,7 @@ const reportedSnapshots = `{"held":[` +
 	`{"key":"3f2a91c0e4d1aaaaaaaaaaaa","builtAt":"2026-08-27T11:00:00Z","sizeBytes":3221225472,"boxes":2,` +
 	`"plan":{"base":"sha256:5d1c","bundles":[{"name":"discobox-platform","digest":"sha256:aaaaaaaaaaaaaaaa"},{"name":"discobox-harness-shell","digest":"sha256:bbbbbbbbbbbbbbbb"}],"off":["docker","brew"]}},` +
 	`{"key":"0000000000ffffffffff","builtAt":"2026-08-26T11:00:00Z","boxes":0}],` +
-	`"building":[{"key":"9b9b9b9b9b9b9b9b","requestedAt":"2026-08-27T11:55:00Z","startedAt":"2026-08-27T11:56:00Z","plan":{"base":"sha256:5d1c"}},` +
+	`"building":[{"key":"9b9b9b9b9b9b9b9b","requestedAt":"2026-08-27T11:55:00Z","startedAt":"2026-08-27T11:56:00Z","plan":{"base":"sha256:5d1c","size":{"cpus":4,"memoryBytes":8589934592}}},` +
 	`{"key":"7c7c7c7c7c7c7c7c","requestedAt":"2026-08-27T11:58:00Z","plan":{"base":"sha256:5d1c"}}],` +
 	`"failed":[{"key":"e1e1e1e1e1e1e1e1","failedAt":"2026-08-27T11:30:00Z","retryAfter":"2026-08-27T12:30:00Z","error":"its provisioning failed (status 2): \u001b[31mfeature go failed"}]}`
 
@@ -54,6 +54,7 @@ func TestWritePoolShowsItsSnapshots(t *testing.T) {
 		"3.0GiB, 2 boxes",
 		"(not recorded)",
 		"9b9b9b9b9b9b  building",
+		"base 5d1c size: 4 vCPU,8.0GiB",
 		"7c7c7c7c7c7c  queued",
 		"e1e1e1e1e1e1  failed",
 		`feature go failed`,

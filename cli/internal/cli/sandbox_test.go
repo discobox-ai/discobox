@@ -506,3 +506,35 @@ func TestSandboxChangeSendsAConfigIDExactly(t *testing.T) {
 		t.Fatalf("config = %+v", config)
 	}
 }
+
+// `admin box create --cpu-vcpus` and `--memory` go with the create as the
+// discobox's size, the memory parsed as a pool's is; none given sends none.
+func TestCreateSandboxBodySizesTheDiscobox(t *testing.T) {
+	cmd := (&App{}).newSandboxCreateCommand()
+	if err := cmd.ParseFlags([]string{"--name", "work", "--cpu-vcpus", "0.5", "--memory", "2GiB"}); err != nil {
+		t.Fatalf("parse size flags: %v", err)
+	}
+	var opts sandboxCreateOptions
+	opts.name = "work"
+	opts.cpuVCPUs, _ = cmd.Flags().GetFloat64("cpu-vcpus")
+	if err := opts.memory.Set("2GiB"); err != nil {
+		t.Fatal(err)
+	}
+	if got := cmd.Flags().Lookup("memory").Value.String(); got != "2147483648" {
+		t.Fatalf("--memory 2GiB = %s bytes", got)
+	}
+	body, err := createSandboxBody(context.Background(), opts, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body.Config.CpuVcpus.Or(0) != 0.5 || body.Config.MemoryBytes.Or(0) != 2<<30 {
+		t.Fatalf("size = %v, %v; want 0.5 vCPUs and 2 GiB", body.Config.CpuVcpus, body.Config.MemoryBytes)
+	}
+	body, err = createSandboxBody(context.Background(), sandboxCreateOptions{name: "work"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body.Config.CpuVcpus.Set || body.Config.MemoryBytes.Set {
+		t.Fatalf("unsized create sent %v, %v; want no size", body.Config.CpuVcpus, body.Config.MemoryBytes)
+	}
+}

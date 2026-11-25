@@ -12,6 +12,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/requestprogress"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
@@ -19,6 +20,9 @@ import (
 )
 
 type sandboxCreateOptions struct {
+	// cpuVCPUs and memory are --cpu-vcpus and --memory: the discobox's size.
+	cpuVCPUs             float64
+	memory               byteSizeFlag
 	name                 string
 	description          string
 	poolID               string
@@ -652,6 +656,7 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringArrayVar(&opts.skillDirs, "skills", nil, "Skills to install in the discobox: a directory, whose subdirectories holding a SKILL.md are each copied in as a skill, or a repository, URL or GitHub OWNER/REPO, then [@REF][//PATH], checked out under ~/.discobox/skill-sources with each skill in PATH linked in, so an edit can be pushed back; repeat for more than one. A later directory wins on a skill of the same name, and every one wins over --user-skills, but a linked skill wins over a copied one")
 	cmd.Flags().BoolVar(&opts.noProjectSkills, "no-project-skills", false, "Leave the project's skills repositories (discobox admin skills) out of this discobox. Otherwise they are added ahead of any --skills, which win on a skill of the same name")
 	cmd.Flags().BoolVar(&opts.userSkills, "user-skills", false, "Install your own skills from ~/.claude/skills and ~/.agents/skills in the discobox, before any --skills")
+	addSizeFlags(cmd.Flags(), &opts.cpuVCPUs, &opts.memory)
 	cmd.Flags().BoolVar(&opts.wait, "wait", false, "Wait for discobox to reach running or fail")
 	cmd.Flags().DurationVar(&opts.waitTimeout, "wait-timeout", 2*time.Minute, "Maximum time to wait")
 }
@@ -693,6 +698,7 @@ func createSandboxBody(ctx context.Context, opts sandboxCreateOptions, warn func
 	if opts.discoboxAPI {
 		body.SetDiscoboxApi(apiclientgen.NewOptBool(true))
 	}
+	sandboxcreate.SetCreateSandboxSize(config, opts.cpuVCPUs, opts.memory.bytes)
 	source, err := gitSourceFromCreateOptions(opts)
 	if err != nil {
 		return nil, err
@@ -997,4 +1003,11 @@ func sourceCodeReferences(value string) (apiclientgen.SandboxCreateConfigSourceC
 		return nil, fmt.Errorf("source code references must be valid JSON: %w", err)
 	}
 	return refs, nil
+}
+
+// addSizeFlags adds a discobox's size flags to a command that creates one,
+// spelled and parsed as a pool's are.
+func addSizeFlags(flags *pflag.FlagSet, cpuVCPUs *float64, memory *byteSizeFlag) {
+	flags.Float64Var(cpuVCPUs, "cpu-vcpus", 0, "vCPUs for the discobox, such as 2 or 0.5, overriding its pool's; a provider that does not size a discobox refuses it (0 = the pool's, else the provider's default)")
+	flags.Var(memory, "memory", "Memory for the discobox, such as 8g or 512m, overriding its pool's; a provider that does not size a discobox refuses it (0 = the pool's, else the provider's default)")
 }

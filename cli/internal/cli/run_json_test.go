@@ -471,3 +471,54 @@ func TestRunRefusesAClientConfigItCannotRead(t *testing.T) {
 		t.Fatalf("execute error = %v, want one naming skils and %s", err, configFile)
 	}
 }
+
+// `run --cpu-vcpus` and `--memory`, and --from-json's "cpuVcpus" and
+// "memory", go with the create as the discobox's size, the memory parsed as
+// the pool's flag parses it; a run that gives none sends none, leaving the
+// pool's (ADR 26-11-23-445 §1).
+func TestRunSizesTheDiscobox(t *testing.T) {
+	setHome(t, t.TempDir())
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Chdir(newRunSourceTestRepo(t))
+	for name, tc := range map[string]struct {
+		args       []string
+		stdin      string
+		wantCPU    any
+		wantMemory any
+	}{
+		"flags":    {[]string{"run", "-d", "--no-source", "--cpu-vcpus", "2.5", "--memory", "8g", "-p", "x"}, "", 2.5, float64(8 << 30)},
+		"json":     {[]string{"run", "--from-json"}, `{"noSource": true, "cpuVcpus": 4, "memory": "512m"}`, float64(4), float64(512 << 20)},
+		"none":     {[]string{"run", "-d", "--no-source", "-p", "x"}, "", nil, nil},
+		"cpu only": {[]string{"run", "-d", "--no-source", "--cpu-vcpus", "1", "-p", "x"}, "", float64(1), nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var posted map[string]any
+			server := runJSONServer(t, &posted)
+			cmd := NewRootCommand()
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+			cmd.SetIn(strings.NewReader(tc.stdin))
+			cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1"}, tc.args...))
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+			config := posted["config"].(map[string]any)
+			if config["cpuVcpus"] != tc.wantCPU || config["memoryBytes"] != tc.wantMemory {
+				t.Fatalf("size = %v vCPUs, %v bytes; want %v, %v", config["cpuVcpus"], config["memoryBytes"], tc.wantCPU, tc.wantMemory)
+			}
+		})
+	}
+}
+
+// A memory --from-json cannot read as a size is refused before anything is
+// created.
+func TestRunJSONRefusesAMemoryItCannotRead(t *testing.T) {
+	cmd := NewRootCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(strings.NewReader(`{"noSource": true, "memory": "lots"}`))
+	cmd.SetArgs([]string{"--server", "http://127.0.0.1:1", "--project", "project-1", "run", "--from-json"})
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), `"memory"`) || !strings.Contains(err.Error(), "not a size") {
+		t.Fatalf("err = %v, want the memory refused as no size", err)
+	}
+}
