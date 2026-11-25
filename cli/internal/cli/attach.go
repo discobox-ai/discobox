@@ -110,7 +110,7 @@ draw a window on, attach is raw whether or not the flag was given.`,
 // server, whose answer to a discobox without API access is a refusal that
 // advises turning that access on — the wrong advice here (#1631).
 //
-// Only what names the discobox for certain without the server is recognised:
+// Only what names the discobox for certain without the server is recognized:
 // its full ID (or the hostname's sbx- spelling of it), bare or in a
 // discobox:/// address, or in an address whose server is the one this
 // discobox's own address (DISCOBOX_ADDRESS) names. A short ID could as well be
