@@ -119,26 +119,42 @@ draw a window on, attach is raw whether or not the flag was given.`,
 // as before. Outside a discobox there is no sandbox config, and nothing is
 // refused.
 func (a *App) refuseOwnSandbox(sandboxArg string) error {
+	reference, ok := certainSandboxID(sandboxArg)
+	if !ok || !a.isOwnSandbox(reference) {
+		return nil
+	}
+	return fmt.Errorf("you are already in discobox %s: this terminal is in it; to attach to it, run `%s attach %s` on your own machine", reference, commandName(), reference)
+}
+
+// isOwnSandbox reports whether id is the discobox this CLI runs in. Outside a
+// discobox, or with a sandbox config it cannot read, it is none.
+func (a *App) isOwnSandbox(id string) bool {
+	self, err := a.ownSandboxID()
+	return err == nil && self == id
+}
+
+// certainSandboxID is the full discobox ID sandboxArg names without asking
+// the server, as refuseOwnSandbox reads it, and whether it names one. A
+// malformed address names none here; selectSandbox reports it.
+func certainSandboxID(sandboxArg string) (string, bool) {
 	reference := strings.TrimSpace(sandboxArg)
-	if address, ok, err := endpoint.ParseSandboxAddress(reference); ok {
-		if err != nil {
-			return nil // selectSandbox reports a malformed address
-		}
-		if address.Server != "" {
-			own, isAddress, err := endpoint.ParseSandboxAddress(os.Getenv(endpoint.EnvSandboxAddress))
-			if !isAddress || err != nil || own.Server != address.Server {
-				return nil
-			}
+	address, isAddress, err := endpoint.ParseSandboxAddress(reference)
+	if isAddress {
+		if err != nil || (address.Server != "" && address.Server != ownSandboxServer()) {
+			return "", false
 		}
 		reference = address.Sandbox
 	}
 	reference = idpkg.Canonical(idpkg.PrefixSandbox, reference)
-	if !allFullSandboxIDs([]string{reference}) {
-		return nil
+	return reference, allFullSandboxIDs([]string{reference})
+}
+
+// ownSandboxServer is the server half of this discobox's own address
+// (DISCOBOX_ADDRESS), or empty when it has none.
+func ownSandboxServer() string {
+	own, isAddress, err := endpoint.ParseSandboxAddress(os.Getenv(endpoint.EnvSandboxAddress))
+	if !isAddress || err != nil {
+		return ""
 	}
-	self, err := a.ownSandboxID()
-	if err != nil || self != reference {
-		return nil
-	}
-	return fmt.Errorf("you are already in discobox %s: this terminal is in it; to attach to it, run `%s attach %s` on your own machine", self, commandName(), self)
+	return own.Server
 }

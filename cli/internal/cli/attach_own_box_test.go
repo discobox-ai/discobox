@@ -16,8 +16,8 @@ const ownBoxID = "sbx_d592csswavy7c93c"
 // attachFromBox runs `discobox attach --raw target` as the CLI inside a
 // discobox whose sandbox config is at configPath, against a server that
 // answers every request with the server's refusal of a discobox without API
-// access. It returns the attach's error and what the server was asked.
-func attachFromBox(t *testing.T, configPath, target string) (error, []string) {
+// access. It returns what the server was asked and the attach's error.
+func attachFromBox(t *testing.T, configPath, target string) ([]string, error) {
 	t.Helper()
 	var asked []string
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
@@ -31,7 +31,8 @@ func attachFromBox(t *testing.T, configPath, target string) (error, []string) {
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "attach", "--raw", target})
-	return cmd.Execute(), asked
+	err := cmd.Execute()
+	return asked, err
 }
 
 func ownBoxConfig(t *testing.T) string {
@@ -58,7 +59,7 @@ func TestAttachToTheBoxItRunsInSaysSo(t *testing.T) {
 		"discobox://peer/" + ownBoxID, // its own server's address
 	} {
 		t.Run(target, func(t *testing.T) {
-			err, asked := attachFromBox(t, config, target)
+			asked, err := attachFromBox(t, config, target)
 			if err == nil {
 				t.Fatal("attach to the discobox it runs in succeeded")
 			}
@@ -87,7 +88,7 @@ func TestAttachToAnotherBoxStillAsksTheServer(t *testing.T) {
 		{"outside a discobox", filepath.Join(t.TempDir(), "missing.json"), ownBoxID},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err, asked := attachFromBox(t, tc.config, tc.target)
+			asked, err := attachFromBox(t, tc.config, tc.target)
 			if err == nil || strings.Contains(err.Error(), "already in") {
 				t.Fatalf("attach error = %v, want the server's refusal", err)
 			}
@@ -102,7 +103,7 @@ func TestAttachToAnotherBoxStillAsksTheServer(t *testing.T) {
 // which the attach goes on to reach rather than calling it this one.
 func TestAttachToTheSameIDOnAnotherServerIsNotThisBox(t *testing.T) {
 	t.Setenv("DISCOBOX_ADDRESS", "discobox://peer/"+ownBoxID)
-	err, _ := attachFromBox(t, ownBoxConfig(t), "discobox://other.invalid/"+ownBoxID)
+	_, err := attachFromBox(t, ownBoxConfig(t), "discobox://other.invalid/"+ownBoxID)
 	if err != nil && strings.Contains(err.Error(), "already in") {
 		t.Fatalf("attach error = %q, want it to try the other server", err)
 	}
