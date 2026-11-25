@@ -1,9 +1,10 @@
 # 26-11-24-336 — A provisioning step reports its progress, and the agent counts what the box receives
 
-- **Status**: Proposed (would extend [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
+- **Status**: Accepted (extends [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
   §6's `provision.json` with a running step's progress, and §3's `run` step
   with a channel to report it on)
 - **Date**: 2026-11-24
+  Accepted by the owner by merging #1648, 2026-11-25.
 - **Issue**: [#1572](https://github.com/discobox-ai/discobox/issues/1572)
 - **Relates to**: [26-11-23-004](26-11-23-004-a-snapshot-build-reports-its-progress-and-an-admin-reaches-it-through-its-pool.md)
   §1, which streams `provisionspec.Status` out of a snapshot build, so what
