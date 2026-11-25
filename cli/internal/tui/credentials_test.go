@@ -171,6 +171,24 @@ func TestTheNextRequestKeyWalksTheMarkedRows(t *testing.T) {
 	if hints := hintLine(m.hints()); !strings.Contains(hints, nextRequestKey+" next request") {
 		t.Fatalf("hints = %q, want %s offered while another row is waiting", hints, nextRequestKey)
 	}
+	// The key line is cut from its tail to fit the window, so an offer behind
+	// every action is one nobody sees at an ordinary width.
+	send(t, m, tea.WindowSizeMsg{Width: 120, Height: 30})
+	if !strings.Contains(plainFrame(m), nextRequestKey+" next request") {
+		t.Fatalf("frame at 120 columns does not show %s:\n%s", nextRequestKey, plainFrame(m))
+	}
+	// And on a waiting row while another waits, both compete for a narrower
+	// line: the answer comes first, because it is what the row is marked for.
+	send(t, m, tea.WindowSizeMsg{Width: 110, Height: 30})
+	for i := 0; m.list.current().PendingRequests == 0 && i < 10; i++ {
+		send(t, m, keyPress(nextRequestKey))
+	}
+	frame := plainFrame(m)
+	for _, want := range []string{credentialsKey + " answer request", nextRequestKey + " next request"} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("frame at 110 columns on a waiting row does not show %q:\n%s", want, frame)
+		}
+	}
 	var walked []string
 	for range 3 {
 		send(t, m, keyPress(nextRequestKey))

@@ -4676,16 +4676,26 @@ func (m *Model) hints() []hint {
 			// Only worth saying on a row that has more name than column.
 			out = append(out, says("←→ read the rest of the name"))
 		}
-		// Only the actions the sandboxes under the cursor can actually take:
-		// a key list that offers purge on a running sandbox is a key list you
-		// stop reading.
-		for _, a := range m.actions(m.list.targets()) {
-			if a.enabled {
+		// The line is cut from the tail, so order is priority, and a box
+		// waiting on a person is the most pressing thing it can point at: the
+		// answer on this row first, then the way to the next row waiting, then
+		// everything else this row can do.
+		acts := m.actions(m.list.targets())
+		for _, a := range acts {
+			if a.key == credentialsKey && a.enabled {
 				out = append(out, keyed(a.key, a.key, a.label))
 			}
 		}
 		if m.list.pendingElsewhere() {
 			out = append(out, keyed(nextRequestKey, nextRequestKey, "next request"))
+		}
+		// Only the actions the sandboxes under the cursor can actually take:
+		// a key list that offers purge on a running sandbox is a key list you
+		// stop reading.
+		for _, a := range acts {
+			if a.enabled && a.key != credentialsKey {
+				out = append(out, keyed(a.key, a.key, a.label))
+			}
 		}
 		out = append(out, keyed("Space", " ", "select"), keyed("V", "V", "range"))
 		if m.list.showArchived {
