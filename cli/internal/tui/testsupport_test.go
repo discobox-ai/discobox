@@ -2096,7 +2096,8 @@ func (f *fakeSource) Bindings(_ context.Context, server string, filter BindingFi
 	}
 	var out []SecretBinding
 	for _, b := range f.projectBindings {
-		if filter.SandboxID == "" || (b.TargetKind == BindingSandbox && b.TargetID == filter.SandboxID) {
+		if (filter.SandboxID == "" || (b.TargetKind == BindingSandbox && b.TargetID == filter.SandboxID)) &&
+			(filter.ParentID == "" || b.ParentID == filter.ParentID) {
 			out = append(out, b)
 		}
 	}

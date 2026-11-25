@@ -600,9 +600,13 @@ flowchart LR
   or replaces the box's rules for the credential across all variables.
   Binding losses, route diffs, and shortened lifetimes are shown before
   Accept. Replacement under a lead's delegation remains unavailable.
-- **Rebinding.** A variable the box's own binding holds with another
-  secret takes any saved secret that covers the request: choosing one
-  rebinds the variable (ADR 26-11-19-927, `credential_rebind.go`). The card
+- **Rebinding.** A variable the box's own binding delivers with another
+  secret (`ownDelivers`, the grant the server resolves) takes any saved
+  secret that covers the request: choosing one rebinds the variable (ADR
+  26-11-19-927, `credential_rebind.go`); one a harness config or project
+  delivers, with the box's own addition stacked on it, stays on its secret.
+  The card reads the bindings handed on under the one it replaces too, and
+  counts them. The card
   says the variable moves from one secret to the other, what the old
   binding loses and keeps (`bindingplan.Rebind`), both secrets' routes and
   the sentinel (`bindingplan.KeepsSentinel`), and the approval names the

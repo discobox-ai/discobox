@@ -26,14 +26,20 @@ type rebindPreview struct {
 	plan    bindingplan.Plan
 	byID    map[string]SecretBinding
 	envVar  string
+	// handedOn is how many bindings were handed on under it, on the boxes
+	// it leads.
+	handedOn int
 }
 
-// read fills the preview from bindings, the box's bindings as the approval
-// card reads them; the old secret's are its own.
+// read fills the preview from bindings as the approval card reads them: the
+// box's, and those handed on under the binding holding the variable.
 func (r *rebindPreview) read(bindings []SecretBinding, req CredentialRequest) {
 	r.byID, r.envVar = map[string]SecretBinding{}, variableOf(req)
 	var mine []SecretBinding
 	for _, b := range bindings {
+		if b.ParentID == r.holder.BindingID {
+			r.handedOn++
+		}
 		if b.SecretID != r.holder.SecretID || b.TargetKind != BindingSandbox || b.TargetID != req.SandboxID {
 			continue
 		}
@@ -90,8 +96,12 @@ func (r *rebindPreview) sections(ans requestAnswer) []section {
 	switch {
 	case !r.binding.Delegate:
 		head.lines = append(head.lines, line{text: "keeps nothing: " + r.binding.ID + " only used “" + r.from.Name + "”", tone: toneDim})
+	case r.handedOn == 0:
+		head.lines = append(head.lines, line{text: "keeps its delegation of “" + r.from.Name + "”; nothing is handed on under it"})
+	case r.handedOn == 1:
+		head.lines = append(head.lines, line{text: "keeps its delegation of “" + r.from.Name + "”, and the 1 binding handed on under it"})
 	default:
-		head.lines = append(head.lines, line{text: "keeps its delegation of “" + r.from.Name + "”, and what was handed on under it"})
+		head.lines = append(head.lines, line{text: "keeps its delegation of “" + r.from.Name + "”, and the " + itoa(r.handedOn) + " bindings handed on under it"})
 	}
 	// The old secret's format is unknown when this window cannot read it;
 	// then neither outcome is promised.
@@ -110,4 +120,18 @@ func (r *rebindPreview) sections(ans requestAnswer) []section {
 	return append(out,
 		routesSection("“"+r.from.Name+"” may be sent to", r.from.Routes),
 		routesSection("“"+ans.credential+"” may be sent to", ans.secret.Routes))
+}
+
+// ownDelivers is whether the grant delivering the variable now is one of the
+// box's own bindings, which is what a rebind replaces, as the server resolves
+// it (EffectiveBindings.UseFor): the plain binding when there is one, from
+// whichever level, else the additions, which are always the box's own. held
+// lists the binding delivering the variable first.
+func ownDelivers(held []HeldGrant) bool {
+	for _, grant := range held {
+		if !grant.Adds {
+			return grant.From == BindingSandbox
+		}
+	}
+	return len(held) > 0
 }
