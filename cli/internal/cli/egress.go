@@ -5,9 +5,11 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
 // egressFlags are one level's egress policy as flags (ADR 26-10-01-032): the
@@ -38,16 +40,16 @@ level's hosts; one a discobox created, only its own level's, which a discobox
 may set only to hosts its own passthrough covers. On an update,
 --clear-egress-passthrough empties this level's list.`
 
-func addEgressFlags(cmd *cobra.Command, f *egressFlags, level string) {
-	cmd.Flags().StringSliceVar(&f.allow, "egress-allow", nil, "Destinations "+level+" adds to a restricted discobox's allow list (repeatable or comma-separated)")
-	cmd.Flags().BoolVar(&f.denyByDefault, "egress-deny-by-default", false, "Restrict "+level+"'s discoboxes to the allow lists of their levels; --egress-deny-by-default=false lifts this level's restriction")
-	cmd.Flags().StringSliceVar(&f.passthrough, "egress-passthrough", nil, "Hosts whose HTTPS CONNECT "+level+" passes through unread instead of intercepting (repeatable or comma-separated)")
+func addEgressFlags(flags *pflag.FlagSet, f *egressFlags, level string) {
+	flags.StringSliceVar(&f.allow, "egress-allow", nil, "Destinations "+level+" adds to a restricted discobox's allow list (repeatable or comma-separated)")
+	flags.BoolVar(&f.denyByDefault, "egress-deny-by-default", false, "Restrict "+level+"'s discoboxes to the allow lists of their levels; --egress-deny-by-default=false lifts this level's restriction")
+	flags.StringSliceVar(&f.passthrough, "egress-passthrough", nil, "Hosts whose HTTPS CONNECT "+level+" passes through unread instead of intercepting (repeatable or comma-separated)")
 }
 
 // addEgressUpdateFlags is addEgressFlags on an update, which can also empty
 // the level's lists.
 func addEgressUpdateFlags(cmd *cobra.Command, f *egressFlags, level string) {
-	addEgressFlags(cmd, f, level)
+	addEgressFlags(cmd.Flags(), f, level)
 	addClearFlag(cmd, "egress-allow", "Empty "+level+"'s allow list")
 	addClearFlag(cmd, "egress-passthrough", "Empty "+level+"'s passthrough list")
 }
@@ -56,14 +58,26 @@ func (f *egressFlags) changed(cmd *cobra.Command) bool {
 	return cmd.Flags().Changed("egress-allow") || cmd.Flags().Changed("egress-deny-by-default") || cmd.Flags().Changed("egress-passthrough")
 }
 
-// entries is a list flag as given. An empty entry is refused rather than
-// dropped: emptying a list is its --clear- flag, and an entry that says
-// nothing is more likely a variable that expanded to nothing.
+// entries is a list flag as given, checked by checkedEntries. The way to
+// empty the list is the --clear- flag on an update; a create has none, and
+// leaving the flag out gives no list.
 func entries(cmd *cobra.Command, name string, given []string) ([]string, error) {
 	if !cmd.Flags().Changed(name) {
 		return nil, nil
 	}
-	empty := errors.New("--" + name + ": an entry is empty; --clear-" + name + " empties the list")
+	howToEmpty := "leave --" + name + " out for none"
+	if cmd.Flags().Lookup(clearFlagName(name)) != nil {
+		howToEmpty = "--" + clearFlagName(name) + " empties the list"
+	}
+	return checkedEntries("--"+name, howToEmpty, given)
+}
+
+// checkedEntries is a list as given, by a flag or a --from-json field (what).
+// An empty entry is refused rather than dropped: emptying a list is said
+// another way (howToEmpty), and an entry that says nothing is more likely a
+// variable that expanded to nothing.
+func checkedEntries(what, howToEmpty string, given []string) ([]string, error) {
+	empty := errors.New(what + ": an entry is empty; " + howToEmpty)
 	out := make([]string, 0, len(given))
 	for _, entry := range given {
 		if entry = strings.TrimSpace(entry); entry == "" {
@@ -184,6 +198,18 @@ func egressPolicy(allow []string, deny bool, passthrough []string, sendPassthrou
 		level.Passthrough = apiclientgen.NewOptNilStringArray(trimmedEntries(passthrough))
 	}
 	return level
+}
+
+// windowEgress is a level as the window holds it, and egressLevel the window's
+// back as sent: passthrough goes only when the window has one.
+func windowEgress(level apimodel.EgressPolicy) tui.Egress {
+	allow, _ := level.Allow.Get()
+	passthrough, _ := level.Passthrough.Get()
+	return tui.Egress{DenyByDefault: level.DenyByDefault.Or(false), Allow: allow, Passthrough: passthrough}
+}
+
+func egressLevel(e tui.Egress) apimodel.EgressPolicy {
+	return egressPolicy(e.Allow, e.DenyByDefault, e.Passthrough, e.Passthrough != nil)
 }
 
 func trimmedEntries(list []string) []string {

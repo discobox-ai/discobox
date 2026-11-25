@@ -1028,9 +1028,11 @@ it holds the allow list of each *restricted* client, keyed by client ID. A
 client absent from it is unrestricted; one present reaches only its entries,
 so a present client with no entries reaches nothing. What a sandbox's entry
 is — the merge of its project, pool, harness, and own levels — is decided by
-the control plane; the proxy only enforces it. HTTP requests it denies are
-answered `403`; denied `CONNECT`s and SOCKS connects are refused. All are
-audited as `host denied`.
+the control plane; the proxy only enforces it. HTTP requests and `CONNECT`s it
+denies are answered `403` with a body naming the host (`deniedHostResponse`),
+so a client sees why rather than a closed connection; the `CONNECT`'s
+connection then closes. Denied SOCKS connects are refused. All are audited as
+`host denied`.
 
 [`egress`](egress) is the policy's shared vocabulary: an entry is a domain
 pattern (matched by `egress`'s own domain rule, so `github.com` is that host

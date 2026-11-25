@@ -327,8 +327,9 @@ Global review expectations:
 - A test's stand-in for a real component (a stub CLI, a canned probe answer)
   answers what that component sends, read from its code, never what the code
   under test expects. The live run's first stand-ins had the proxy answer a
-  denied CONNECT with 403, which it never does (it closes the connection),
-  and so passed a check the real proxy would fail.
+  denied CONNECT with 403, which it then never did (it closed the
+  connection), and so passed a check the real proxy would fail. It does
+  answer 403 now; a stand-in follows that change with the proxy's code.
 - A live-run branch keyed on a response header (`x-boxd-proxy`, `server`)
   has a case whose curl stand-in writes that header, CRLF-ended as curl's
   `-D` file is. The stand-in once wrote no headers, so the header branch for

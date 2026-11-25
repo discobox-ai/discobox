@@ -88,7 +88,11 @@ type PromptOptions struct {
 	// DiscoboxAPI lets the new discobox call the discobox API through its
 	// pool (ADR 26-10-27-880 §9).
 	DiscoboxAPI bool
-	Harness     string
+	// Egress is the new discobox's own egress level, set by the create
+	// itself so it holds from the box's first request (--egress-allow,
+	// --egress-deny-by-default and --egress-passthrough). Nil sets none.
+	Egress  *apimodel.EgressPolicy
+	Harness string
 	// IncludeDirty decides what happens to uncommitted work on top of a
 	// local source's checked-out commit. Asking is the frontend's, before it
 	// gets here: `discobox run` settles it from --include-dirty, and the
@@ -193,6 +197,9 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	body.Bindings = opts.Bindings
 	if opts.DiscoboxAPI {
 		body.SetDiscoboxApi(apiclientgen.NewOptBool(true))
+	}
+	if opts.Egress != nil {
+		body.Config.SetEgress(apiclientgen.NewOptEgressPolicy(*opts.Egress))
 	}
 	skillsArgs, err := SplitSkills(opts.SkillDirs)
 	if err != nil {

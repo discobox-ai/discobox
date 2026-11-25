@@ -2,6 +2,7 @@ package cli
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -90,6 +91,33 @@ func TestEgressFlagsRefuseAnEmptyEntry(t *testing.T) {
 	}
 }
 
+// The refusal says how to empty the list with a flag the command has: an
+// update's --clear-, and on a create, which has none, leaving the flag out.
+func TestEgressFlagsSayHowToEmptyWithAFlagTheCommandHas(t *testing.T) {
+	for _, tc := range []struct {
+		update bool
+		want   string
+	}{
+		{update: true, want: "--clear-egress-allow empties the list"},
+		{update: false, want: "leave --egress-allow out for none"},
+	} {
+		var flags egressFlags
+		cmd := &cobra.Command{Use: "level"}
+		if tc.update {
+			addEgressUpdateFlags(cmd, &flags, "the project")
+		} else {
+			addEgressFlags(cmd.Flags(), &flags, "the discobox")
+		}
+		if err := cmd.ParseFlags([]string{"--egress-allow", ""}); err != nil {
+			t.Fatal(err)
+		}
+		_, _, err := flags.create(cmd)
+		if err == nil || !strings.Contains(err.Error(), tc.want) || (!tc.update && strings.Contains(err.Error(), "--clear-")) {
+			t.Fatalf("update=%v: error = %v, want it to say %q", tc.update, err, tc.want)
+		}
+	}
+}
+
 // A level that never named passthrough does not send it, so an update of the
 // allow list still reaches a server that predates passthrough, which refuses
 // a field it does not know (ADR 26-10-31-819 §6).
@@ -110,7 +138,7 @@ func TestEgressFlagsSendPassthroughOnlyWhenItIsThere(t *testing.T) {
 	}
 	var create egressFlags
 	createCmd := &cobra.Command{Use: "create"}
-	addEgressFlags(createCmd, &create, "the discobox")
+	addEgressFlags(createCmd.Flags(), &create, "the discobox")
 	if err := createCmd.ParseFlags([]string{"--egress-allow", "github.com"}); err != nil {
 		t.Fatal(err)
 	}

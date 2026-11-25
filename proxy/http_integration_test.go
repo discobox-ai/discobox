@@ -2294,3 +2294,53 @@ func TestCloseRecordsAnUpgradeItCuts(t *testing.T) {
 		t.Fatalf("upgrade rows = %d, want 1", count)
 	}
 }
+
+// A CONNECT to a host the client's egress denies is answered, not hung up on:
+// the program behind it sees a 403 that says why, as a plain request does.
+func TestHTTPProxyAnswersADeniedConnectWithTheReason(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	dir := t.TempDir()
+	prepared, err := PrepareCertificates(PrepareOptions{
+		Dir:         filepath.Join(dir, "certs"),
+		ProxyURL:    "https://127.0.0.1:0",
+		ServerHosts: []string{"127.0.0.1", "localhost"},
+		ClientIDs:   []string{"sandbox-1"},
+	})
+	if err != nil {
+		t.Fatalf("PrepareCertificates() error = %v", err)
+	}
+	server, err := NewServer(ctx, Config{
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               filepath.Join(dir, "audit.db"),
+		Allowlist:                 AllowlistConfig{Clients: map[string][]string{"sandbox-1": {"only.allowed.example.com"}}},
+	}, prepared.Bundle, nil)
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- server.ListenAndServe() }()
+	defer closeProxyServer(t, server, errCh)()
+	addr := waitForAddr(t, server)
+
+	conn := dialProxyMTLS(ctx, t, addr.String(), prepared.Clients["sandbox-1"])
+	defer func() { _ = conn.Close() }()
+	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatalf("set deadline: %v", err)
+	}
+	if _, err := fmt.Fprint(conn, "CONNECT example.org:443 HTTP/1.1\r\nHost: example.org:443\r\n\r\n"); err != nil {
+		t.Fatalf("write CONNECT: %v", err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: http.MethodConnect})
+	if err != nil {
+		t.Fatalf("read CONNECT response: %v; want a 403 naming the reason, not a closed connection", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden || !strings.Contains(string(body), "denied") {
+		t.Fatalf("CONNECT response = %d %q, want 403 saying the host is denied", resp.StatusCode, body)
+	}
+}

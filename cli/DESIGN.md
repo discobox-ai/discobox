@@ -3312,9 +3312,17 @@ call the discobox API through its pool, acting only on the discoboxes it
 leads (ADR 26-11-03-970; created or adopted). A person sets or clears it on an existing one
 with `admin box update DISCOBOX --discobox-api[=false]`.
 
+`--egress-allow`, `--egress-deny-by-default` and `--egress-passthrough` on both
+creates (`addEgressFlags`) set the new discobox's own egress level in its
+create request, so a restricted box is restricted from its first request
+rather than once an update lands. `run` carries the level to the console's
+create as `RunRequest.Egress`, like `--bind`, and `sandboxcreate` sends it as
+`PromptOptions.Egress`.
+
 `--from-json` (`runJSONRequest`, `run_json.go`) reads the whole request from stdin
 as one object whose fields are the run flags', with bindings as `secret`,
-`envVar`, `routes` and `delegate` and the API flag as `discoboxApi`. It fills the same
+`envVar`, `routes` and `delegate`, the API flag as `discoboxApi`, and the egress
+level as `egress` (`allow`, `denyByDefault`, `passthrough`, as the API writes it). It fills the same
 `runCommandOptions` the flags do, so one validation and one create path serve
 both; it refuses any run flag or word beside it rather than merging two
 answers, forces `-d`, asks nothing (stdin is the request), and prints the

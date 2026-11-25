@@ -231,7 +231,7 @@ discobox's own egress level.
 		},
 	}
 	addCreateFlags(cmd, &opts)
-	addEgressFlags(cmd, &egressOpts, "the discobox")
+	addEgressFlags(cmd.Flags(), &egressOpts, "the discobox")
 	_ = cmd.RegisterFlagCompletionFunc("pool", a.completePools)
 	_ = cmd.RegisterFlagCompletionFunc("harness", a.completeHarnessConfigNames)
 	_ = cmd.MarkFlagRequired("name")

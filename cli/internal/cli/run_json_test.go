@@ -190,6 +190,10 @@ func TestRunJSONRefusesWhatItCannotMean(t *testing.T) {
 		"a delegation's var":     {[]string{"run", "--from-json"}, `{"bindings": [{"secret": "gh", "envVar": "T", "delegate": true}]}`, "names no envVar"},
 		"an invalid tag":         {[]string{"run", "--from-json"}, `{"noSource": true, "tags": {"bad key": "x"}}`, "whitespace"},
 		"an invalid description": {[]string{"run", "--from-json"}, `{"noSource": true, "description": "a\u0007b"}`, "control characters"},
+		"an egress flag beside":  {[]string{"run", "--from-json", "--egress-deny-by-default"}, `{}`, "put --egress-deny-by-default in it"},
+		"an unknown egress part": {[]string{"run", "--from-json"}, `{"egress": {"deny": true}}`, `unknown field "deny"`},
+		"an empty allow entry":   {[]string{"run", "--from-json"}, `{"noSource": true, "egress": {"denyByDefault": true, "allow": ["github.com", " "]}}`, `"egress.allow": an entry is empty`},
+		"an empty passthrough":   {[]string{"run", "--from-json"}, `{"noSource": true, "egress": {"passthrough": [""]}}`, `"egress.passthrough": an entry is empty`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			cmd := NewRootCommand()
@@ -469,5 +473,61 @@ func TestRunRefusesAClientConfigItCannotRead(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "skils") || !strings.Contains(err.Error(), configFile) {
 		t.Fatalf("execute error = %v, want one naming skils and %s", err, configFile)
+	}
+}
+
+// run's egress flags set the new discobox's own level in its create, so it is
+// restricted from its first request rather than once an update lands; one
+// that names none sends no level, and the levels above it decide.
+func TestRunSetsItsOwnEgressInTheCreate(t *testing.T) {
+	for name, tc := range map[string]struct {
+		args  []string
+		stdin string
+		want  map[string]any
+	}{
+		"flags": {
+			args: []string{"run", "-d", "--no-source", "--egress-deny-by-default", "--egress-allow", "github.com,pypi.org", "--egress-allow", "*.example.com", "-p", "x"},
+			want: map[string]any{"denyByDefault": true, "allow": []any{"github.com", "pypi.org", "*.example.com"}},
+		},
+		"flags with passthrough": {
+			args: []string{"run", "-d", "--no-source", "--egress-passthrough", "pinned.example.com", "-p", "x"},
+			want: map[string]any{"denyByDefault": false, "allow": []any{}, "passthrough": []any{"pinned.example.com"}},
+		},
+		"json": {
+			args:  []string{"run", "--from-json"},
+			stdin: `{"noSource": true, "prompt": "x", "egress": {"denyByDefault": true, "allow": ["github.com"]}}`,
+			want:  map[string]any{"denyByDefault": true, "allow": []any{"github.com"}},
+		},
+		"none": {
+			args: []string{"run", "-d", "--no-source", "-p", "x"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			setHome(t, t.TempDir())
+			t.Setenv("XDG_STATE_HOME", t.TempDir())
+			t.Chdir(newRunSourceTestRepo(t))
+			var posted map[string]any
+			server := runJSONServer(t, &posted)
+
+			cmd := NewRootCommand()
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+			cmd.SetIn(strings.NewReader(tc.stdin))
+			cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1"}, tc.args...))
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("execute %v: %v", tc.args, err)
+			}
+			config := posted["config"].(map[string]any)
+			got, sent := config["egress"]
+			if tc.want == nil {
+				if sent {
+					t.Fatalf("egress = %#v, want none sent", got)
+				}
+				return
+			}
+			if !reflect.DeepEqual(got, any(tc.want)) {
+				t.Fatalf("egress = %#v, want %#v", got, tc.want)
+			}
+		})
 	}
 }

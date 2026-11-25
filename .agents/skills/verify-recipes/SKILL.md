@@ -1567,9 +1567,10 @@ a small fake on loopback and watch what the server asks of it.
   `go tool task live-run DRIVER=boxd DRY_RUN=1`, which calls nothing and
   reads no key, and `go test ./test/liverun`, which runs it against
   stand-in `discobox`, `disco-vm` and `curl` commands. A stand-in's answer
-  is copied from what the real component sends (the proxy refuses a denied
-  CONNECT by closing it, and a plain-HTTP request with 403 "blocked by
-  proxy"), never written from what the script expects.
+  is copied from what the real component sends (the proxy answers a denied
+  CONNECT and a denied plain-HTTP request alike with 403 "blocked by proxy:
+  host denied: …", and closes the CONNECT's connection after it), never
+  written from what the script expects.
   The run's own server reaches the provider's API through this box's proxy,
   so one started under `env -i` (the isolated server, above) needs this
   box's `HTTP(S)_PROXY`, `ALL_PROXY`, `NO_PROXY` and `SSL_CERT_FILE` in its

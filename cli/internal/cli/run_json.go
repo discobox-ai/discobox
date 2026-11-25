@@ -26,6 +26,10 @@ type runJSONRequest struct {
 	Bindings []runJSONBinding `json:"bindings"`
 	// DiscoboxAPI is --discobox-api.
 	DiscoboxAPI bool `json:"discoboxApi"`
+	// Egress is --egress-allow, --egress-deny-by-default and
+	// --egress-passthrough: the discobox's own level, as the API's
+	// EgressPolicy writes it.
+	Egress *runJSONEgress `json:"egress"`
 	// Name is --name, the meta name: not the API's config.name, the handle,
 	// which a request cannot set (ADR 26-11-16-207 §6).
 	Name string `json:"name"`
@@ -50,6 +54,33 @@ type runJSONRequest struct {
 	NoSource        bool  `json:"noSource"`
 	IncludeDirty    *bool `json:"includeDirty"`
 	DeclaredSources *bool `json:"declaredSources"`
+}
+
+// runJSONEgress is the discobox's own egress level, field for field the
+// API's: "allow", "denyByDefault" and "passthrough".
+type runJSONEgress struct {
+	Allow         []string `json:"allow"`
+	DenyByDefault bool     `json:"denyByDefault"`
+	Passthrough   []string `json:"passthrough"`
+}
+
+// level is the egress level as the create sends it, each list checked as its
+// flag's is: an empty entry is refused. An empty list is allowed, as a JSON
+// request's way to say none, and passthrough is sent only when given.
+func (e runJSONEgress) level() (apimodel.EgressPolicy, error) {
+	allow, passthrough := e.Allow, e.Passthrough
+	var err error
+	if len(allow) > 0 {
+		if allow, err = checkedEntries(`--from-json: "egress.allow"`, "leave it out or give []", allow); err != nil {
+			return apimodel.EgressPolicy{}, err
+		}
+	}
+	if len(passthrough) > 0 {
+		if passthrough, err = checkedEntries(`--from-json: "egress.passthrough"`, "leave it out or give []", passthrough); err != nil {
+			return apimodel.EgressPolicy{}, err
+		}
+	}
+	return egressPolicy(allow, e.DenyByDefault, passthrough, passthrough != nil), nil
 }
 
 // runJSONBinding is one --bind or --delegate: a project secret, the variable
@@ -96,6 +127,13 @@ func (opts *runCommandOptions) readJSONRequest(cmd *cobra.Command, args []string
 	}
 	opts.bindings = bindings
 	opts.discoboxAPI = req.DiscoboxAPI
+	if req.Egress != nil {
+		level, err := req.Egress.level()
+		if err != nil {
+			return err
+		}
+		opts.egress = &level
+	}
 	opts.prompt.Name = req.Name
 	opts.prompt.Tags = req.Tags
 	opts.prompt.Description = req.Description

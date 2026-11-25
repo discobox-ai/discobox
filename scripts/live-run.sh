@@ -787,7 +787,7 @@ echo "--- egress" >&2
 # The discobox's own level: it may reach the one allowed host, and the
 # harness's own (its model API), and nothing else. It is set only now, so the
 # harness above answered while the box was open: a box made with its level
-# already narrowed (admin box create takes the flags, run does not) would
+# already narrowed (run and admin box create both take the flags) would
 # provision under it, as the plan's first box does from the base, and fail.
 box_narrowed=0
 if dcout out 0 '' admin box update "$box_id" --egress-deny-by-default --egress-allow "$allow_host"; then
@@ -800,8 +800,9 @@ fi
 # login environment (the proxy's variables). Each prints
 # NAME HTTP_CODE CONNECT_CODE CURL_EXIT TIME_CONNECT FIRST_LINE_OF_BODY.
 # Through the proxy a refused host is asked for over plain HTTP, where the
-# proxy answers 403 "blocked by proxy"; a refused CONNECT is only a closed
-# connection (proxy/DESIGN.md), which a network failure looks like too.
+# proxy answers 403 "blocked by proxy". A refused CONNECT is answered 403 as
+# well (proxy/DESIGN.md), but curl reports that as a CONNECT failure rather
+# than a body, so plain HTTP is the probe whose answer reads the same either way.
 # Around it, a fence that drops the connection leaves time_connect 0. boxd's
 # fence accepts it and then refuses: TLS closes at the ClientHello (curl 35),
 # whatever the host. So 192.0.2.1 (TEST-NET-1, where no server answers) is

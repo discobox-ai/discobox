@@ -1298,6 +1298,12 @@ type RunRequest struct {
 	Delegate    []string
 	DiscoboxAPI bool
 
+	// Egress is `--egress-allow`, `--egress-deny-by-default` and
+	// `--egress-passthrough`: the new discobox's own egress level, set by the
+	// create; nil sets none. Like Bind, the window carries it from `discobox
+	// run`'s own request (WithRun).
+	Egress *Egress
+
 	// Name, Description and Tags are `--name`, `--description` and `--tag`:
 	// the discobox's first meta name, description and tags, recorded with it
 	// at create. Like Bind, the window offers no way to give them and
