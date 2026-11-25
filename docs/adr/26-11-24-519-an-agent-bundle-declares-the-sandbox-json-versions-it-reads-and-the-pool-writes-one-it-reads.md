@@ -176,6 +176,20 @@ in this ADR changes that. Revisit only with an `image/v2`.
 - Whether the label is read once per digest and memoised, as manifests are
   (`Cache.manifests`), or each time.
 
+## Amendments
+
+Amended from its implementation's review, before anything shipped against it.
+§2 said an error reading the label fails the render. The pool now reads a
+bundle's config only for an agent layer new to the sandbox: beside the tree,
+`sandbox-config.json` records the value the file holds, an agent layer known
+to read it, and the newest that layer reads, so a routine create or start
+asks no registry. A sandbox whose file was written before that record, and
+whose bundle can no longer be read, gets the legacy value again when its layer
+is the one last placed in it: that agent booted on the legacy file. Without
+this, a box on `manual` pinned to a main build that its registry has pruned
+(after fourteen days) would stop booting at its next create or start, which
+the Consequences rule out. Any other unreadable bundle still fails the render.
+
 ## Alternatives rejected
 
 - **A written skew floor** ("a pool agent writes for agents from the
