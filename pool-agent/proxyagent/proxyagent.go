@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/pooloutbound"
+	"github.com/discobox-ai/discobox/pkg/pprofserve"
 
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
@@ -135,17 +136,17 @@ func SandboxNetworkName(poolID string) string {
 // WriteUnitEnvironment writes the environment file consumed by the proxy
 // systemd unit. It is written to the pool container's own /etc, which is
 // shared with the child systemd namespace.
-func WriteUnitEnvironment(root layout.Root, prefix, controlPlaneURL, projectID, poolID, tunnelURL string) error {
+func WriteUnitEnvironment(root layout.Root, prefix, controlPlaneURL, projectID, poolID, tunnelURL string, profiling bool) error {
 	if err := os.MkdirAll(root.System(filepath.Dir(UnitEnvironmentFile)), 0o755); err != nil {
 		return err
 	}
 	return os.WriteFile(root.System(UnitEnvironmentFile),
-		[]byte(unitEnvironment(prefix, controlPlaneURL, projectID, poolID, tunnelURL)), 0o600)
+		[]byte(unitEnvironment(prefix, controlPlaneURL, projectID, poolID, tunnelURL, profiling)), 0o600)
 }
 
 // unitEnvironment renders the proxy unit's environment. It is separate from the
 // write so its contents can be asserted without touching the container's /etc.
-func unitEnvironment(prefix, controlPlaneURL, projectID, poolID, tunnelURL string) string {
+func unitEnvironment(prefix, controlPlaneURL, projectID, poolID, tunnelURL string, profiling bool) string {
 	content := envHostMountPrefix + "=" + strings.TrimSpace(prefix) + "\n"
 	// The proxy unit resolves the same control-plane URL the agent uses, so both
 	// reach the control plane over whatever transport its scheme names.
@@ -159,6 +160,12 @@ func unitEnvironment(prefix, controlPlaneURL, projectID, poolID, tunnelURL strin
 	// The unit serves the edge's tunnels only for a pool behind one.
 	if url := strings.TrimSpace(tunnelURL); url != "" {
 		content += EnvTunnelURL + "=" + url + "\n"
+	}
+	// Each unit is told its own profiling address, and only on a pool that
+	// asked for profiling (ADR 26-11-24-418 §2): neither reads the bootstrap.
+	if profiling {
+		content += EnvProxyPprofListen + "=" + PprofProxyAddress + "\n"
+		content += EnvMediatorPprofListen + "=" + PprofMediatorAddress + "\n"
 	}
 	// Propagate this process's own proxy-trust environment. It matters when the
 	// pool itself runs inside a Discobox sandbox: the sandbox injects these
@@ -247,6 +254,18 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 	if projectID == "" || poolID == "" {
 		return fmt.Errorf("proxy unit environment names no pool (%s/%s)", envProjectID, envPoolID)
 	}
+	// Before the slow work, so the proxy's startup itself can be profiled; a
+	// pool that asked for profiling and cannot have it does not start its
+	// proxy (ADR 26-11-24-418 §1).
+	pprofConfig, err := UnitPprofConfig(root, projectID, poolID, PprofProxy, EnvProxyPprofListen)
+	if err != nil {
+		return err
+	}
+	_, stopPprof, err := pprofserve.Start(ctx, pprofConfig)
+	if err != nil {
+		return err
+	}
+	defer stopPprof()
 	bundle, err := PrepareBundle(root, projectID, poolID)
 	if err != nil {
 		return fmt.Errorf("prepare proxy certificates: %w", err)

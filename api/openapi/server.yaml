@@ -3279,6 +3279,9 @@ components:
                 disableAgentEndpointTls:
                     description: Reach the pool's sandboxes' agents over plain HTTP instead of TLS the pool's CA issues (ADR 26-10-29-481 §3). Off for a pool made now; on for every pool made before TLS was the default. A change reaches a sandbox when its box is next made - a VM sandbox at its next start, a container when it is replaced.
                     type: boolean
+                profiling:
+                    description: Whether the pool's agent, proxy and BuildKit mediator each serve Go's pprof profiles on the pool's own loopback, which an admin fetches through the pool's agent. Off unless set.
+                    type: boolean
                 cpuVcpus:
                     description: vCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size to the provider's configuration, then the host.
                     format: double
@@ -3544,6 +3547,9 @@ components:
                 disableAgentEndpointTls:
                     description: Reach the pool's sandboxes' agents over plain HTTP instead of TLS the pool's CA issues (ADR 26-10-29-481 §3). Off by default.
                     type: boolean
+                profiling:
+                    description: Have the pool's agent, proxy and BuildKit mediator each serve Go's pprof profiles on the pool's own loopback, for an admin to fetch through the pool's agent. Off by default. A pool whose provider pins an agent bundle from before this setting does not start with it on.
+                    type: boolean
                 cpuVcpus:
                     description: vCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size to the provider's configuration, then the host.
                     format: double
@@ -3592,6 +3598,9 @@ components:
                     type: string
                 disableAgentEndpointTls:
                     description: Changes whether the pool reaches its sandboxes' agents over plain HTTP instead of TLS. The pool's host is placed again with it; a sandbox takes it when its box is next made - a VM sandbox at its next start, a container when it is replaced - and is reached as it was made until then.
+                    type: boolean
+                profiling:
+                    description: Changes whether the pool's agent, proxy and BuildKit mediator serve Go's pprof profiles. The pool's host is placed again with it, which restarts the agent and the proxy; the BuildKit mediator is not restarted, so as not to cut off builds, and takes the change when it next starts. A pool whose provider pins an agent bundle from before this setting does not start with it on.
                     type: boolean
                 cpuVcpus:
                     description: vCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size to the provider's configuration, then the host.

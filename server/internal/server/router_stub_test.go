@@ -733,6 +733,10 @@ func (s *routerTestServices) ListHTTPAudit(context.Context, string, services.HTT
 	return nil, apperrors.NewStatusError(http.StatusNotImplemented, "not implemented")
 }
 
+func (s *routerTestServices) OpenPoolPprof(context.Context, string, string, string, string, int) (*sandbox.PoolProfile, error) {
+	return nil, apperrors.NewStatusError(http.StatusNotImplemented, "not implemented")
+}
+
 func (s *routerTestServices) OpenHTTPAuditArtifact(context.Context, string, string, string, auditid.ExchangeID, string) (*sandbox.HTTPAuditArtifact, error) {
 	return nil, apperrors.NewStatusError(http.StatusNotImplemented, "not implemented")
 }

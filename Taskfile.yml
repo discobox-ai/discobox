@@ -585,6 +585,27 @@ tasks:
       - printf 'user = "pprof:%s"\n' "$(cat '{{.TOKEN_FILE}}')" | curl -fsS -K - -o "{{.OUT}}" "http://{{.PPROF_LISTEN}}/debug/pprof/{{.PROFILE}}{{if eq .PROFILE "profile"}}?seconds={{.SECONDS}}{{end}}"
       - go tool pprof {{.CLI_ARGS}} "{{.OUT}}"
 
+  dev:pool-pprof:
+    desc: "Profile a process of a pool of the running dev server and open it in go tool pprof: PROCESS=agent|proxy|mediator (agent), on POOL (the default pool), a CPU profile of SECONDS (30), PROFILE=trace for SECONDS (1), or PROFILE=heap|goroutine|allocs|block|mutex|threadcreate (`-- -http=:` opens the web UI)"
+    vars:
+      PROCESS: '{{.PROCESS | default "agent"}}'
+      PROFILE: '{{.PROFILE | default "profile"}}'
+      # Unset leaves the CLI's default for the profile: 30s of CPU, 1s of
+      # trace, which stalls the process for as long as it runs.
+      SECONDS: '{{.SECONDS | default ""}}'
+      OUT: '{{.ROOT_DIR}}/.tmp/pprof/pool-{{.PROCESS}}-{{.PROFILE}}.{{if eq .PROFILE "trace"}}trace{{else}}pb.gz{{end}}'
+    preconditions:
+      - sh: test -x "{{.CLI_BINARY}}"
+        msg: "no {{.CLI_BINARY}}: is `task dev` running, or run `go tool task build:cli`"
+    cmds:
+      - mkdir -p "{{.ROOT_DIR}}/.tmp/pprof"
+      # Through the server and the pool's agent, as any pool is profiled
+      # (pool-agent/DESIGN.md "Runtime Observability"): the dev pool is made
+      # with profiling on; an older one is turned on with
+      # `./build/discobox admin pool update <pool> --profiling`.
+      - ./{{.CLI_BINARY}} admin pool pprof {{.POOL}} --process {{.PROCESS}} --profile {{.PROFILE}} {{if .SECONDS}}--seconds {{.SECONDS}}{{end}} --file "{{.OUT}}"
+      - go tool {{if eq .PROFILE "trace"}}trace{{else}}pprof{{end}} {{.CLI_ARGS}} "{{.OUT}}"
+
   dev:server:
     desc: Run discobox-server with watchnbuild hot reload on the local socket
     deps:
@@ -641,6 +662,10 @@ tasks:
       #     DISCOBOX_PPROF_LISTEN=off go tool task dev
       DISCOBOX_PPROF_LISTEN: '{{.DISCOBOX_PPROF_LISTEN | default .DEV_PPROF_LISTEN}}'
       DISCOBOX_PPROF_TOKEN_FILE: '{{.DISCOBOX_PPROF_TOKEN_FILE | default .DEV_PPROF_TOKEN_FILE}}'
+      # The default pool, when a fresh dev server first makes it, serves its
+      # processes' profiles too, for `go tool task dev:pool-pprof`. Once made,
+      # a pool keeps its own setting (`discobox admin pool update --profiling`).
+      DISCOBOX_DEFAULT_POOL_PROFILING: '{{.DISCOBOX_DEFAULT_POOL_PROFILING | default "true"}}'
     cmds:
       - touch .env
       # Through discobox-dev-lock, so a second `task dev` in this checkout says

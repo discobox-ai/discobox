@@ -871,7 +871,10 @@ optional so normal server startup does not require an observability backend.
 
 Go's pprof endpoints are opt-in through `pprofListen`
 (`DISCOBOX_PPROF_LISTEN`): a loopback `host:port`, validated at load, with
-wildcard and other addresses refused, and `off` or empty opening nothing. `Run`
+wildcard and other addresses refused, and `off` or empty opening nothing. The
+listener is [`pkg/pprofserve`](../pkg/pprofserve), which a pool's agent, proxy
+and BuildKit mediator start by the same rules
+([`pool-agent/DESIGN.md#runtime-observability`](../pool-agent/DESIGN.md#runtime-observability)). `Run`
 binds it after the singleton lock, on its own `http.Server` and mux, never on
 the API router or `listenAll`, so no API transport reaches it. Loopback is not
 enough on its own: Docker Desktop forwards `host.docker.internal` to the host's
@@ -885,6 +888,18 @@ local user can read, and opens it in `go tool pprof`. Outside the dev loop,
 set `pprofListen` in `server.yaml`: the environment variable does not reach a
 server the CLI launches as a systemd user unit, which takes only the variables
 the CLI forwards.
+
+A pool's processes are profiled through the server instead
+([ADR 26-11-24-418](../docs/adr/26-11-24-418-a-pool-serves-pprof-on-its-loopback-and-an-admin-fetches-it-through-its-agent.md)).
+`/projects/{projectId}/pools/{poolId}/pprof/{process}/{profile}?seconds=N` is
+hand-wired beside the pool's console and logs, and is a person's as they are.
+The pool service refuses it on a pool with `profiling` off. Otherwise it asks
+the pool's runtime, which mints a `pool:pprof` token, a scope nothing else
+carries, and streams the agent's relay of the profile back. Nothing is kept.
+The body is an attachment with `nosniff`, and a read that fails part way aborts
+the connection. `discobox admin pool pprof` writes it to a file, and
+`task dev:pool-pprof` opens it. The dev loop seeds its default pool with
+`profiling` on (`defaultPoolProfiling`).
 
 ## Intent and Reconcile Flow
 

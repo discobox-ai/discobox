@@ -21,6 +21,9 @@ type poolOptions struct {
 	// disableAgentEndpointTLS has the pool reach its sandboxes' agents over
 	// plain HTTP rather than TLS (ADR 26-10-29-481 §3).
 	disableAgentEndpointTLS bool
+	// profiling has the pool's processes serve Go's pprof profiles (ADR
+	// 26-11-24-418 §2).
+	profiling bool
 	// sandboxOS is the OS a new pool's sandboxes run (ADR 26-11-11-963 §1).
 	sandboxOS string
 }
@@ -38,6 +41,7 @@ func (a *App) newPoolCommand() *cobra.Command {
 	cmd.AddCommand(a.newPoolResourcesCommand())
 	cmd.AddCommand(a.newPoolConsoleCommand())
 	cmd.AddCommand(a.newPoolLogsCommand())
+	cmd.AddCommand(a.newPoolPprofCommand())
 	cmd.AddCommand(a.newPoolGuestImageCommand())
 	return cmd
 }
@@ -136,6 +140,9 @@ time and cannot be moved.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Comm
 		if cmd.Flags().Changed("disable-agent-endpoint-tls") {
 			body.SetDisableAgentEndpointTls(apiclientgen.NewOptBool(opts.disableAgentEndpointTLS))
 		}
+		if cmd.Flags().Changed("profiling") {
+			body.SetProfiling(apiclientgen.NewOptBool(opts.profiling))
+		}
 		if cmd.Flags().Changed("sandbox-os") {
 			body.SetSandboxOs(apiclientgen.NewOptCreatePoolBodySandboxOs(apiclientgen.CreatePoolBodySandboxOs(opts.sandboxOS)))
 		}
@@ -195,6 +202,9 @@ included. A build's own base-image pulls are not filtered by any level.
 		}
 		if cmd.Flags().Changed("disable-agent-endpoint-tls") {
 			body.SetDisableAgentEndpointTls(apiclientgen.NewOptBool(opts.disableAgentEndpointTLS))
+		}
+		if cmd.Flags().Changed("profiling") {
+			body.SetProfiling(apiclientgen.NewOptBool(opts.profiling))
 		}
 		level, ok, err := egressOpts.update(cmd, func() (apimodel.EgressPolicy, error) {
 			res, err := client.GetPool(cmd.Context(), apiclientgen.GetPoolParams{ProjectId: projectID, PoolId: poolID})
@@ -312,6 +322,7 @@ func addPoolAttributeFlags(cmd *cobra.Command, opts *poolOptions) {
 	cmd.Flags().Var(&opts.memory, "memory", "Memory for the pool's VM, such as 8g or 512m, on providers that size a VM per pool (0 = provider and host default)")
 	cmd.Flags().Var(&opts.storage, "storage", "Storage for the pool, such as 100g; no provider accepts it today (0 = unset)")
 	cmd.Flags().BoolVar(&opts.disableAgentEndpointTLS, "disable-agent-endpoint-tls", false, "Reach the pool's discoboxes' agents over plain HTTP instead of TLS; a discobox takes a change when its box is next made (a VM discobox at its next start, a container when it is replaced)")
+	cmd.Flags().BoolVar(&opts.profiling, "profiling", false, "Have the pool's agent, proxy and BuildKit mediator serve Go's pprof profiles on the pool's own loopback, for \"discobox admin pool pprof\" to fetch; a change restarts the agent and proxy, and the BuildKit mediator takes it when it next starts; a pool pinned to an agent bundle from before the setting does not start with it on")
 }
 
 func (a *App) newPoolDeleteCommand() *cobra.Command {

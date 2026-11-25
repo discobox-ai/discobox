@@ -52,6 +52,10 @@ const (
 	// ScopePoolControlPlaneChannel authorizes opening a pool's control-plane
 	// channel (ADR 26-10-30-875 §1).
 	ScopePoolControlPlaneChannel = "pool:control-plane-channel"
+	// ScopePoolPprof authorizes fetching a profile from one of a pool's
+	// processes through its agent's relay (ADR 26-11-24-418 §3). Nothing
+	// else carries it.
+	ScopePoolPprof = "pool:pprof"
 	// ScopeStatusRead authorizes only the sandbox-agent status endpoint, and
 	// ScopeInventoryRead only its inventory endpoint (ADR 26-10-11-657 §1).
 	// They are the two scopes MintSandboxAgentStatusTokens mints, hardcoded

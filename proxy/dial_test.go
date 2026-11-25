@@ -88,6 +88,27 @@ func TestDestinationDialerRefusesTheHostsOwnAddresses(t *testing.T) {
 	_ = conn.Close()
 }
 
+// The pool's profiling listeners are on its loopback (ADR 26-11-24-418 §4):
+// the agent's, the proxy's and the mediator's, proxyagent.PprofAgentAddress
+// and its siblings. A sandbox's egress never reaches them, by name or literal,
+// whether or not anything listens there.
+func TestDestinationDialerRefusesThePoolsProfilingListeners(t *testing.T) {
+	refusing := &destinationDialer{}
+	for _, port := range []string{"17091", "17092", "17093"} {
+		for _, host := range []string{"127.0.0.1", "localhost", "::1", "0.0.0.0"} {
+			addr := net.JoinHostPort(host, port)
+			conn, err := refusing.DialContext(t.Context(), "tcp", addr)
+			if err == nil {
+				_ = conn.Close()
+				t.Fatalf("dial %s was allowed, want the pool's profiling listener refused", addr)
+			}
+			if !errors.Is(err, errOwnLoopback) {
+				t.Fatalf("dial %s error = %v, want errOwnLoopback", addr, err)
+			}
+		}
+	}
+}
+
 func TestProxyDialAddressAddsTheSchemesDefaultPort(t *testing.T) {
 	for raw, want := range map[string]string{
 		"http://127.0.0.1:17008": "127.0.0.1:17008",

@@ -37,7 +37,12 @@ flowchart LR
   sandboxes' agents over TLS unless it sets `disableAgentEndpointTls`, at
   create or later (ADR 26-10-29-481 §3); it is in the manifest, so the
   reconcile places the pool's host again with it, and each sandbox takes it
-  when its box is next made.
+  when its box is next made. `profiling` is the same kind of setting, off
+  unless set: the placed bootstrap carries it, so the pool's agent and proxy restart
+  with it, and its BuildKit mediator takes it at its next start
+  ([ADR 26-11-24-418](../../../../docs/adr/26-11-24-418-a-pool-serves-pprof-on-its-loopback-and-an-admin-fetches-it-through-its-agent.md)
+  §2). `OpenPoolPprof` refuses a pool with it off, and otherwise fetches a
+  profile through the pool's runtime without reconciling the pool.
   `SetDefaultPool`/`UnsetDefaultPool` point the project's `DefaultPoolID` at a
   pool or clear it (unset rejects a pool that is not the default). Delete
   requires the pool to be empty of sandboxes (assignment is immutable, so

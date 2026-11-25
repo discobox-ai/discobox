@@ -26,6 +26,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/poolassets"
 	"github.com/discobox-ai/discobox/pkg/poolauth"
+	"github.com/discobox-ai/discobox/pkg/pprofserve"
 	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/pool-agent/assetcache"
 	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
@@ -73,6 +74,14 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 			return err
 		}
 	}
+	// The agent's own profiling listener, on a pool that asked for one (ADR
+	// 26-11-24-418 §2). After the trees, which hold its token; before the
+	// slow work, so the agent's startup itself can be profiled.
+	_, stopPprof, err := pprofserve.Start(ctx, agentPprofConfig(root, bootstrap))
+	if err != nil {
+		return err
+	}
+	defer stopPprof()
 	// Publish the host-mount prefix for the proxy systemd unit, then prepare the
 	// proxy certificate bundle before the proxy unit starts so it and the
 	// per-sandbox client certificates share a consistent CA without racing on
@@ -85,7 +94,7 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	if err := proxyagent.WriteUnitEnvironment(root, bootstrap.HostMountPrefix, bootstrap.ControlPlaneURL, bootstrap.ProjectID, bootstrap.PoolID, hop.tunnelURL); err != nil {
+	if err := proxyagent.WriteUnitEnvironment(root, bootstrap.HostMountPrefix, bootstrap.ControlPlaneURL, bootstrap.ProjectID, bootstrap.PoolID, hop.tunnelURL, bootstrap.Profiling); err != nil {
 		return err
 	}
 	bundle, err := proxyagent.PrepareBundle(root, bootstrap.ProjectID, bootstrap.PoolID)
@@ -699,7 +708,22 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 		AssetListener:         assetListener,
 		Assets:                assetHandler,
 		Tunnels:               tunnels,
+		Pprof:                 pprofTargets(root, bootstrap),
 	})
+}
+
+// pprofTargets is where each of the pool's processes serves its profiles, on
+// a pool with profiling on, for the relay; nothing on one with it off.
+func pprofTargets(root layout.Root, bootstrap Bootstrap) map[string]poolserver.PprofTarget {
+	if !bootstrap.Profiling {
+		return nil
+	}
+	targets := map[string]poolserver.PprofTarget{}
+	for _, process := range []string{proxyagent.PprofAgent, proxyagent.PprofProxy, proxyagent.PprofMediator} {
+		address, _ := proxyagent.PprofAddress(process)
+		targets[process] = poolserver.PprofTarget{Address: address, TokenFile: root.PoolPprofToken(bootstrap.ProjectID, bootstrap.PoolID, process)}
+	}
+	return targets
 }
 
 func serverRegistration(identity *Identity) *poolserver.Registration {
@@ -791,6 +815,17 @@ func RunBuildkitMediator(ctx context.Context, logger *slog.Logger) error {
 	if projectID == "" || poolID == "" {
 		return fmt.Errorf("mediator unit environment names no pool")
 	}
+	// The mediator's own profiling listener, which the agent's relay reaches
+	// it on (ADR 26-11-24-418 §§1–2).
+	pprofConfig, err := proxyagent.UnitPprofConfig(layout.Container(), projectID, poolID, proxyagent.PprofMediator, proxyagent.EnvMediatorPprofListen)
+	if err != nil {
+		return err
+	}
+	_, stopPprof, err := pprofserve.Start(ctx, pprofConfig)
+	if err != nil {
+		return err
+	}
+	defer stopPprof()
 	bundle, err := proxyagent.PrepareBundle(layout.Container(), projectID, poolID)
 	if err != nil {
 		return fmt.Errorf("prepare mediator certificates: %w", err)
@@ -912,4 +947,14 @@ func sandboxStartedFrom(from *sandboxruntime.StartedFrom) *SandboxStartedFrom {
 	default:
 		return &SandboxStartedFrom{From: "snapshot", Snapshot: from.Snapshot}
 	}
+}
+
+// agentPprofConfig is the agent's own profiling listener: its fixed loopback
+// address on a pool with profiling on, and nothing otherwise.
+func agentPprofConfig(root layout.Root, bootstrap Bootstrap) pprofserve.Config {
+	addr := ""
+	if bootstrap.Profiling {
+		addr = proxyagent.PprofAgentAddress
+	}
+	return proxyagent.PprofConfig(root, bootstrap.ProjectID, bootstrap.PoolID, proxyagent.PprofAgent, "profiling", addr)
 }

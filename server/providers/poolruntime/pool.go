@@ -72,6 +72,9 @@ func (m *poolMaker) Bootstrap(ctx context.Context) (poolagent.Bootstrap, error) 
 		// How the pool reaches its sandboxes' agents, which the agent tells
 		// each sandbox (ADR 26-10-29-481 §3).
 		DisableAgentEndpointTLS: m.pool.DisableAgentEndpointTLS,
+		// Whether the pool's processes serve pprof on its loopback (ADR
+		// 26-11-24-418 §2).
+		Profiling: m.pool.Profiling,
 	}
 	// The OS the pool named for its sandboxes, which its agent declares on
 	// its own architecture (ADR 26-11-11-963 §1). Linux is left unnamed: the

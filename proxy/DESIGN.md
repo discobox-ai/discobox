@@ -13,6 +13,13 @@ configuration and certificate material contracts without depending on server
 internals. It has no logger of its own: the datapath, cache, audit writer, and
 retention sweep report through OpenTelemetry spans (`proxy.*`).
 
+The process that runs it, the pool's proxy unit, can also be profiled: on a
+pool with profiling on it serves Go's pprof profiles on its own loopback
+listener, which the pool agent relays
+([`pool-agent/DESIGN.md#runtime-observability`](../pool-agent/DESIGN.md#runtime-observability)).
+The proxy refuses that loopback as a sandbox's destination, as it does all of
+the pool's own loopback (`errOwnLoopback`).
+
 ## Architecture
 
 ```mermaid

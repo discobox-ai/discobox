@@ -31,7 +31,7 @@ from the in-sandbox `sandbox-agent` API.
 | `execidentity` | The `SysProcAttr` that runs a subprocess as a given uid/gid. |
 | `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MachineSandboxRuntime`, a machine pool's, see [Machine Sandboxes](#machine-sandboxes); `MemorySandboxRuntime` for tests). What does not depend on what a sandbox runs as is `sandboxCore`, which both real runtimes embed: the per-sandbox records in its tree, the runtime-config document and its delivery, the power lock and boot mark, the state and progress sinks, sources' settling, proxy policy staging and the credentials broker's environment (`publishCredentialEnvironment`, from the pool's file-secrets record), the Git cache and the agent layer's extraction. It asks the runtime it is embedded in, through the unexported `boxes` interface, only what that runtime alone knows: how to find, reach, wait for and rebuild a sandbox's box. `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power (a delete also taking the sandbox's audit trail from the proxy, through the `AuditPurger` `sandboxCore` holds), the durable tree, origin paths, how the pool reaches a sandbox ([Reaching a Sandbox](#reaching-a-sandbox)), the state channel, what its own store holds of the pool's disk (`DiskUsage`), the pool's snapshots as its resource report carries them (`Snapshots`, [Reporting](#reporting)), and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the base image the sandbox's container runs, with the agent it is pinned to bound read-only ([Delivering the Agent](#delivering-the-agent)) — the pins the control plane sends with the export, recorded as a create's are, since an archived sandbox may have been pinned since its last create — as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129) — a bare repository made for the sandbox, or its namespaces of the Git cache written out as repositories for the length of the export. Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key), records which Git cache each cache-delivered source's namespace is in (`origin.go`, `source-caches.json`), holds the pool's `gitcache.Store` (`Runtime.GitCache`), and sweeps it from `WatchSandboxVolumes`; it binds no origin into a sandbox and runs no git in its checkout — the sandbox clones its own sources, and the runtime settles them (`sources.go`; see [Sources](#sources)). It starts a delivered sandbox from a snapshot of its plan when it has one, and builds one when it does not ([Snapshots](#snapshots)). In-sandbox path wiring for the primary volumes is delegated to the sandbox agent's `discobox-wire.service` (ADR 0007, ADR 26-10-10-767); the per-source data mount already lands at its final runtime-owned path. |
 | `dnsforward` | The pool's DNS-over-TLS server for its sandboxes: each framed query answered by the pool container's own resolver, connections capped per sandbox by client-certificate identity. Run by the proxy unit. See [Sandbox DNS](#sandbox-dns). |
-| `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material for the runtime-config document and the pool endpoints the bootstrap names, the sentinel resolver, the sandbox-facing agent credentials endpoint (ADR 0031) with a sandbox's credential environment and its read of its own egress audit (ADR 26-10-02-678), route checking for every sentinel the proxy swaps (ADR 26-10-02-924), the discobox API gate (ADR 0140), the origins and assets hosts the proxy forwards to the agent (`origins.go`, ADR 26-10-08-561; `assets.go`, ADR 26-10-16-423 §13), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). |
+| `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material for the runtime-config document and the pool endpoints the bootstrap names, the sentinel resolver, the sandbox-facing agent credentials endpoint (ADR 0031) with a sandbox's credential environment and its read of its own egress audit (ADR 26-10-02-678), route checking for every sentinel the proxy swaps (ADR 26-10-02-924), the discobox API gate (ADR 0140), the origins and assets hosts the proxy forwards to the agent (`origins.go`, ADR 26-10-08-561; `assets.go`, ADR 26-10-16-423 §13), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). Also the pool's profiling addresses, the variables that tell the two units theirs, and each process's listener (`pprof.go`; see [Runtime Observability](#runtime-observability)). |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
 | `cmd/discobox-pool-runc` | The pool's runc wrapper, installed as `runc` ahead of BuildKit's own. Injects MITM trust and the per-build egress hooks into each build step's OCI spec. |
 | `systemd` | Linux/systemd child pid namespace startup and shutdown, with non-Linux stubs, and `NotifyReady` (`sd_notify` for a Type=notify unit). |
@@ -1534,6 +1534,71 @@ proxy's loopback control API, with a token it signs itself.
   (`reapSandbox`): a sandbox the control plane stopped holding is not the
   owner's word that its data should go, and its trail is left to the proxy's
   age sweep and budget.
+
+## Runtime Observability
+
+A pool's three long-lived processes can be profiled as the server is
+([`server/DESIGN.md#runtime-observability`](../server/DESIGN.md#runtime-observability);
+[ADR 26-11-24-418](../docs/adr/26-11-24-418-a-pool-serves-pprof-on-its-loopback-and-an-admin-fetches-it-through-its-agent.md)).
+Each starts one [`pkg/pprofserve`](../pkg/pprofserve) listener, by the same
+rules as the server's: loopback checked as written and as bound, its own
+`http.Server` and mux, a fresh token per start, no write timeout, and a bind
+failure failing the process's start.
+
+```mermaid
+flowchart LR
+  admin["discobox admin pool pprof"] --> server["server: /pools/{pool}/pprof/{process}/{profile}"]
+  server -- "pool:pprof token" --> relay["agent relay (its router)"]
+  relay -- "token file, basic auth" --> agent["agent 127.0.0.1:17091"]
+  relay --> proxy["proxy unit 127.0.0.1:17092"]
+  relay --> mediator["mediator unit 127.0.0.1:17093"]
+```
+
+- **One pool setting, fixed addresses.** `Bootstrap.Profiling` is the pool's
+  `profiling` field, off unless set, and changing it places the host again.
+  On a profiled pool the agent serves on `proxyagent.PprofAgentAddress`, and
+  writes `DISCOBOX_PROXY_PPROF_LISTEN` and `DISCOBOX_MEDIATOR_PPROF_LISTEN`
+  into `proxy.env` for the two units. Neither unit reads the bootstrap. The
+  addresses are constants, not settings: the pool's loopback is its own, and
+  the relay finds each process by its fixed address. A change restarts the
+  agent and proxy (`bundle.BootstrapUnits`). The mediator is not restarted,
+  since that drains the pool's builds ([Pool-Shared Builds](#pool-shared-builds)),
+  so it takes the change at its next start. Until then the relay answers that
+  it is not serving profiles, or, once profiling is off, refuses to reach it
+  while its listener still serves on loopback behind its token.
+- **An older agent refuses it.** The field is left out of the bootstrap when
+  off, so an agent from before it still starts. One from before it that is
+  told profiling is on refuses its bootstrap (`DisallowUnknownFields`), so a
+  pool whose provider pins or overrides an agent bundle that old does not come
+  up until profiling is turned off again. A pool on the server's own bundle
+  gets an agent that reads it.
+- **Tokens in the pool's identity directory.** Each process writes its own
+  token to `layout.Root.PoolPprofToken` (`pprof-<process>.token`, 0600, root's)
+  on start and removes it on stop. The identity tree is never mounted into a
+  sandbox.
+- **The relay is the only thing on the router.** `pprof_handlers.go` answers
+  `GET /api/project/{p}/pool/{p}/pprof/{process}/{profile}` for a token with
+  `pool:pprof`, which nothing else carries. It reads the process's token,
+  fetches `/debug/pprof/<profile>` from its address with no proxy and no
+  timeout but the request's, and relays the status, the type and the bytes
+  unchanged. The agent's own profile is fetched the same way. The pprof
+  handlers are never on this router, the channel or the tunnel. Its refusals
+  are problem+json: 404 for a pool with profiling off, a process or a profile
+  it does not serve, and 502 for a process that wrote no token or does not
+  answer. The control plane tells these from the text/plain 404 an older
+  agent's router answers.
+- **The token is kept even though no sandbox reaches the pool's loopback.** A
+  Docker pool's sandboxes are sibling containers in network namespaces of
+  their own, a VM pool's are the same inside its VM, and a machine pool's
+  sandboxes are machines. A sandbox's egress is refused the pool's own
+  loopback by the proxy (`errOwnLoopback`, tested for 17091–17093). No port
+  forward in this repository maps onto these ports: a Docker pool publishes
+  only its agent port, and a VM guest's vsock services are the Docker socket
+  and lifecycle splices. A relay or forward added later could still reach
+  them, and a profile shows every goroutine's stack and can stall the process.
+- **A wedged agent can't relay its own profile.** `admin pool console`, on a
+  pool that has one, reaches the listener from the pool's namespace with the
+  token.
 
 ## Worker-Local HTTP Server
 

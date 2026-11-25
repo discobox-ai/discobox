@@ -2442,6 +2442,7 @@ discobox admin pool create NAME [flags]
 | --help, -h | bool | false | help for create Value when passed without an argument: true. |
 | --memory | size |  | Memory for the pool's VM, such as 8g or 512m, on providers that size a VM per pool (0 = provider and host default) |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --profiling | bool | false | Have the pool's agent, proxy and BuildKit mediator serve Go's pprof profiles on the pool's own loopback, for "discobox admin pool pprof" to fetch; a change restarts the agent and proxy, and the BuildKit mediator takes it when it next starts; a pool pinned to an agent bundle from before the setting does not start with it on Value when passed without an argument: true. |
 | --provider | string |  | Backing provider instance, by name or ID (required) |
 | --sandbox-os | string | linux | The OS the pool's discoboxes run: linux, or darwin on a VM provider whose driver boots macOS. It cannot change after the pool is created |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
@@ -2533,6 +2534,58 @@ Aliases: list.
 | --help, -h | bool | false | help for ls Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --quiet, -q | bool | false | Only display resource IDs Value when passed without an argument: true. |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
+## discobox admin pool pprof
+
+~~~~text
+Take a Go pprof profile of one of a pool's processes and write it to a file.
+
+A pool runs three long-lived processes: its agent, its proxy (egress and DNS),
+and its BuildKit mediator. On a pool with profiling on (pool create or update
+--profiling), each serves Go's profiles on the pool's own loopback, and the
+pool's agent fetches the one asked for. Nothing on the pool is reached any
+other way, and nothing is kept on the server.
+
+--profile names what to take:
+
+  profile       CPU, sampled for --seconds (default 30)
+  trace         execution trace, for --seconds (default 1)
+  heap          live heap
+  allocs        every allocation since start
+  goroutine     every goroutine's stack
+  block         where goroutines block on synchronization
+  mutex         where mutex holders keep others waiting
+  threadcreate  where OS threads are created
+
+The file opens with `go tool pprof FILE`, or a trace with `go tool trace FILE`.
+
+Without POOL the project's default pool is used.
+~~~~
+
+```text
+discobox admin pool pprof [POOL] --process agent|proxy|mediator [flags]
+```
+
+Examples:
+
+```text
+  discobox admin pool pprof --process proxy
+  discobox admin pool pprof --process agent --profile heap -f agent-heap.pb.gz
+  discobox admin pool pprof pool_01hq --process mediator --profile goroutine
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --file, -f | string |  | File to write the profile to, or - for stdout (default &lt;process&gt;-&lt;profile&gt;.pb.gz, or &lt;process&gt;.trace for a trace) |
+| --help, -h | bool | false | help for pprof Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --process | string |  | The process to profile: agent, proxy or mediator |
+| --profile | string | profile | What to take: profile (CPU), trace, heap, allocs, goroutine, block, mutex or threadcreate |
+| --seconds | int | 0 | How long a CPU profile or trace samples (the process's default when unset: 30 for a CPU profile, 1 for a trace) |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 
@@ -2708,6 +2761,7 @@ discobox admin pool update POOL [flags]
 | --memory | size |  | Memory for the pool's VM, such as 8g or 512m, on providers that size a VM per pool (0 = provider and host default) |
 | --name | string |  | Pool display name |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --profiling | bool | false | Have the pool's agent, proxy and BuildKit mediator serve Go's pprof profiles on the pool's own loopback, for "discobox admin pool pprof" to fetch; a change restarts the agent and proxy, and the BuildKit mediator takes it when it next starts; a pool pinned to an agent bundle from before the setting does not start with it on Value when passed without an argument: true. |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --storage | size |  | Storage for the pool, such as 100g; no provider accepts it today (0 = unset) |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |

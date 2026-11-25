@@ -560,6 +560,14 @@ type HTTPAuditExchangeDetail struct {
 	StreamDroppedBytes  int64  `json:"streamDroppedBytes"`
 }
 
+// PoolProfile is a profile one of a pool's processes served, as its agent
+// relayed it. The caller closes Body, which holds the transport it is read
+// over.
+type PoolProfile struct {
+	Body        io.ReadCloser
+	ContentType string
+}
+
 // PoolRuntime is the provider surface for a pool's own runtime host: the pool
 // is its own runtime host, so these converge and operate one container/VM/pod.
 // The caller owns pool lifecycle persistence and job semantics. RepairPool is
@@ -590,6 +598,13 @@ type PoolRuntime interface {
 	// sandboxID when it is set. A row outside that scope, or with no such
 	// artifact, is ErrNotFound.
 	OpenHTTPAuditArtifact(ctx context.Context, pool *model.Pool, sandboxID string, id auditid.ExchangeID, artifact string) (*HTTPAuditArtifact, error)
+	// OpenPprof fetches one profile from one of the pool's processes through
+	// its agent's relay (ADR 26-11-24-418 §3): process is agent, proxy or
+	// mediator, profile a name the standard pprof set serves, and seconds what
+	// a CPU profile or trace samples, zero leaving the process's default. Like
+	// the audit reads it never reconciles the pool. An agent too old to relay
+	// is ErrPoolAgentUnsupported; the agent's own refusals keep their status.
+	OpenPprof(ctx context.Context, pool *model.Pool, process, profile string, seconds int) (*PoolProfile, error)
 	// ListDNSAudit reads the DNS queries the pool answered for its sandboxes,
 	// newest first, through the pool agent, narrowed as ListHTTPAudit is. An
 	// agent too old to have the operation is ErrPoolAgentUnsupported.

@@ -415,6 +415,21 @@ func (p *Provider) GetHTTPAudit(ctx context.Context, pool *model.Pool, sandboxID
 	return client.GetHTTPAudit(ctx, pool.ProjectID, sandboxID, id)
 }
 
+// OpenPprof fetches a profile from one of the pool's processes through the
+// pool agent's relay. Like the audit reads it reaches the agent without
+// recovery: profiling a pool must not reconcile it.
+func (p *Provider) OpenPprof(ctx context.Context, pool *model.Pool, process, profile string, seconds int) (*sandbox.PoolProfile, error) {
+	if pool == nil {
+		return nil, fmt.Errorf("pool is required")
+	}
+	lease, err := p.runtimeProvider.AcquirePoolAgentClient(ctx, pool)
+	if err != nil {
+		return nil, err
+	}
+	client := newPoolAgentClient(pool, p.manager, lease)
+	return client.OpenPprof(ctx, pool.ProjectID, process, profile, seconds)
+}
+
 // OpenHTTPAuditArtifact streams a recorded body or upgraded stream through the
 // pool agent. Like ListHTTPAudit it reaches the agent without recovery: a read
 // must not reconcile the pool it reads.

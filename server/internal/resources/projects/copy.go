@@ -223,6 +223,8 @@ func (s *Service) copyPools(ctx context.Context, source *model.Project, project 
 			StorageBytes:       serverapi.NewOptInt64(sourcePool.StorageBytes),
 			// A copy reaches its sandboxes' agents as the pool it copies does.
 			DisableAgentEndpointTls: serverapi.NewOptBool(sourcePool.DisableAgentEndpointTLS),
+			// And is profiled as it is.
+			Profiling: serverapi.NewOptBool(sourcePool.Profiling),
 			// A copy's sandboxes run the OS the pool's do; one from before
 			// pools named theirs is linux, which the copy names.
 			SandboxOs: serverapi.NewOptCreatePoolBodySandboxOs(serverapi.CreatePoolBodySandboxOs(cmp.Or(sourcePool.SandboxOS, platform.Linux))),

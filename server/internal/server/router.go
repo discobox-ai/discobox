@@ -126,6 +126,10 @@ type AppOptions struct {
 	// package default is the production answer. See config.Config.
 	ArchiveRetention time.Duration
 
+	// DefaultPoolProfiling makes the default pool, when it is first seeded,
+	// with profiling on. See config.Config.
+	DefaultPoolProfiling bool
+
 	// ConfiguredGateways is the server configuration file's gateways
 	// (ADR 26-10-17-271).
 	ConfiguredGateways gateways.Configured
@@ -158,6 +162,7 @@ func NewRouter(svc services.Services) (*chi.Mux, error) {
 	registerPoolConsoleRoutes(router, svc.Pools)
 	registerPoolLogsRoutes(router, svc.Pools)
 	registerPoolHTTPAuditRoutes(router, svc.Pools)
+	registerPoolPprofRoutes(router, svc.Pools)
 	registerPoolGuestImageRoutes(router, svc.Pools)
 	generated, err := handlers.NewServer(svc)
 	if err != nil {
@@ -234,6 +239,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, opts AppOptions) (*ch
 		ControlPlaneStreams:            controlPlaneStreams,
 		ListenEndpoints:                opts.ListenEndpoints,
 		ArchiveRetention:               opts.ArchiveRetention,
+		DefaultPoolProfiling:           opts.DefaultPoolProfiling,
 		ServerPeerID:                   addressPeerID,
 		ConfiguredGateways:             opts.ConfiguredGateways,
 		ProviderEndpoints:              opts.ProviderEndpoints,
@@ -308,6 +314,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, opts AppOptions) (*ch
 	registerPoolConsoleRoutes(router, appServices)
 	registerPoolLogsRoutes(router, appServices)
 	registerPoolHTTPAuditRoutes(router, appServices)
+	registerPoolPprofRoutes(router, appServices)
 	registerPoolGuestImageRoutes(router, appServices)
 	generated, err := handlers.NewServer(svc)
 	if err != nil {

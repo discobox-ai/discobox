@@ -19,6 +19,7 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 	"github.com/discobox-ai/discobox/pkg/imagecache"
+	"github.com/discobox-ai/discobox/pkg/pprofserve"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/auth/discobot"
 	"github.com/discobox-ai/discobox/server/internal/config"
@@ -82,7 +83,12 @@ func Run(ctx context.Context) error {
 	defer releaseSingleton()
 	// After the lock, so an incumbent on this data directory has let go of the
 	// same address; before the slow work, so startup itself can be profiled.
-	_, stopPprof, err := startPprof(ctx, cfg.PprofListen, cfg.PprofTokenFile)
+	_, stopPprof, err := pprofserve.Start(ctx, pprofserve.Config{
+		Setting:   "pprofListen",
+		Addr:      cfg.PprofListen,
+		TokenFile: cfg.PprofTokenFile,
+		Remedy:    "set pprofListen, or DISCOBOX_PPROF_LISTEN, to another loopback address, or to off",
+	})
 	if err != nil {
 		return err
 	}
@@ -243,6 +249,7 @@ func Run(ctx context.Context) error {
 		Harnesses:                      cfg.Harnesses,
 		ListenEndpoints:                cfg.Listen,
 		ArchiveRetention:               cfg.ArchiveRetention,
+		DefaultPoolProfiling:           cfg.DefaultPoolProfiling,
 		ConfiguredGateways:             gateways.Configured{Default: defaultGateways, ByProject: projectGateways},
 		PoolOutbound:                   cfg.PoolOutbound,
 		ProviderEndpoints:              sandbox.EndpointPolicy{Allowed: cfg.ProviderEndpoints, Proxy: sandbox.EnvironmentProxy()},

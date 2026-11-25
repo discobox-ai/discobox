@@ -57,6 +57,10 @@ type Config struct {
 	// listener (ADR 26-10-29-481 §2). Nothing names a caller until the mTLS
 	// inside a stream completes there, so it takes no token here.
 	Tunnels http.Handler
+	// Pprof names, on a pool with profiling on, where each of its processes
+	// serves its profiles, which the relay fetches them from (ADR
+	// 26-11-24-418 §3). Empty is a pool with profiling off.
+	Pprof map[string]PprofTarget
 }
 
 func NewRouter(cfg Config) (*chi.Mux, error) {
@@ -109,6 +113,7 @@ func NewRouter(cfg Config) (*chi.Mux, error) {
 		registerSandboxCacheRoutes(protected, handler)
 		registerSandboxTreeRoutes(protected, handler)
 		registerAuditRoutes(protected, handler)
+		registerPprofRoutes(protected, cfg.Identity, cfg.Pprof)
 		registerSandboxProxyRoutes(protected, handler)
 		protected.Mount("/", generated)
 	})

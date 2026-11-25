@@ -629,6 +629,13 @@ type PoolManifest struct {
 	// the pool's agent is told it in its bootstrap, so a change places the
 	// pool's host again.
 	DisableAgentEndpointTLS bool `gorm:"column:disable_agent_endpoint_tls;not null;default:false" json:"disableAgentEndpointTls" doc:"Reach the pool's sandboxes' agents over plain HTTP instead of TLS the pool's CA issues. Off for a pool made now; on for every pool made before TLS was the default. A change reaches a sandbox when its box is next made - a VM sandbox at its next start, a container when it is replaced."`
+	// Profiling has the pool's agent, proxy and BuildKit mediator each serve
+	// Go's pprof endpoints on the pool's loopback, which an admin fetches
+	// through the pool's agent (ADR 26-11-24-418 §§2–3). It is in the
+	// manifest for DisableAgentEndpointTLS's reason: the agent is told it in
+	// its bootstrap, so a change places the pool's host again. A pool made
+	// before the column has it off.
+	Profiling bool `gorm:"column:profiling;not null;default:false" json:"profiling" doc:"Whether the pool's agent, proxy and BuildKit mediator each serve Go's pprof profiles on the pool's own loopback, which an admin fetches through the pool's agent. Off unless set."`
 	// SandboxOS is the operating system the pool's sandboxes run, which the
 	// pool names when it is created and never changes (ADR 26-11-11-963 §1):
 	// linux by default, darwin only where the provider's driver boots it. The
