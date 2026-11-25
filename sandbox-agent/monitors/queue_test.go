@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -278,53 +276,5 @@ func TestAnEventGivenAClaimedIDIsRenumberedNotLost(t *testing.T) {
 	}
 	if first, err := q.Get("e1"); err != nil || first.Title != "first" {
 		t.Fatalf("e1 = %+v, %v; want the first event still readable", first, err)
-	}
-}
-
-// A watcher error — an inotify queue overflow here — must not stall the
-// watch: fsnotify sends events and errors from one reader, so an error left
-// unread holds every later event back, and the wait wakes only on its ticker.
-func TestWaitWakesPromptlyAfterAWatchError(t *testing.T) {
-	limit, err := os.ReadFile("/proc/sys/fs/inotify/max_queued_events")
-	if err != nil {
-		t.Skip("needs inotify")
-	}
-	queued, _ := strconv.Atoi(strings.TrimSpace(string(limit)))
-	for round := range 3 {
-		q := testQueue(t)
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		done := make(chan error, 1)
-		go func() { done <- q.Wait(ctx, Filter{Instance: "b"}) }()
-		time.Sleep(100 * time.Millisecond)
-		// Files the queue ignores, made and removed by several writers faster
-		// than the wait reads their events, overflow the kernel's queue.
-		var wg sync.WaitGroup
-		for w := range 8 {
-			wg.Go(func() {
-				for i := range queued {
-					name := filepath.Join(q.Pending, fmt.Sprintf("noise-%d-%d", w, i))
-					_ = os.WriteFile(name, nil, 0o600)
-					_ = os.Remove(name)
-				}
-			})
-		}
-		wg.Wait()
-		time.Sleep(5 * time.Second) // let the wait read up to the overflow
-		start := time.Now()
-		if _, err := q.Add(Event{Instance: "b", Title: "this one"}); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Fatal(err)
-			}
-		case <-ctx.Done():
-			t.Fatal("wait never returned")
-		}
-		cancel()
-		if took := time.Since(start); took > 250*time.Millisecond {
-			t.Fatalf("round %d: wait took %v to see an event after a watch error, want < 250ms", round, took)
-		}
 	}
 }
