@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/colorprofile"
 	"github.com/creack/pty"
 	"golang.org/x/sys/unix"
+	xterm "golang.org/x/term"
 )
 
 // slowTerminal answers the queries a window sends the way a real terminal
@@ -106,14 +107,13 @@ func TestARefusedAttachLeavesNoTerminalRepliesForTheShell(t *testing.T) {
 	time.Sleep(4 * term.delay)
 	// The shell reads its line raw, as zsh's line editor does, so a reply
 	// with no newline after it is input it reads.
+	// Raw through x/term and a read that does not wait, rather than termios
+	// by hand, whose request names differ between Linux and the BSDs.
 	fd := int(shell.Fd())
-	tio, err := unix.IoctlGetTermios(fd, unix.TCGETS)
-	if err != nil {
+	if _, err := xterm.MakeRaw(fd); err != nil {
 		t.Fatal(err)
 	}
-	tio.Lflag &^= unix.ICANON | unix.ECHO
-	tio.Cc[unix.VMIN], tio.Cc[unix.VTIME] = 0, 0
-	if err := unix.IoctlSetTermios(fd, unix.TCSETS, tio); err != nil {
+	if err := unix.SetNonblock(fd, true); err != nil {
 		t.Fatal(err)
 	}
 	left := make([]byte, 4096)
