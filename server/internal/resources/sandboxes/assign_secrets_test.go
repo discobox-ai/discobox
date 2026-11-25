@@ -214,6 +214,10 @@ func (p *recordingProvider) PullSource(context.Context, sandbox.SandboxRef, sour
 	panic("unexpected source pull")
 }
 
+func (p *recordingProvider) RefreshSource(context.Context, sandbox.SandboxRef, sourcecache.RefreshRequest) (sourcecache.Refresh, error) {
+	panic("unexpected source refresh")
+}
+
 // A harness config given to a sandbox for a second harness is attached, not
 // copied: removing its binding later reaches the sandbox as it reaches every
 // sandbox running the config, and a discobox does not attach one.

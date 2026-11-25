@@ -503,6 +503,14 @@ func (p *missingRuntimeProvider) PullSource(context.Context, sandboxes.SandboxRe
 	panic("unexpected source pull")
 }
 
+func (p *missingRuntimeProvider) RefreshSource(context.Context, sandboxes.SandboxRef, sourcecache.RefreshRequest) (sourcecache.Refresh, error) {
+	panic("unexpected source refresh")
+}
+
 func (p failingSandboxProvider) PullSource(context.Context, sandboxes.SandboxRef, sourcecache.PullRequest) (sourcecache.Delivery, error) {
 	panic("unexpected source pull")
+}
+
+func (p failingSandboxProvider) RefreshSource(context.Context, sandboxes.SandboxRef, sourcecache.RefreshRequest) (sourcecache.Refresh, error) {
+	panic("unexpected source refresh")
 }

@@ -758,8 +758,11 @@ type Handler interface {
 	MoveSandboxFile(ctx context.Context, req *SandboxFileTransferRequest, params MoveSandboxFileParams) (MoveSandboxFileRes, error)
 	// PullSandboxSource implements pull-sandbox-source operation.
 	//
-	// Lend credentials for one HTTPS pull of the recorded source. Credentials are used inside this
-	// request and never persisted. Sandbox callers cannot lend credentials.
+	// Have the pool pull a remote source over HTTPS, anonymously or with a credential lent for this
+	// request only and never persisted. Sandbox callers cannot lend credentials. For a source still
+	// awaiting delivery the pull delivers it (202, the sandbox). For a delivered source it is a refresh
+	// (200) of the source's remote-tracking branches and tags in the pool's cache, which the sandbox
+	// fetches from its discobox remote; nothing in the sandbox moves.
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/pull
 	PullSandboxSource(ctx context.Context, req *PullSandboxSourceBody, params PullSandboxSourceParams) (PullSandboxSourceRes, error)

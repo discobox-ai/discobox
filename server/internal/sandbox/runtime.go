@@ -25,6 +25,9 @@ import (
 // orchestration, authorization, and API shape.
 type Provider interface {
 	PullSource(context.Context, SandboxRef, sourcecache.PullRequest) (sourcecache.Delivery, error)
+	// RefreshSource has the pool refresh a delivered source's namespace of
+	// its cache from the source's remote (ADR 26-11-24-142 §4).
+	RefreshSource(context.Context, SandboxRef, sourcecache.RefreshRequest) (sourcecache.Refresh, error)
 	Initialize(ctx context.Context, instance *model.SandboxProviderInstance) error
 	Close() error
 	Definition() ProviderDefinition

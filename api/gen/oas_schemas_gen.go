@@ -21554,30 +21554,46 @@ func (s *ProviderStatus) SetState(val string) {
 	s.State = val
 }
 
+// A credential to lend for this one pull - a password, with the username it goes with, if any - or
+// none to pull anonymously. A username with no password is refused.
 // Ref: #/components/schemas/PullSandboxSourceBody
 type PullSandboxSourceBody struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username OptString `json:"username"`
+	Password OptString `json:"password"`
+	// For a refresh of a delivered source, the remote's one branch to refresh, with its tags. Absent
+	// refreshes every branch and tag, and drops the remote-tracking branches the remote no longer has. A
+	// source still awaiting delivery refuses it.
+	Branch OptString `json:"branch"`
 }
 
 // GetUsername returns the value of Username.
-func (s *PullSandboxSourceBody) GetUsername() string {
+func (s *PullSandboxSourceBody) GetUsername() OptString {
 	return s.Username
 }
 
 // GetPassword returns the value of Password.
-func (s *PullSandboxSourceBody) GetPassword() string {
+func (s *PullSandboxSourceBody) GetPassword() OptString {
 	return s.Password
 }
 
+// GetBranch returns the value of Branch.
+func (s *PullSandboxSourceBody) GetBranch() OptString {
+	return s.Branch
+}
+
 // SetUsername sets the value of Username.
-func (s *PullSandboxSourceBody) SetUsername(val string) {
+func (s *PullSandboxSourceBody) SetUsername(val OptString) {
 	s.Username = val
 }
 
 // SetPassword sets the value of Password.
-func (s *PullSandboxSourceBody) SetPassword(val string) {
+func (s *PullSandboxSourceBody) SetPassword(val OptString) {
 	s.Password = val
+}
+
+// SetBranch sets the value of Branch.
+func (s *PullSandboxSourceBody) SetBranch(val OptString) {
+	s.Branch = val
 }
 
 // PurgeSandboxNoContent is response for PurgeSandbox operation.
@@ -34389,6 +34405,174 @@ func (s *SourceDelivery) SetHost(val OptString) {
 // SetPath sets the value of Path.
 func (s *SourceDelivery) SetPath(val OptString) {
 	s.Path = val
+}
+
+// Ref: #/components/schemas/SourceRefUpdate
+type SourceRefUpdate struct {
+	// Refs/remotes/origin/<branch> or refs/tags/<tag>.
+	Ref string `json:"ref"`
+	// The commit or tag object it named before; absent for a ref the refresh created.
+	Old OptString `json:"old"`
+	// What it names now; absent for a ref the refresh deleted.
+	New OptString `json:"new"`
+}
+
+// GetRef returns the value of Ref.
+func (s *SourceRefUpdate) GetRef() string {
+	return s.Ref
+}
+
+// GetOld returns the value of Old.
+func (s *SourceRefUpdate) GetOld() OptString {
+	return s.Old
+}
+
+// GetNew returns the value of New.
+func (s *SourceRefUpdate) GetNew() OptString {
+	return s.New
+}
+
+// SetRef sets the value of Ref.
+func (s *SourceRefUpdate) SetRef(val string) {
+	s.Ref = val
+}
+
+// SetOld sets the value of Old.
+func (s *SourceRefUpdate) SetOld(val OptString) {
+	s.Old = val
+}
+
+// SetNew sets the value of New.
+func (s *SourceRefUpdate) SetNew(val OptString) {
+	s.New = val
+}
+
+// What a refresh of a delivered source did. Its remote-tracking branches and tags in the pool's
+// cache were brought to what the remote has now; the sandbox's own branches and its checkout are
+// untouched.
+// Ref: #/components/schemas/SourceRefresh
+type SourceRefresh struct {
+	// Refreshed when the pool reached the remote and wrote what it has; needs_credential when the remote
+	// refused an anonymous or lent pull, with protocol, host and path to fill a credential for;
+	// unreachable when the pool could not reach the remote, so the client fetches it and pushes instead;
+	// missing_branch when the remote has no such branch.
+	Status   SourceRefreshStatus `json:"status"`
+	Protocol OptString           `json:"protocol"`
+	Host     OptString           `json:"host"`
+	Path     OptString           `json:"path"`
+	// The refs the refresh moved, by their names in the source's Git namespace.
+	Updates []SourceRefUpdate `json:"updates"`
+}
+
+// GetStatus returns the value of Status.
+func (s *SourceRefresh) GetStatus() SourceRefreshStatus {
+	return s.Status
+}
+
+// GetProtocol returns the value of Protocol.
+func (s *SourceRefresh) GetProtocol() OptString {
+	return s.Protocol
+}
+
+// GetHost returns the value of Host.
+func (s *SourceRefresh) GetHost() OptString {
+	return s.Host
+}
+
+// GetPath returns the value of Path.
+func (s *SourceRefresh) GetPath() OptString {
+	return s.Path
+}
+
+// GetUpdates returns the value of Updates.
+func (s *SourceRefresh) GetUpdates() []SourceRefUpdate {
+	return s.Updates
+}
+
+// SetStatus sets the value of Status.
+func (s *SourceRefresh) SetStatus(val SourceRefreshStatus) {
+	s.Status = val
+}
+
+// SetProtocol sets the value of Protocol.
+func (s *SourceRefresh) SetProtocol(val OptString) {
+	s.Protocol = val
+}
+
+// SetHost sets the value of Host.
+func (s *SourceRefresh) SetHost(val OptString) {
+	s.Host = val
+}
+
+// SetPath sets the value of Path.
+func (s *SourceRefresh) SetPath(val OptString) {
+	s.Path = val
+}
+
+// SetUpdates sets the value of Updates.
+func (s *SourceRefresh) SetUpdates(val []SourceRefUpdate) {
+	s.Updates = val
+}
+
+func (*SourceRefresh) pullSandboxSourceRes() {}
+
+// Refreshed when the pool reached the remote and wrote what it has; needs_credential when the remote
+// refused an anonymous or lent pull, with protocol, host and path to fill a credential for;
+// unreachable when the pool could not reach the remote, so the client fetches it and pushes instead;
+// missing_branch when the remote has no such branch.
+type SourceRefreshStatus string
+
+const (
+	SourceRefreshStatusRefreshed       SourceRefreshStatus = "refreshed"
+	SourceRefreshStatusNeedsCredential SourceRefreshStatus = "needs_credential"
+	SourceRefreshStatusUnreachable     SourceRefreshStatus = "unreachable"
+	SourceRefreshStatusMissingBranch   SourceRefreshStatus = "missing_branch"
+)
+
+// AllValues returns all SourceRefreshStatus values.
+func (SourceRefreshStatus) AllValues() []SourceRefreshStatus {
+	return []SourceRefreshStatus{
+		SourceRefreshStatusRefreshed,
+		SourceRefreshStatusNeedsCredential,
+		SourceRefreshStatusUnreachable,
+		SourceRefreshStatusMissingBranch,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SourceRefreshStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case SourceRefreshStatusRefreshed:
+		return []byte(s), nil
+	case SourceRefreshStatusNeedsCredential:
+		return []byte(s), nil
+	case SourceRefreshStatusUnreachable:
+		return []byte(s), nil
+	case SourceRefreshStatusMissingBranch:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SourceRefreshStatus) UnmarshalText(data []byte) error {
+	switch SourceRefreshStatus(data) {
+	case SourceRefreshStatusRefreshed:
+		*s = SourceRefreshStatusRefreshed
+		return nil
+	case SourceRefreshStatusNeedsCredential:
+		*s = SourceRefreshStatusNeedsCredential
+		return nil
+	case SourceRefreshStatusUnreachable:
+		*s = SourceRefreshStatusUnreachable
+		return nil
+	case SourceRefreshStatusMissingBranch:
+		*s = SourceRefreshStatusMissingBranch
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Ref: #/components/schemas/StartSandboxBody

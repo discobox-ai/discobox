@@ -8,6 +8,7 @@ import (
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 )
@@ -190,9 +191,12 @@ func (h *Handler) CompleteSandboxSourcePush(ctx context.Context, req *apimodel.C
 }
 
 func (h *Handler) PullSandboxSource(ctx context.Context, req *apimodel.PullSandboxSourceBody, params serverapi.PullSandboxSourceParams) (serverapi.PullSandboxSourceRes, error) {
-	sandbox, err := h.services.Sandboxes.PullSandboxSource(ctx, params.ProjectId, params.SandboxId, params.Slug, *req)
+	sandbox, refresh, err := h.services.Sandboxes.PullSandboxSource(ctx, params.ProjectId, params.SandboxId, params.Slug, *req)
 	if err != nil {
 		return apiError(err), nil
+	}
+	if refresh != nil {
+		return sourceRefreshToAPI(*refresh), nil
 	}
 	body, err := services.SandboxToAPI(ctx, sandbox, h.upgradeBasis(ctx, params.ProjectId))
 	if err != nil {
@@ -244,4 +248,29 @@ func (h *Handler) StreamSandboxEvents(context.Context, serverapi.StreamSandboxEv
 		StatusCode: http.StatusNotImplemented,
 		Response:   serverapi.ErrorResponse{Error: "sandbox events are served by the event stream"},
 	}, nil
+}
+
+// sourceRefreshToAPI is a refresh's answer as the API states it.
+func sourceRefreshToAPI(refresh sourcecache.Refresh) *apimodel.SourceRefresh {
+	out := &apimodel.SourceRefresh{Status: serverapi.SourceRefreshStatus(refresh.Status)}
+	if refresh.Protocol != "" {
+		out.Protocol = serverapi.NewOptString(refresh.Protocol)
+	}
+	if refresh.Host != "" {
+		out.Host = serverapi.NewOptString(refresh.Host)
+	}
+	if refresh.Path != "" {
+		out.Path = serverapi.NewOptString(refresh.Path)
+	}
+	for _, update := range refresh.Updates {
+		item := apimodel.SourceRefUpdate{Ref: update.Ref}
+		if update.Old != "" {
+			item.Old = serverapi.NewOptString(update.Old)
+		}
+		if update.New != "" {
+			item.New = serverapi.NewOptString(update.New)
+		}
+		out.Updates = append(out.Updates, item)
+	}
+	return out
 }

@@ -735,6 +735,10 @@ func (p *recordingSandboxProvider) PullSource(context.Context, sandboxes.Sandbox
 	panic("unexpected source pull")
 }
 
+func (p *recordingSandboxProvider) RefreshSource(context.Context, sandboxes.SandboxRef, sourcecache.RefreshRequest) (sourcecache.Refresh, error) {
+	panic("unexpected source refresh")
+}
+
 func (p *recordingSandboxProvider) CheckCreateCompatibility(context.Context, sandboxes.SandboxRef) error {
 	return nil
 }

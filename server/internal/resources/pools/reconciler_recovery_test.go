@@ -749,6 +749,10 @@ func (stubPoolProvider) PullSource(context.Context, sandbox.SandboxRef, sourceca
 	panic("unexpected source pull")
 }
 
+func (stubPoolProvider) RefreshSource(context.Context, sandbox.SandboxRef, sourcecache.RefreshRequest) (sourcecache.Refresh, error) {
+	panic("unexpected source refresh")
+}
+
 // credentialPoolProvider converges a pool whose host it gives a credential of
 // its own, as the vm provider places a provisioning key.
 type credentialPoolProvider struct {

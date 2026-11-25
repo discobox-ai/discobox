@@ -1278,6 +1278,18 @@ func (p *Provider) PullSource(ctx context.Context, ref sandbox.SandboxRef, reque
 	return client.PullSource(ctx, ref, request)
 }
 
+func (p *Provider) RefreshSource(ctx context.Context, ref sandbox.SandboxRef, request sourcecache.RefreshRequest) (sourcecache.Refresh, error) {
+	pool, err := p.manager.GetPool(ctx, ref.ProjectID, ref.PoolID)
+	if err != nil {
+		return sourcecache.Refresh{}, err
+	}
+	client, err := p.agentClientForPool(ctx, pool)
+	if err != nil {
+		return sourcecache.Refresh{}, err
+	}
+	return client.RefreshSource(ctx, ref, request)
+}
+
 // acquireCreateClient proves compatibility on a stream that cannot reconnect
 // underneath the create. The bootstrap path deliberately uses ordinary leases.
 func (p *Provider) acquireCreateClient(ctx context.Context, pool *model.Pool, ref sandbox.SandboxRef) (*transport.HTTPClientLease, error) {

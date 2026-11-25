@@ -12,6 +12,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/auditid"
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
 	"github.com/discobox-ai/discobox/proxy/gateway"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -205,7 +206,9 @@ type SandboxService interface {
 	// The pool agent recreates the container from it and keeps the power state
 	// it had (ADR 0021).
 	UpgradeSandbox(ctx context.Context, projectID, sandboxID string, input UpgradeSandboxBody) (*model.Sandbox, error)
-	PullSandboxSource(ctx context.Context, projectID, sandboxID, slug string, input PullSandboxSourceBody) (*model.Sandbox, error)
+	// PullSandboxSource answers the sandbox when it delivered a source still
+	// owed, and the refresh when it refreshed a delivered one.
+	PullSandboxSource(ctx context.Context, projectID, sandboxID, slug string, input PullSandboxSourceBody) (*model.Sandbox, *sourcecache.Refresh, error)
 	CompleteSandboxSourcePush(ctx context.Context, projectID, sandboxID string, input CompleteSandboxSourcePushBody) (*model.Sandbox, error)
 	// UpdateSandboxMeta carries a change to the name, description or tags into the
 	// sandbox, which holds them, and records what it holds afterwards

@@ -131,6 +131,8 @@ func TestSandboxRoleDeliversSourceToTheDiscoboxesItCreated(t *testing.T) {
 		{"complete its worker's push", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/complete-source-push", http.StatusOK},
 		{"pin its worker's source", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/git-origins/primary.git/pin", http.StatusOK},
 		{"pin a person's source", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-persons/git-origins/primary.git/pin", http.StatusForbidden},
+		{"refresh its worker's source", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/sources/primary/pull", http.StatusOK},
+		{"refresh a person's source", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-persons/sources/primary/pull", http.StatusForbidden},
 		{"push into a person's discobox", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-persons/git-origins/primary.git/git-receive-pack", http.StatusForbidden},
 		{"push into its creator", roleWorker, http.MethodPost, "/projects/default/sandboxes/sbx-lead/git-origins/primary.git/git-receive-pack", http.StatusForbidden},
 		// What a pool's cache remembers of a remote is a project member's to

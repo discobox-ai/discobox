@@ -164,6 +164,11 @@ var sandboxRole = []sandboxRoleRoute{
 	// member's to fetch, and is not here.
 	{method: http.MethodPost, path: "sandboxes/*/git-origins/*/pin", names: withinCaller},
 	{method: http.MethodPost, path: "sandboxes/*/complete-source-push", names: withinCaller},
+	// Having the pool pull a source's remote, anonymously: a refresh of a
+	// delivered source's record of its remote, as a pool already pulls any
+	// public HTTPS remote for a create (ADR 26-11-24-142 §4). The service
+	// refuses a credential from a sandbox; a box never lends.
+	{method: http.MethodPost, path: "sandboxes/*/sources/*/pull", names: withinCaller},
 	// Reading and typing into a discobox's terminals (ADR 26-10-01-397 §1),
 	// and reading one's record, transcript, and events.
 	{method: http.MethodGet, path: "sandboxes/*/agent/execs", names: childDiscobox},
