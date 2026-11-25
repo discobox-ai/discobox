@@ -48,7 +48,7 @@ func TestASnapshotIsKeyedByItsPlanAndNothingOfTheSandbox(t *testing.T) {
 	r := testDockerRuntime(&DockerSandboxRuntime{projectID: "proj_1", poolID: "pool_1"})
 	key := func(base string, req *workerapimodel.PoolSandboxCreateRequest) string {
 		t.Helper()
-		plan, err := r.newSnapshotPlan(base, req)
+		plan, err := r.newSnapshotPlan(base, snapshotInputsOf(req))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -119,7 +119,7 @@ func snapshotDaemon(t *testing.T, snapshot, base string) *client.Client {
 func TestADeliveredCreateStartsFromItsPlansSnapshot(t *testing.T) {
 	req := snapshotCreate("sbx_1", "a")
 	r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t), projectID: "proj_1", poolID: "pool_1"})
-	plan, err := r.newSnapshotPlan("sha256:base", req)
+	plan, err := r.newSnapshotPlan("sha256:base", snapshotInputsOf(req))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +286,7 @@ func buildFixture(t *testing.T, code int, stderr string) (*DockerSandboxRuntime,
 		agentLayers: &fakeAgentLayers{digest: digest, layer: gzippedAgentLayer(t, "agent")}})
 	req := snapshotCreate("sbx_1", "a")
 	req.Config.Features = workerclient.NewOptSandboxConfigFeatures(workerclient.SandboxConfigFeatures{"brew": {Enabled: false}})
-	plan, err := r.newSnapshotPlan("sha256:base", req)
+	plan, err := r.newSnapshotPlan("sha256:base", snapshotInputsOf(req))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -502,7 +502,7 @@ func TestAClearRemovesThePoolsSnapshots(t *testing.T) {
 // can report the reason alongside the retry (#339).
 func TestAFailedSnapshotBuildRecordsItsReason(t *testing.T) {
 	r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t), projectID: "proj_1", poolID: "pool_1"})
-	plan, err := r.newSnapshotPlan("sha256:base", snapshotCreate("sbx_1", "a"))
+	plan, err := r.newSnapshotPlan("sha256:base", snapshotInputsOf(snapshotCreate("sbx_1", "a")))
 	if err != nil {
 		t.Fatal(err)
 	}

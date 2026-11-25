@@ -160,29 +160,62 @@ func (p snapshotPlan) buildID() string { return snapshotBuildID(p.Key()) }
 // snapshotBuildID is the build identity of the plan keyed key.
 func snapshotBuildID(key string) string { return layout.SnapshotIDPrefix + key[:24] }
 
-// newSnapshotPlan is the plan of a delivered create on base.
-func (r *sandboxCore) newSnapshotPlan(base string, req *workerapimodel.PoolSandboxCreateRequest) (snapshotPlan, error) {
-	delivered := delivery(req)
-	pins, _, err := applied(delivered)
+// snapshotInputs is what a plan is made from besides its base, project and
+// pool: what the sandbox is delivered, the features it turns on and off, and
+// the build policy the server sent. A create has them in its request
+// (snapshotInputsOf); a machine made again with no create in hand has them
+// from what the pool kept for it (machineSnapshotInputs).
+type snapshotInputs struct {
+	delivered assetcache.Delivery
+	features  map[string]sandboxconfig.Feature
+	// provision is the server's build policy; nil is none sent, which gets
+	// no snapshot: built without one, it would run unrestricted.
+	provision *egress.Policy
+	// kept is inputs read back from the pool's records rather than a
+	// create's: they find a published snapshot and never ask for one to be
+	// built, since the build policy kept may be older than the server's now.
+	kept bool
+}
+
+// snapshotInputsOf is what a delivered create's plan is made from.
+func snapshotInputsOf(req *workerapimodel.PoolSandboxCreateRequest) snapshotInputs {
+	return snapshotInputs{delivered: delivery(req), features: requestFeatures(req), provision: provisionPolicy(req)}
+}
+
+// provisionPolicy is the build policy a create carries, nil when the server
+// sent none.
+func provisionPolicy(req *workerapimodel.PoolSandboxCreateRequest) *egress.Policy {
+	if !req.ProvisionEgress.Set {
+		return nil
+	}
+	policy := egressPolicy(req.ProvisionEgress)
+	return &policy
+}
+
+// newSnapshotPlan is the plan of what in delivers on base.
+func (r *sandboxCore) newSnapshotPlan(base string, in snapshotInputs) (snapshotPlan, error) {
+	pins, _, err := applied(in.delivered)
 	if err != nil {
 		return snapshotPlan{}, err
+	}
+	var provision egress.Policy
+	if in.provision != nil {
+		provision = *in.provision
 	}
 	plan := snapshotPlan{
 		Base:      base,
 		Project:   r.projectID,
 		Pool:      r.poolID,
 		Pins:      pins,
-		Agent:     delivered.Agent.Digest,
-		Egress:    egress.Merge(egressPolicy(req.ProvisionEgress)),
+		Agent:     in.delivered.Agent.Digest,
+		Egress:    egress.Merge(provision),
 		features:  map[string]sandboxconfig.Feature{},
-		delivered: delivered,
+		delivered: in.delivered,
 	}
-	if features, ok := req.Config.Features.Get(); ok {
-		for _, name := range slices.Sorted(maps.Keys(features)) {
-			plan.features[name] = sandboxconfig.Feature{Enabled: features[name].Enabled}
-			if !features[name].Enabled {
-				plan.Off = append(plan.Off, name)
-			}
+	for _, name := range slices.Sorted(maps.Keys(in.features)) {
+		plan.features[name] = sandboxconfig.Feature{Enabled: in.features[name].Enabled}
+		if !in.features[name].Enabled {
+			plan.Off = append(plan.Off, name)
 		}
 	}
 	return plan, nil

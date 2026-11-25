@@ -1510,12 +1510,7 @@ func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID,
 			})
 		}
 		doc.Runtime.SkillsSources = sandboxSkillsSources(sources, req.Config.SkillsSources)
-		for name, feature := range req.Config.Features.Value {
-			if doc.Runtime.Features == nil {
-				doc.Runtime.Features = map[string]sandboxconfig.Feature{}
-			}
-			doc.Runtime.Features[name] = sandboxconfig.Feature{Enabled: feature.Enabled}
-		}
+		doc.Runtime.Features = requestFeatures(req)
 		if resolved, ok := req.ResolvedHarnessConfig.Get(); ok {
 			doc.Image = sandboxconfig.ImageLayer{
 				HarnessID:          resolved.ID,
@@ -4399,6 +4394,21 @@ func delivery(req *workerapimodel.PoolSandboxCreateRequest) assetcache.Delivery 
 		d.Bundles = append(d.Bundles, assetcache.Pin{Name: bundle.Name, Digest: bundle.Digest})
 	}
 	return d
+}
+
+// requestFeatures is the features a create turns on and off, nil for none:
+// what the bootstrap carries and a snapshot's plan is keyed by, from one
+// reading, so a plan the pool makes again from its bootstrap
+// (machineSnapshotInputs) is the create's.
+func requestFeatures(req *workerapimodel.PoolSandboxCreateRequest) map[string]sandboxconfig.Feature {
+	var out map[string]sandboxconfig.Feature
+	for name, feature := range req.Config.Features.Value {
+		if out == nil {
+			out = map[string]sandboxconfig.Feature{}
+		}
+		out[name] = sandboxconfig.Feature{Enabled: feature.Enabled}
+	}
+	return out
 }
 
 // validateCreateRequest refuses a create the control plane did not fully

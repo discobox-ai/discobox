@@ -1042,7 +1042,7 @@ func TestMachineRuntimeFencesASandboxAtTheEdge(t *testing.T) {
 	if opts := r.createOptions("sbx-1"); len(opts.Networks) != 0 || opts.Bare || opts.Egress != fence {
 		t.Fatalf("an edge sandbox's create = %+v, want no network, nothing stripped and the pool's fence", opts)
 	}
-	inst, _, err := r.ensureInstance(ctx, "sbx_edge", nil)
+	inst, _, err := r.ensureInstance(ctx, "sbx_edge", snapshotInputs{})
 	if err != nil {
 		t.Fatalf("ensure a machine at the edge: %v", err)
 	}
@@ -1052,7 +1052,7 @@ func TestMachineRuntimeFencesASandboxAtTheEdge(t *testing.T) {
 	if _, err := driver.Create(ctx, machine.InstanceSpec{Name: "sbx-dns", Egress: &machine.Egress{Allow: fence.Allow}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := r.ensureInstance(ctx, "sbx_dns", nil); err == nil || !strings.Contains(err.Error(), "not fenced") {
+	if _, _, err := r.ensureInstance(ctx, "sbx_dns", snapshotInputs{}); err == nil || !strings.Contains(err.Error(), "not fenced") {
 		t.Fatalf("ensure a machine made with DNS open = %v, want it refused", err)
 	}
 }
@@ -1851,21 +1851,21 @@ func TestMachineCreateFencesTheMachine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	inst, _, err := r.ensureInstance(ctx, "sbx_fenced", nil)
+	inst, _, err := r.ensureInstance(ctx, "sbx_fenced", snapshotInputs{})
 	if err != nil {
 		t.Fatalf("ensure a fenced machine: %v", err)
 	}
 	if got := driver.fences[inst.Name]; got == nil || len(got.Allow) != 0 {
 		t.Fatalf("the machine was made with fence %+v, want one that reaches nothing beyond its network", got)
 	}
-	if _, _, err := r.ensureInstance(ctx, "sbx_fenced", nil); err != nil {
+	if _, _, err := r.ensureInstance(ctx, "sbx_fenced", snapshotInputs{}); err != nil {
 		t.Fatalf("find the fenced machine again: %v", err)
 	}
 
 	if _, err := e.Create(ctx, engine.CreateOptions{Name: "sbx-open"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := r.ensureInstance(ctx, "sbx_open", nil); err == nil || !strings.Contains(err.Error(), "not fenced") {
+	if _, _, err := r.ensureInstance(ctx, "sbx_open", snapshotInputs{}); err == nil || !strings.Contains(err.Error(), "not fenced") {
 		t.Fatalf("ensure a machine made without the fence = %v, want it refused", err)
 	}
 }

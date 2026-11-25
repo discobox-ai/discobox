@@ -38,6 +38,7 @@ import (
 	"github.com/discobox-ai/discobox/pool-agent/gitcache"
 	"github.com/discobox-ai/discobox/pool-agent/provisioner"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
+	"github.com/discobox-ai/discobox/proxy/egress"
 
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 )
@@ -229,8 +230,9 @@ func machineName(sandboxID string) (string, error) {
 const machineRecordName = "machine.json"
 
 // machineRecord is what the pool made a sandbox's machine with. The bootstrap
-// is kept whole, so a machine is made again in place from it when its
-// project layer moves with no create request in hand (rebuildForProjectLayer).
+// is kept whole, and the build policy with it, so a machine is made again in
+// place from them, on its plan's snapshot, when its project layer moves with
+// no create request in hand (rebuildForProjectLayer).
 type machineRecord struct {
 	// Instance is the machine's ID, as its driver keeps it.
 	Instance        string `json:"instance"`
@@ -240,6 +242,14 @@ type machineRecord struct {
 	Env map[string]string `json:"env,omitempty"`
 	// Bootstrap is what sandbox.json is rendered from.
 	Bootstrap sandboxconfig.Document `json:"bootstrap"`
+	// ProvisionEgress is the build policy the create that made or last
+	// rebuilt the machine carried, which its plan is keyed by
+	// (machineSnapshotInputs). It only finds a published snapshot, and no
+	// build runs under it, since the server may have narrowed it since. Nil
+	// is one that carried none, or a record from a pool before it was kept,
+	// whose rebuild with no create in hand is given a fresh root, as a create
+	// with no build policy is.
+	ProvisionEgress *egress.Policy `json:"provisionEgress,omitempty"`
 	// Started reports a machine started since it was made: one that was not
 	// is created, not stopped.
 	Started bool `json:"started,omitempty"`
@@ -666,7 +676,8 @@ func (r *MachineSandboxRuntime) buildMachine(ctx context.Context, sandboxID stri
 		return nil, false, err
 	}
 	r.publishSandboxPhase(ctx, sandboxID, PhaseCreatingContainer)
-	inst, snapshot, err := r.ensureInstance(ctx, sandboxID, req)
+	inputs := snapshotInputsOf(req)
+	inst, snapshot, err := r.ensureInstance(ctx, sandboxID, inputs)
 	if err != nil {
 		return nil, false, err
 	}
@@ -678,7 +689,7 @@ func (r *MachineSandboxRuntime) buildMachine(ctx context.Context, sandboxID stri
 		record = machineRecord{Instance: inst.ID, Snapshot: snapshot, NewRoot: record.NewRoot, NewRootSnapshot: record.NewRootSnapshot, NewRootAsked: record.NewRootAsked}
 	}
 	if existing != nil {
-		r.remakeOnNewRoot(ctx, inst, &record, req)
+		r.remakeOnNewRoot(ctx, inst, sandboxID, &record, inputs)
 	}
 	listen, err := r.agentListenAddress(ctx, inst)
 	if err != nil {
@@ -704,6 +715,7 @@ func (r *MachineSandboxRuntime) buildMachine(ctx context.Context, sandboxID stri
 	record.SpecFingerprint = strings.TrimSpace(optString(req.Config.SpecFingerprint))
 	record.Env = envWithSandboxUser(nil, user)
 	record.Bootstrap = doc
+	record.ProvisionEgress = inputs.provision
 	if err := r.writeMachineRecord(sandboxID, record); err != nil {
 		return nil, false, err
 	}
@@ -830,26 +842,23 @@ func readGuestFile(ctx context.Context, guest machine.Guest, path string) (strin
 
 // remakeOnNewRoot records that a sandbox's machine being made again is given
 // a new root at its next start (upgradeMachine) when it keeps its data on a
-// volume, as a container is built again from its image: a copy of its plan's
-// snapshot where req has one (snapshotFor), and otherwise a fresh one from
-// the driver's base, which a nil req, a rebuild with no create in hand,
-// always is. One that does not keep its data on a volume keeps its root,
+// volume, as a container is built again from its image: a copy of the
+// snapshot of its plan, made from in, where there is one (snapshotFor), and
+// otherwise a fresh one from the driver's base, which in with no build
+// policy always is. One that does not keep its data on a volume keeps its root,
 // which is all the sandbox has, and is placed again on it. A new root already
 // asked for keeps the root it was asked from: the driver may have begun it,
 // and finishes it only from that one (a pool from before newRootSnapshot
 // asked every new root fresh).
-func (r *MachineSandboxRuntime) remakeOnNewRoot(ctx context.Context, inst machine.Instance, record *machineRecord, req *workerapimodel.PoolSandboxCreateRequest) {
+func (r *MachineSandboxRuntime) remakeOnNewRoot(ctx context.Context, inst machine.Instance, sandboxID string, record *machineRecord, in snapshotInputs) {
 	if record.NewRoot || !r.keepsDataOnVolume(inst, *record) {
 		return
 	}
 	slog.InfoContext(ctx, "giving a sandbox machine a new root at its next start, keeping its volumes", "machine", inst.Name)
 	record.NewRoot, record.NewRootSnapshot, record.NewRootAsked = true, "", false
-	if req == nil {
-		return
-	}
 	// Only looked up here: the start that gives the root holds it and reads
 	// it again (newRootFrom), since it may be gone by then.
-	_, key, release := r.snapshotFor(ctx, req)
+	_, key, release := r.snapshotFor(ctx, sandboxID, in)
 	release()
 	record.NewRootSnapshot = key
 }
@@ -988,7 +997,7 @@ func (r *MachineSandboxRuntime) remakeMachine(ctx context.Context, sandboxID str
 	if !ok {
 		return ErrNoContainer
 	}
-	inst, _, err := r.ensureInstance(ctx, sandboxID, nil)
+	inst, _, err := r.ensureInstance(ctx, sandboxID, snapshotInputs{})
 	if err != nil {
 		return err
 	}
@@ -1008,7 +1017,8 @@ func (r *MachineSandboxRuntime) remakeMachine(ctx context.Context, sandboxID str
 
 // rebuildForProjectLayer makes a running sandbox's machine again on the
 // project layer now recorded for it, with no create request in hand: the
-// bootstrap the pool kept is placed with that layer in it.
+// bootstrap the pool kept is placed with that layer in it, and a new root is
+// a copy of the snapshot of the plan the pool kept (machineSnapshotInputs).
 func (r *MachineSandboxRuntime) rebuildForProjectLayer(ctx context.Context, sb *Sandbox) error {
 	record, ok, err := r.readMachineRecord(sb.SandboxID)
 	if err != nil {
@@ -1026,13 +1036,38 @@ func (r *MachineSandboxRuntime) rebuildForProjectLayer(ctx context.Context, sb *
 	if err != nil {
 		return err
 	}
-	r.remakeOnNewRoot(ctx, inst, &record, nil)
+	in, err := r.machineSnapshotInputs(sb.SandboxID, record)
+	if err != nil {
+		return err
+	}
+	r.remakeOnNewRoot(ctx, inst, sb.SandboxID, &record, in)
 	if err := r.writeMachineRecord(sb.SandboxID, record); err != nil {
 		return err
 	}
 	slog.InfoContext(ctx, "making a sandbox machine again in place", "sandboxId", sb.SandboxID,
 		"reason", "the project configuration its delivered source declares")
 	return r.rebuildInPlace(ctx, sb.SandboxID)
+}
+
+// machineSnapshotInputs is what the sandbox's plan is made from, as the pool
+// kept it: the delivery its last create recorded (assetcache), and the
+// features and build policy of its machine's record. They find the plan's
+// snapshot if it is published and ask for none to be built: the build policy
+// is the last create's, which the server may have narrowed since. A record
+// with no build policy, or a sandbox with no agent delivered, has none, and
+// its new root is fresh.
+func (r *MachineSandboxRuntime) machineSnapshotInputs(sandboxID string, record machineRecord) (snapshotInputs, error) {
+	if record.ProvisionEgress == nil {
+		return snapshotInputs{}, nil
+	}
+	delivered, err := assetcache.ReadRecord(r.sandboxRoot(sandboxID))
+	if err != nil {
+		return snapshotInputs{}, fmt.Errorf("read sandbox %s's bundles: %w", sandboxID, err)
+	}
+	if !delivered.PlacesAgent() {
+		return snapshotInputs{}, nil
+	}
+	return snapshotInputs{delivered: delivered, features: record.Bootstrap.Runtime.Features, provision: record.ProvisionEgress, kept: true}, nil
 }
 
 // builtProjectLayer is the project layer the machine's recorded bootstrap
@@ -1055,11 +1090,12 @@ func (r *MachineSandboxRuntime) takesRuntimeConfig(_ context.Context, sandboxID 
 }
 
 // ensureInstance is the sandbox's machine, made when it has none: from its
-// plan's snapshot where there is one (snapshotFor), and otherwise fresh from
-// the driver's base, which a nil req always is. It returns the key of the
+// plan's snapshot, made from in, where there is one (snapshotFor), and
+// otherwise fresh from the driver's base, which in with no build policy
+// always is. It returns the key of the
 // snapshot it was made from, empty for none. A create whose answer was lost
 // made one already, which is found by its name.
-func (r *MachineSandboxRuntime) ensureInstance(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) (machine.Instance, string, error) {
+func (r *MachineSandboxRuntime) ensureInstance(ctx context.Context, sandboxID string, in snapshotInputs) (machine.Instance, string, error) {
 	inst, err := r.instance(ctx, sandboxID)
 	if err == nil {
 		return inst, "", r.fenced(inst)
@@ -1084,7 +1120,7 @@ func (r *MachineSandboxRuntime) ensureInstance(ctx context.Context, sandboxID st
 	if caps.Attaches(machine.VolumeCache) {
 		opts.Cache = &machine.CacheVolume{Key: name}
 	}
-	from, snapshot, release := r.snapshotFor(ctx, req)
+	from, snapshot, release := r.snapshotFor(ctx, sandboxID, in)
 	defer release()
 	if from != "" {
 		opts.From = from

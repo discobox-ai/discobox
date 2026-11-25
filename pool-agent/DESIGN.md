@@ -1325,9 +1325,7 @@ flowchart LR
   | does not (boxd; one made before its driver attached a volume; an agent that does not wire it) | in place: a new bootstrap, the same disk, a restart if it ran, since the disk is all the sandbox has |
 
   The new root is asked for in `machine.json` (`newRoot`, and the plan's
-  snapshot key, `newRootSnapshot`, which only a rebuild with its create in
-  hand looks up: a project layer's rebuild by the status poll is fresh)
-  before the driver is called, and done by the next start, so a stopped
+  snapshot key, `newRootSnapshot`) before the driver is called, and done by the next start, so a stopped
   machine gets it when it starts and an upgrade cut short is finished by the
   start after (disco-vm ADR 26-11-03-782 §3), from the same root: the driver
   finishes one only with the `From` it began with, so once asked
@@ -1337,8 +1335,15 @@ flowchart LR
   by a fresh root in the same start, its volumes kept, never destroyed
   ([Snapshots](#snapshots)). A new root drops the placement record, so the agent
   layer is placed again, and re-reads the service's listen address into the
-  bootstrap. The pool keeps the bootstrap whole in `machine.json`, so the
-  status poll's convergence rebuilds with no create request.
+  bootstrap. The pool keeps the bootstrap whole in `machine.json`, and the
+  create's build policy beside it (`provisionEgress`), so the status poll's
+  convergence rebuilds with no create request, and looks up the same plan's
+  snapshot a create would (`machineSnapshotInputs`: `delivery.json`, the
+  bootstrap's features, that policy). It takes that snapshot only if it is
+  published, and asks for no build when it is not: the kept policy is the
+  last create's, which the server may have narrowed since, so only a create
+  starts a build. A record with no build policy (written by a pool before it
+  was kept) is given a fresh root, as a create without one is.
 - **Archive** stops the machine and keeps it: its disk is the tree. The
   machine is found by its name, as delete finds it, so a sandbox whose
   pool-side tree is gone (a pool machine made again keeps none of its

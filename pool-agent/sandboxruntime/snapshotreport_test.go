@@ -84,11 +84,11 @@ func TestADockerPoolReportsItsSnapshots(t *testing.T) {
 // the build lock, and started once it does.
 func TestASnapshotBuildIsReportedQueuedThenStarted(t *testing.T) {
 	r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t), projectID: "proj_1", poolID: "pool_1"})
-	first, err := r.newSnapshotPlan("sha256:base", snapshotCreate("sbx_1", "a"))
+	first, err := r.newSnapshotPlan("sha256:base", snapshotInputsOf(snapshotCreate("sbx_1", "a")))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := r.newSnapshotPlan("sha256:base", snapshotCreate("sbx_2", "c"))
+	second, err := r.newSnapshotPlan("sha256:base", snapshotInputsOf(snapshotCreate("sbx_2", "c")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestASnapshotBuildIsReportedQueuedThenStarted(t *testing.T) {
 // and reads as one with no reason and no plan.
 func TestAFailedPlanIsReportedWithItsReason(t *testing.T) {
 	r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t), projectID: "proj_1", poolID: "pool_1"})
-	plan, err := r.newSnapshotPlan("sha256:base", snapshotCreate("sbx_1", "a"))
+	plan, err := r.newSnapshotPlan("sha256:base", snapshotInputsOf(snapshotCreate("sbx_1", "a")))
 	if err != nil {
 		t.Fatal(err)
 	}
