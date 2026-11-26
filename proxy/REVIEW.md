@@ -4,6 +4,12 @@
   `refusalResponse` (JSON `message`), never a plain-text body: `gh` and other
   API clients show a text body as nothing. The raw-secret refusal was missed
   once when the sentinel one was converted (#1746).
+- An audit schema change stays writable by the previous release's proxy:
+  add a column nullable or with a default, and drop a column only through
+  `retiredColumns`, never in a migration of its own. Why: both proxies of a
+  pool's handover write one database for up to the drain bound (ADR
+  26-11-26-536 §3), and the old one's inserts name every column its schema
+  has.
 - Do not put payload blobs in SQLite. Keep cache assets and captured HTTP
   request/response bodies in disk files, and store only audit/cache/spool
   metadata in the database.

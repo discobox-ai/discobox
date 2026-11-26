@@ -54,6 +54,11 @@ type httpProxy struct {
 	reports *credentialReporter
 	mu      sync.RWMutex
 	ids     map[string]clientIdentity
+	// servers are the servers of the client connections being served, which
+	// a drain tells to stop keeping connections alive; draining says one
+	// has begun. Both under mu.
+	servers  map[*http.Server]struct{}
+	draining bool
 	// trusts is the pins in force (ADR 0149), replaced whole by ApplyConfig.
 	trusts *trustTable
 	// h2c is the transport for requests the sandbox sent as cleartext HTTP/2;
@@ -2004,6 +2009,10 @@ func (h *httpProxy) serveConn(ctx context.Context, conn *peekedConn, identity cl
 			}
 		},
 	}
+	// A drain closes a plain connection once its current response is sent,
+	// so the client's next request reaches the proxy that took over.
+	h.track(server)
+	defer h.untrack(server)
 	_ = server.Serve(listener)
 	_ = listener.Close()
 	if hijacked.Load() {
@@ -2159,4 +2168,37 @@ func clientIdentityFromConn(conn net.Conn) clientIdentity {
 		id = cert.SerialNumber.String()
 	}
 	return clientIdentity{ID: id, Subject: cert.Subject.String(), Serial: cert.SerialNumber.String()}
+}
+
+// track has a drain reach server, the one serving a client connection, and
+// tells it at once if a drain has begun.
+func (h *httpProxy) track(server *http.Server) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.servers == nil {
+		h.servers = map[*http.Server]struct{}{}
+	}
+	h.servers[server] = struct{}{}
+	if h.draining {
+		server.SetKeepAlivesEnabled(false)
+	}
+}
+
+func (h *httpProxy) untrack(server *http.Server) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.servers, server)
+}
+
+// drain has every client connection's server close its connection once its
+// current response is sent, and an idle one at once. A hijacked connection,
+// a CONNECT tunnel or an upgraded stream, is no longer its server's, and runs
+// until it ends.
+func (h *httpProxy) drain() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.draining = true
+	for server := range h.servers {
+		server.SetKeepAlivesEnabled(false)
+	}
 }

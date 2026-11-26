@@ -43,6 +43,13 @@ type Server struct {
 	conns    map[net.Conn]struct{}
 	wg       sync.WaitGroup
 	closed   chan struct{}
+	// draining is closed once Drain begins: the listener closing then is
+	// not a failure to serve.
+	draining chan struct{}
+	// sweepStop ends the retention sweeper, which a drain stops before it
+	// waits on the connections wg also counts.
+	sweepStop chan struct{}
+	sweepOnce sync.Once
 }
 
 // NewServer creates a pool-scoped proxy server. A nil resolver disables
@@ -66,6 +73,15 @@ func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolv
 	recorder, err := audit.Open(ctx, cfg.DatabaseDSN, cfg.Recording.QueueSize, cfg.Recording.Enabled)
 	if err != nil {
 		return nil, fmt.Errorf("audit: %w", err)
+	}
+	// A proxy that writes the database alone drops what its schema retired
+	// before it serves; one with a SweepGate waits for the other to exit
+	// (startRetentionSweeper).
+	if cfg.Recording.SweepGate == nil {
+		if err := recorder.DropRetiredColumns(ctx); err != nil {
+			_ = recorder.Close()
+			return nil, fmt.Errorf("audit: %w", err)
+		}
 	}
 	recorder.ConfigureStreamSpool(cfg.Recording.StreamDir, cfg.Recording.StreamQueueSize)
 	recorder.ConfigureBodySpool(cfg.Recording.BodyDir)
@@ -111,6 +127,8 @@ func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolv
 		controlAuth: controlAuth,
 		conns:       map[net.Conn]struct{}{},
 		closed:      make(chan struct{}),
+		draining:    make(chan struct{}),
+		sweepStop:   make(chan struct{}),
 	}
 	s.http = newHTTPProxy(certs, s.filter, buildGatewayTables(cfg.Gateways), resolver, swapper, c, recorder)
 	s.http.destinations.allowLoopback = cfg.AllowLoopbackDestinations
@@ -256,14 +274,23 @@ func swapperConfig(cfg Config) secrets.Config {
 	}
 }
 
-// ListenAndServe starts the mTLS listener. On a server already closed it
-// returns nil without serving.
+// ListenAndServe binds the configured address and serves the mTLS proxy on
+// it (Serve).
 func (s *Server) ListenAndServe() error {
 	var listenConfig net.ListenConfig
 	tcp, err := listenConfig.Listen(s.ctx, "tcp", s.cfg.ListenAddress)
 	if err != nil {
 		return err
 	}
+	return s.Serve(tcp)
+}
+
+// Serve serves the mTLS proxy on tcp, a listener bound for it: by
+// ListenAndServe, or a socket systemd holds for a pool, which the proxy
+// taking over from this one serves too (ADR 26-11-26-536 §4). On a server
+// already closed it returns nil without serving, and once a drain has closed
+// the listener it returns nil.
+func (s *Server) Serve(tcp net.Listener) error {
 	listener := tls.NewListener(tcp, &tls.Config{
 		Certificates: []tls.Certificate{s.certs.ServerCert},
 		ClientCAs:    s.certs.ClientCAPool,
@@ -273,6 +300,10 @@ func (s *Server) ListenAndServe() error {
 	s.connMu.Lock()
 	select {
 	case <-s.closed:
+		s.connMu.Unlock()
+		_ = listener.Close()
+		return nil
+	case <-s.draining:
 		s.connMu.Unlock()
 		_ = listener.Close()
 		return nil
@@ -286,6 +317,8 @@ func (s *Server) ListenAndServe() error {
 		if err != nil {
 			select {
 			case <-s.closed:
+				return nil
+			case <-s.draining:
 				return nil
 			default:
 				return err
@@ -327,12 +360,17 @@ func (s *Server) admit(conn net.Conn) bool {
 //
 // The caller holds connMu, so Close either waits for the sweeper or stops it
 // from starting.
+//
+// With a SweepGate, its first pass waits on it, and so does dropping the
+// columns this schema retired, which it does first: a proxy still draining
+// beside this one writes the same database and trees (ADR 26-11-26-536 §3).
 func (s *Server) startRetentionSweeper() {
 	retention := s.cfg.Recording.Retention
 	budgeted := s.audit.SpoolBudget().Enabled()
-	if !s.cfg.Recording.Enabled || (retention <= 0 && !budgeted) {
+	if !s.cfg.Recording.Enabled {
 		return
 	}
+	sweeps := retention > 0 || budgeted
 	interval := maxSweepInterval
 	if retention > 0 {
 		interval = SweepInterval(retention)
@@ -340,6 +378,25 @@ func (s *Server) startRetentionSweeper() {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
+		if gate := s.cfg.Recording.SweepGate; gate != nil {
+			gated, stop := context.WithCancel(s.ctx)
+			defer stop()
+			go func() {
+				select {
+				case <-s.closed:
+				case <-s.sweepStop:
+				case <-gated.Done():
+				}
+				stop()
+			}()
+			if gate(gated) != nil {
+				return
+			}
+			s.retireColumns()
+		}
+		if !sweeps {
+			return
+		}
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		var lastBudgetPass time.Time
@@ -354,6 +411,8 @@ func (s *Server) startRetentionSweeper() {
 			select {
 			case <-s.closed:
 				return
+			case <-s.sweepStop:
+				return
 			case <-s.ctx.Done():
 				return
 			case <-s.audit.OverBudget():
@@ -365,6 +424,9 @@ func (s *Server) startRetentionSweeper() {
 					timer := time.NewTimer(wait)
 					select {
 					case <-s.closed:
+						timer.Stop()
+						return
+					case <-s.sweepStop:
 						timer.Stop()
 						return
 					case <-s.ctx.Done():
@@ -405,6 +467,14 @@ func (s *Server) sweepAudit(retention time.Duration) {
 		attribute.Int64("proxy.audit.retention.bytes", result.Bytes),
 	)
 	recordSpanError(span, err)
+}
+
+// retireColumns drops the audit columns this schema retired, and reports it
+// on a span.
+func (s *Server) retireColumns() {
+	ctx, span := proxyTracer().Start(contextOrBackground(s.ctx), "proxy.audit.retire_columns")
+	defer span.End()
+	recordSpanError(span, s.audit.DropRetiredColumns(ctx))
 }
 
 // enforceSpoolBudget runs one spool budget pass and reports it on a span, as
@@ -462,6 +532,49 @@ func (s *Server) ClientHTTPAudit(ctx context.Context, clientID string, query Aud
 	}
 	query.ClientID = clientID
 	return s.audit.ListHTTP(ctx, query)
+}
+
+// StopAccepting closes the proxy's listener, and nothing else: the
+// connections it accepted are still served, and Serve returns nil. Under a
+// handover the listener is a socket systemd holds, which the proxy taking
+// over accepts from (ADR 26-11-26-536 §4).
+func (s *Server) StopAccepting() {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	select {
+	case <-s.draining:
+	default:
+		close(s.draining)
+	}
+	if s.listener != nil {
+		_ = s.listener.Close()
+	}
+}
+
+// Drain stops accepting, and serves the connections the proxy holds to their
+// end, until ctx ends, which is when it returns ctx's error (ADR 26-11-26-536
+// §3): a plain HTTP connection closes once its current response is sent,
+// while a CONNECT tunnel, a MITM'd one included, and an upgraded stream run
+// until they end. The retention sweeper stops at once: the proxy taking over
+// sweeps the same trees. The caller closes the proxy afterwards (Close),
+// which cuts what is left and flushes the audit.
+func (s *Server) Drain(ctx context.Context) error {
+	s.StopAccepting()
+	s.sweepOnce.Do(func() { close(s.sweepStop) })
+	if s.http != nil {
+		s.http.drain()
+	}
+	served := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(served)
+	}()
+	select {
+	case <-served:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Close stops the proxy and flushes queued audit events.

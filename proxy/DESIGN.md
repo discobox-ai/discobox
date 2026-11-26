@@ -217,6 +217,18 @@ the pool, so `/audit/dropped` answers a `client_id` with that client's own
 counts and a pool-wide reader with the totals; a client's counts and DNS budget
 go with its purge.
 
+Two processes write one pool's database while a pool hands over to a new
+proxy (ADR 26-11-26-536 §3; [Draining](#draining)): SQLite's write lock and
+`gormdb`'s busy timeout keep their writes in turn, each process the single
+writer of its own queue. A proxy's schema only adds at open. The columns it
+retires it drops before it serves when it writes the database alone, and
+otherwise once no draining proxy writes with an older schema
+(`DropRetiredColumns`, behind `RecordingConfig.SweepGate`, which the pool
+proxy sets only when another proxy is active or draining as it starts), since that
+one's inserts would fail on a column gone. The drop then rewrites the table
+while this proxy serves, once per release that retires a column, and writes
+past the queue meanwhile are dropped and counted.
+
 A client in `Recording.UnauditedClients` is recorded not at all: no HTTP,
 SOCKS or DNS row, and no body or stream spool file (`Recorder.records`). The
 client ID is the identity of the certificate the proxy issued, never anything
@@ -355,6 +367,23 @@ A reader is told what it is reading. A cut file is served with
 server relay. A file a row names that is gone, or a cache entry the cache has
 evicted, answers `410 Gone` rather than 404, because the artifact was recorded
 and has since been reclaimed.
+
+## Draining
+
+A pool's proxy gives way to a new one beside it without cutting what it
+carries (ADR 26-11-26-536 §3; the pool's side is
+[pool-agent](../pool-agent/DESIGN.md#handing-over)). `Serve` takes a listener
+bound for it, a socket systemd holds that both proxies serve. `StopAccepting`
+closes this proxy's listener only, and `Drain` then serves what it accepted
+to its end, until its context ends: a plain connection's server stops
+keeping it alive (`SetKeepAlivesEnabled(false)`), so it closes once idle or
+after its current response, and the client's next request reaches the new
+proxy; a hijacked connection, a CONNECT tunnel (MITM'd or passed through) or
+an upgraded stream, runs until it ends. The retention sweeper stops at once,
+since the new proxy sweeps the same trees; the new proxy's first pass waits
+on `RecordingConfig.SweepGate` until the draining one has exited, since a
+budget pass would cut a stream spool it is still writing. `Close` afterwards cuts what is
+left and flushes the audit.
 
 ## Upgraded Streams
 
@@ -1170,10 +1199,11 @@ The control plane's resolve answer names the secret a value is, and
 rotated-credential retry, and `Result` onto `HTTPExchange.SwappedSecretIDs`.
 A refused request names no secret: nothing was resolved, so nothing was spent.
 The column holds IDs and never a sentinel: this trail is retained to be read
-afterwards, and an ID authorizes nothing and only names. Opening a database an
-earlier proxy wrote drops the `swapped_use_ids` column it may hold
-(`dropRetiredColumns`; the approved uses it named went with the credential
-judge, ADR 26-10-27-880).
+afterwards, and an ID authorizes nothing and only names. A proxy that writes
+a database an earlier proxy wrote drops the `swapped_use_ids` column it may
+hold (`DropRetiredColumns`; the approved uses it named went with the credential
+judge, ADR 26-10-27-880): before it serves, or, taking over from one still
+draining, once that one has exited (below).
 
 The control API (`ControlHandler`, served by `ListenAndServeControl` only when
 `Control.ListenAddress` is set) reads the audit, and has one write: a purge of

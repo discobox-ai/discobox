@@ -489,11 +489,10 @@ func Open(ctx context.Context, dsn string, queueSize int, enabled bool) (*Record
 	if err != nil {
 		return nil, err
 	}
+	// Only adding what this schema has: a proxy draining beside this one
+	// (ADR 26-11-26-536 §3) still writes with its own, so what this one
+	// retires is dropped later (DropRetiredColumns).
 	if err := pools.Write.WithContext(ctx).AutoMigrate(&HTTPExchange{}, &SOCKSConnect{}, &DNSQuery{}); err != nil {
-		_ = pools.Close()
-		return nil, err
-	}
-	if err := dropRetiredColumns(pools.Write.WithContext(ctx)); err != nil {
 		_ = pools.Close()
 		return nil, err
 	}
@@ -1092,15 +1091,31 @@ func openRelativeSpoolFile(root, relativePath, label string) (*os.File, error) {
 // never removes one, so each is dropped here, once, where it exists, with
 // ALTER TABLE ... DROP COLUMN. That is not cheap: SQLite rewrites every row of
 // the table to purge the column, and this is the largest table the pool keeps.
-// It is a one-time rewrite, on the first start after the upgrade, before the
-// proxy serves, and it takes time in proportion to the audit retained
-// (Recording.Retention); every later start finds the column gone and does
-// nothing.
+// It is a one-time rewrite, on the first start after the upgrade, and it
+// takes time in proportion to the audit retained (Recording.Retention); every
+// later start finds the column gone and does nothing. A proxy that writes the
+// database alone does it before it serves. One that took over from a proxy
+// still draining (ADR 26-11-26-536 §3) does it once that one has exited,
+// while it serves: its writes queue behind the rewrite's lock for as long as
+// it takes, and those past the queue are dropped and counted, as under any
+// burst. That is accepted, once per release that retires a column, against
+// the alternative of failing every write of the draining proxy, whose schema
+// still names it.
 //
 // swapped_use_ids named the approved credential uses a request spent; uses
 // went with the credential judge (ADR 26-10-27-880).
 var retiredColumns = map[string][]string{
 	"http_exchanges": {"swapped_use_ids"},
+}
+
+// DropRetiredColumns drops the columns this schema retired: once no other
+// process writes the database with a schema that still has them, since its
+// inserts would fail on a column gone.
+func (r *Recorder) DropRetiredColumns(ctx context.Context) error {
+	if r == nil || !r.enabled {
+		return nil
+	}
+	return dropRetiredColumns(r.db.WithContext(ctx))
 }
 
 func dropRetiredColumns(db *gorm.DB) error {
