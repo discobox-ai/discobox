@@ -261,7 +261,13 @@ as ADR 26-10-09-106 §1 places it:
   its ingress URL, strictly (`CreateOptions.URLs`), which the server, the
   pool's controller, reaches its agent at, so a driver that gives none
   refuses the machine at create rather than at the server's first dial; its
-  pool URL is the driver's default. The pool agent makes every sandbox's
+  pool URL is the driver's default. It is made running
+  (`CreateOptions.Start`, bounded by `poolStartTimeout`; disco-vm ADR
+  26-11-23-458), so the pass's state check finds it up and starts nothing: a
+  create left stopped and then started would stop the sandbox Archil makes
+  running and power a fresh boxd machine off, only to boot it again.
+  Its steps report it made and started; a create whose start fails leaves
+  no machine. The pool agent makes every sandbox's
   machine isolated on that network (ADR 26-10-23-551 §4) with its pool URL
   on and its ingress URL off, both strictly, so boxd gives it no URL beyond
   its pool one (disco-vm ADR 26-11-14-610). On a driver fenced at its edge
@@ -283,7 +289,8 @@ as ADR 26-10-09-106 §1 places it:
   same way (`notReachable`), so a service that drops for a moment during a
   running pool's reconcile records no failure on the pool and does not end a
   create waiting for its agent. Not mapped: a start or stop, whose own
-  deadline is the guest's boot or shutdown, and what runs inside the guest
+  deadline is the guest's boot or shutdown, and a create its boot's
+  deadline ended (it is made running, above), and what runs inside the guest
   (placing files, provisioning, restarting units), whose errors are the
   guest's; a drop during those still fails the pass, which matters only to a
   pool being made or moved. The reconciler's repair passes (a registration
@@ -463,7 +470,8 @@ the engine's do, through the `sandbox.PoolProgressReporter`
 [../DESIGN.md](../DESIGN.md#reporting-what-bringing-a-pool-up-is-doing),
 each held call under the context its hold returns:
 
-- `starting_vm`, held around making the machine and around starting it;
+- `starting_vm`, held around making the machine, which its create starts,
+  and around starting a stopped one;
 - `starting_pool_agent`, held around `ProvisionBox` (and a moved placement's
   `RestartPoolUnits`) on a pass that made, started or repairs the machine,
   or finds its box never provisioned (the pass that made it failed while it

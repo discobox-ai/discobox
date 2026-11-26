@@ -98,14 +98,18 @@ type poolTestDriver struct {
 	// Each of its Service calls mints a credential, counted in minted.
 	edge   bool
 	minted int
-	// startDelay is how long Start takes before the machine boots, and
-	// startBegan and startEnded when the last one did: a boot that outlasts a
-	// progress heartbeat.
+	// startDelay is how long a boot takes, Start's or a create's asked to
+	// start (spec.Start), before the machine boots, and startBegan and
+	// startEnded when the last one did: a boot that outlasts a progress
+	// heartbeat.
 	startDelay             time.Duration
 	startBegan, startEnded time.Time
-	// startReport, when set, is called with Start's context as it begins:
+	// startReport, when set, is called with the boot's context as it begins:
 	// a driver reporting from inside the phase held around it.
 	startReport func(context.Context)
+	// starts counts Start's calls, and startedCreates the creates asked to
+	// start.
+	starts, startedCreates int
 }
 
 func (d *poolTestDriver) Name() string {
@@ -179,10 +183,21 @@ func (d *poolTestDriver) Check(ctx context.Context) error {
 func (d *poolTestDriver) Create(ctx context.Context, spec machine.InstanceSpec) (machine.Instance, error) {
 	d.mu.Lock()
 	d.created = append(d.created, spec)
+	if spec.Start != nil {
+		d.startedCreates++
+	}
 	d.mu.Unlock()
 	fence := machine.InstanceSpec{Bare: spec.Bare, Networks: spec.Networks}
 	spec.Bare, spec.Networks = false, nil
+	if spec.Start != nil {
+		if err := d.boot(ctx); err != nil {
+			return machine.Instance{}, err
+		}
+	}
 	inst, err := d.Driver.Create(ctx, spec)
+	if spec.Start != nil {
+		d.booted()
+	}
 	if err != nil {
 		return inst, err
 	}
@@ -244,7 +259,9 @@ func (d *poolTestDriver) IssueKey(ctx context.Context, req machine.IssueRequest)
 	return d.Driver.IssueKey(ctx, req)
 }
 
-func (d *poolTestDriver) Start(ctx context.Context, inst machine.Instance, opts machine.BootOptions) (machine.Machine, error) {
+// boot begins a boot, Start's or a started create's: it reports, and takes
+// startDelay.
+func (d *poolTestDriver) boot(ctx context.Context) error {
 	d.mu.Lock()
 	delay, report := d.startDelay, d.startReport
 	d.startBegan = time.Now()
@@ -255,14 +272,29 @@ func (d *poolTestDriver) Start(ctx context.Context, inst machine.Instance, opts 
 	if delay > 0 {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return ctx.Err()
 		case <-time.After(delay):
 		}
 	}
-	m, err := d.Driver.Start(ctx, inst, opts)
+	return nil
+}
+
+// booted ends the boot boot began.
+func (d *poolTestDriver) booted() {
 	d.mu.Lock()
 	d.startEnded = time.Now()
 	d.mu.Unlock()
+}
+
+func (d *poolTestDriver) Start(ctx context.Context, inst machine.Instance, opts machine.BootOptions) (machine.Machine, error) {
+	d.mu.Lock()
+	d.starts++
+	d.mu.Unlock()
+	if err := d.boot(ctx); err != nil {
+		return nil, err
+	}
+	m, err := d.Driver.Start(ctx, inst, opts)
+	d.booted()
 	if err != nil {
 		return nil, err
 	}
@@ -547,6 +579,33 @@ func recordOf(t *testing.T, pool *model.Pool) poolRuntimeState {
 	return state
 }
 
+// A pool's machine whose boot outlasts its deadline fails the pass with the
+// pool's own error, not one the reconciler waits on: its create boots it, and
+// a boot that does not finish is the guest's, as a start's is (REVIEW.md), so
+// a machine that never boots is not made, waited on and removed at every
+// pass. The create leaves no machine.
+func TestFakePoolMachineWhoseBootOutlastsItsDeadlineIsNotWaitedOn(t *testing.T) {
+	r, driver := newFakePool(t, "")
+	driver.startDelay = time.Minute
+	pool := &model.Pool{ID: "pool-never-boots", ProjectID: "project-1"}
+	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil)
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("EnsurePool() with a boot past its deadline = %v, want the boot's deadline", err)
+	}
+	if errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("EnsurePool() = %v, want the pool's error, not one the reconciler waits on", err)
+	}
+	if driver.startedCreates != 1 || driver.starts != 0 {
+		t.Fatalf("%d started creates and %d starts, want the one create that boots it", driver.startedCreates, driver.starts)
+	}
+	if all, err := driver.Instances(context.Background()); err != nil || len(all) != 0 {
+		t.Fatalf("instances = %v, %v; want none left", all, err)
+	}
+}
+
 // A pool's machine on a driver that gives no ingress URL is refused when it
 // is made, naming that URL: the server reaches the pool's agent there alone,
 // and never at the pool URL its peers reach (disco-vm ADR 26-11-14-610).
@@ -584,6 +643,11 @@ func TestFakePoolMachineIsMadeThePoolsBox(t *testing.T) {
 	const scope = "pool-0123456789abcdef"
 	if len(driver.created) != 1 || driver.created[0].Name != scope || driver.created[0].Bare || !slices.Equal(driver.created[0].Networks, []string{scope}) || driver.created[0].URLs != (machine.URLRequests{Ingress: machine.URLRequest{Mode: machine.URLOn, Strict: true}}) {
 		t.Fatalf("created %+v, want one machine named %s, not isolated, on network %s alone, with its ingress URL asked on, strictly", driver.created, scope, scope)
+	}
+	// Made running by its create, and not started again: no stop between
+	// its create and its start (disco-vm ADR 26-11-23-458).
+	if driver.created[0].Start == nil || driver.startedCreates != 1 || driver.starts != 0 {
+		t.Fatalf("created %+v with %d started creates and %d starts, want one create asked to start and no Start", driver.created[0], driver.startedCreates, driver.starts)
 	}
 	if len(maker.enrolled) != 1 || maker.enrolled[0] != testPoolKey {
 		t.Fatalf("enrolled %q, want the key the box made", maker.enrolled)
