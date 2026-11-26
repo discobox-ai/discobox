@@ -263,6 +263,7 @@ func (a *App) planUninstall(ctx context.Context) uninstallPlan {
 	}
 	plan.entries, plan.kept = uninstallEntries(locations, runningExecutables(), protectedDirs())
 	plan.kept = append(plan.kept, skillKept...)
+	plan.kept = append(plan.kept, platformUninstallKept()...)
 	targets, err := machineSSHTargets(ctx)
 	if err != nil {
 		return plan

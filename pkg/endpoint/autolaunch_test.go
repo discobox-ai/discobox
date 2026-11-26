@@ -458,3 +458,75 @@ func TestWaitReadyRedrawsTheStepAfterASlowProbe(t *testing.T) {
 		t.Fatalf("progress = %q, want %q", lines, want)
 	}
 }
+
+// A command's Install runs in the switch-over gap: after the older server has
+// stopped, since what it replaces may be that server's running executable, and
+// before the launch, which starts the path it returns.
+func TestEnsureRunningInstallsOnceTheOlderServerHasStopped(t *testing.T) {
+	var stopped atomic.Bool
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/shutdown" {
+			w.WriteHeader(http.StatusOK)
+			go func() {
+				server.Close()
+				stopped.Store(true)
+			}()
+			return
+		}
+		_, _ = w.Write([]byte(`{"status":"ready","version":"v0.5.0"}`))
+	}))
+	defer server.Close()
+	// No systemd-run on this PATH, so the launch is the direct one and fails
+	// at once on a path that is not there.
+	t.Setenv("PATH", t.TempDir())
+	installed := filepath.Join(t.TempDir(), "run", "discobox-server-not-there")
+	var stoppedAtInstall atomic.Bool
+	installs := 0
+	opts := LaunchOptions{
+		Endpoint: server.URL, LockPath: filepath.Join(t.TempDir(), "launch.lock"),
+		LogPath: filepath.Join(t.TempDir(), "server.log"),
+		Command: func(context.Context) (Command, error) {
+			if stopped.Load() {
+				t.Error("the command was resolved after the older server stopped")
+			}
+			return Command{Path: "/the/versioned/server", Install: func() (string, error) {
+				installs++
+				stoppedAtInstall.Store(stopped.Load())
+				return installed, nil
+			}}, nil
+		},
+		ExpectedVersion: "v0.5.1",
+		ProbeTimeout:    200 * time.Millisecond, ProbeInterval: time.Millisecond, ReadyTimeout: 10 * time.Second,
+	}
+	_, err := EnsureRunning(context.Background(), opts)
+	if installs != 1 || !stoppedAtInstall.Load() {
+		t.Fatalf("Install ran %d times, after the older server stopped: %v", installs, stoppedAtInstall.Load())
+	}
+	// What was started is the installed path, which is not there.
+	if err == nil || !strings.Contains(err.Error(), "start local server") {
+		t.Fatalf("EnsureRunning() = %v, want the installed path's start to fail", err)
+	}
+}
+
+// An Install that fails ends the launch with its error: nothing is started.
+func TestEnsureRunningStopsWhenInstallFails(t *testing.T) {
+	reserved, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := reserved.Addr().String()
+	_ = reserved.Close()
+	errInstall := errors.New("could not install")
+	opts := LaunchOptions{
+		Endpoint: "http://" + addr, LockPath: filepath.Join(t.TempDir(), "launch.lock"),
+		LogPath: filepath.Join(t.TempDir(), "server.log"),
+		Command: func(context.Context) (Command, error) {
+			return Command{Path: "/the/versioned/server", Install: func() (string, error) { return "", errInstall }}, nil
+		},
+		ProbeInterval: time.Millisecond,
+	}
+	if started, err := EnsureRunning(context.Background(), opts); started || !errors.Is(err, errInstall) {
+		t.Fatalf("EnsureRunning() = %v, %v; want the install's error and nothing started", started, err)
+	}
+}

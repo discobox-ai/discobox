@@ -49,3 +49,11 @@
 - **A wait under the launch lock ends the call** unless the server it found
   is older. Falling through to the launch after waiting out a server that
   appeared started a second one beside it.
+
+- **A server that stopped answering has not exited.** `replaceOlderServer`
+  returns once the listener is gone, and the server then drains providers and
+  VMs for up to its stop grace with its executable still loaded. Anything in
+  the switch-over gap (`Command.Install`) must not need the old process gone:
+  on Windows a loaded image can be renamed but not replaced or deleted, which is
+  why `serverstage.Install` moves a changed file aside. The first version
+  renamed over it, and every upgrade would have lost the LSP exemption.

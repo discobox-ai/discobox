@@ -717,7 +717,7 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 		// server to download, must not pay for that to find out.
 		Command: func(ctx context.Context) (endpoint.Command, error) {
 			progress.set("Preparing the local server")
-			path, err := a.resolveServer(ctx, func(report serverstage.Progress) {
+			server, err := a.resolveServer(ctx, func(report serverstage.Progress) {
 				progress.set(serverStageText(report))
 			})
 			if err != nil {
@@ -727,8 +727,10 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 			// brings up load the images from disk rather than pulling them
 			// (ADR 0113) — and, because EnsureRunning resolves before it stops
 			// an older server, while that server is still answering.
-			a.stageServerImages(ctx, progress, path)
-			return endpoint.Command{Path: path}, nil
+			a.stageServerImages(ctx, progress, server.path)
+			return endpoint.Command{Path: server.path, Install: func() (string, error) {
+				return a.serverResolver(nil).runPath(server)
+			}}, nil
 		},
 		Env:             localServerEnv(a.serverURL),
 		ExpectedVersion: expectedVersion,

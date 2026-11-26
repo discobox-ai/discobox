@@ -27,3 +27,11 @@
 - **Sanitize harness names before using them as inline picker labels.** A name
   can come from a bundle or a project configuration and contain terminal
   control sequences. Apply `terminalSafe` before handing it to the picker.
+
+- **An elevated step writes nothing to a path its unelevated parent chose.**
+  `lsp-exempt-elevated` runs as administrator from arguments a medium-integrity
+  parent passed; a file the parent names (an error file in `%TEMP%`, say) can
+  be swapped for a link by any program running as that user, which turns the
+  write into an elevated overwrite of a file of its choosing. Report through the
+  exit status, and have the parent read the result back from Windows. The first
+  fix for the hidden window's lost error did exactly this.

@@ -7,9 +7,11 @@
 // and moved into place as a set only once every digest matches.
 //
 // One staged set per server version, so an upgrade lands beside what it
-// replaces rather than over it — a server running out of its own directory is
-// never overwritten underneath itself, and going back a version is a directory
-// that is still there.
+// replaces rather than over it, and going back a version is a directory that is
+// still there. Where the path a server runs from has to stay the same across
+// versions (Windows, which keys a Winsock LSP exemption by it), Install links
+// the set into one fixed run directory beside them; a file there that a server
+// still has loaded is moved aside, never overwritten (ADR 26-11-24-372).
 package serverstage
 
 import (
@@ -170,6 +172,10 @@ func (m Manifest) Validate() error {
 		// The version is a directory name, so it is checked as one rather than
 		// merely for emptiness: everything staged is addressed through it.
 		return fmt.Errorf("server manifest version %q is not a usable directory name", m.Version)
+	}
+	if isRunDir(m.Version) {
+		// Its directory would be the one servers are run from (see RunDir).
+		return fmt.Errorf("server manifest version %q names the directory servers are run from", m.Version)
 	}
 	if !platformPattern.MatchString(m.OS) || !platformPattern.MatchString(m.Arch) {
 		return fmt.Errorf("server manifest names platform %q, which is not a GOOS/GOARCH pair", m.Platform())
