@@ -542,7 +542,26 @@ changed. A step added that lays a binary needs it there too.
   restarts onto records nothing; the one after the restart does. Recorded
   before the restart, a pool agent gone in between leaves a running machine
   whose record says current, no agent, and every request a 502.
-- **What runs in a machine straight after `engine.Start` does not assume
+- **A machine made running is a start from its create.** Between a create
+  asked to start (`engine.CreateOptions.Start`) and the `startLocked` that
+  places it, the machine runs with no agent: that window is marked booting
+  (`beginBoot` before the create) and stopped, detached, on an error before
+  `startLocked` begins its own boot (`buildMachine`; the boot mark still the
+  create's). From that boot on, a failure is the start's: its `fail` stops
+  the machine, and a caller gone mid-wait leaves the boot going on, never
+  stopped under it. A new step put in that window, or a new caller of
+  `ensureInstance` with `start`, keeps both. Why: a step that fails there
+  (the service address, the bootstrap, a record write) left a stopped
+  machine before; unbracketed, it leaves one running unplaced, answering
+  nothing and billed until the box is deleted. Stopping past it stopped a
+  box still booting whenever its caller went.
+- **disco-vm and discobox each have an ADR 26-11-23-458**, about different
+  things: disco-vm's lets a create leave its VM running, discobox's
+  provisions a machine in place. Cite disco-vm's as "disco-vm ADR
+  26-11-23-458". Why: the bare ID reads as discobox's, which machine code
+  here cites too.
+- **What runs in a machine straight after `engine.Start`, or a create asked
+  to start (`engine.CreateOptions.Start`), does not assume
   systemd has settled.** At disco-vm be1c6f74 boxd's `Start` returns once
   boxd says the machine runs, and at b940c6d6 archil's once systemd is
   launched, so a placement, `provision apply` or a

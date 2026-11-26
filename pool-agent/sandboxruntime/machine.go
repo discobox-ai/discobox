@@ -640,7 +640,7 @@ func (r *MachineSandboxRuntime) pinsMoved(sandboxID, instance string) (bool, err
 // bootstrap, the same disk, and a restart if it ran (rebuildInPlace). It
 // reports a rebuild when the project layer settling read is not the one the
 // bootstrap was made with.
-func (r *MachineSandboxRuntime) buildMachine(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest, existing *Sandbox) (*Sandbox, bool, error) {
+func (r *MachineSandboxRuntime) buildMachine(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest, existing *Sandbox) (_ *Sandbox, _ bool, resultErr error) {
 	normalizeSandboxConfig(r.paths, &req.Config)
 	project, err := r.readProjectLayerRecord(sandboxID)
 	if err != nil {
@@ -666,10 +666,46 @@ func (r *MachineSandboxRuntime) buildMachine(ctx context.Context, sandboxID stri
 		return nil, false, err
 	}
 	r.publishSandboxPhase(ctx, sandboxID, PhaseCreatingContainer)
-	inst, snapshot, err := r.ensureInstance(ctx, sandboxID, req)
+	// startsNew is a create of a new sandbox that starts it, decided once:
+	// its machine is made running, and started below. Its start finds it up
+	// with nothing placed, and places it without starting it again. One still
+	// to be given a new root is made stopped, as only a stopped machine is
+	// given one.
+	startsNew := existing == nil && req.Config.Start.Or(true)
+	madeRunning := startsNew && !record.NewRoot
+	// A machine made running is booting from its create until its start
+	// takes it over, as a start's is from before engine.Start ("Running is
+	// not ready", REVIEW.md): nothing reads it as ready while it runs with
+	// nothing placed. A create that fails before its start has begun its own
+	// boot stops it, detached, as a start that fails does: a machine left
+	// running with no agent would answer nothing until it was deleted. Once
+	// the start has begun its boot (startLocked's beginBoot replaced this
+	// one), what fails is the start's to handle: its fail stops the machine,
+	// and a caller gone mid-wait leaves the boot going on, detached.
+	var madeBoot *sandboxBoot
+	stopMade := false
+	if madeRunning {
+		madeBoot = r.beginBoot(sandboxID)
+		defer func() {
+			if madeBoot == nil {
+				return
+			}
+			current, booting := r.booting.Load(sandboxID)
+			if resultErr != nil && stopMade && booting && current == madeBoot {
+				stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), machineStopTimeout+time.Minute)
+				if err := r.stopMachine(stopCtx, sandboxID); err != nil {
+					slog.WarnContext(stopCtx, "stop a sandbox machine made running whose create failed", "sandboxId", sandboxID, "error", err)
+				}
+				cancel()
+			}
+			r.endBoot(sandboxID, madeBoot, resultErr)
+		}()
+	}
+	inst, snapshot, err := r.ensureInstance(ctx, sandboxID, req, madeRunning)
 	if err != nil {
 		return nil, false, err
 	}
+	stopMade = madeRunning
 	if record.Instance != inst.ID {
 		// Made just now, or found by name after a create that was lost: this
 		// machine has not been started by this record. An upgrade it asked
@@ -714,7 +750,7 @@ func (r *MachineSandboxRuntime) buildMachine(ctx context.Context, sandboxID stri
 		if err := r.rebuildInPlace(ctx, sandboxID); err != nil {
 			return nil, false, err
 		}
-	} else if existing != nil || !req.Config.Start.Or(true) {
+	} else if !startsNew {
 		// A machine that was down stays down and boots on its new bootstrap
 		// at its next start; a create not asked to start leaves it made.
 		if !createStarts(req) {
@@ -724,8 +760,16 @@ func (r *MachineSandboxRuntime) buildMachine(ctx context.Context, sandboxID stri
 		if err := r.startLocked(ctx, sandboxID); err != nil {
 			return nil, false, err
 		}
-	} else if err := r.startLocked(ctx, sandboxID); err != nil {
-		return nil, false, err
+	} else {
+		if err := r.startLocked(ctx, sandboxID); err != nil {
+			return nil, false, err
+		}
+		if madeBoot != nil {
+			// Its start's boot replaced this one, and is what the sandbox
+			// is booting on now.
+			r.endBoot(sandboxID, madeBoot, nil)
+			madeBoot = nil
+		}
 	}
 	sb, err := r.GetSandbox(ctx, sandboxID)
 	if err != nil {
@@ -988,7 +1032,7 @@ func (r *MachineSandboxRuntime) remakeMachine(ctx context.Context, sandboxID str
 	if !ok {
 		return ErrNoContainer
 	}
-	inst, _, err := r.ensureInstance(ctx, sandboxID, nil)
+	inst, _, err := r.ensureInstance(ctx, sandboxID, nil, false)
 	if err != nil {
 		return err
 	}
@@ -1061,7 +1105,13 @@ func (r *MachineSandboxRuntime) takesRuntimeConfig(_ context.Context, sandboxID 
 // or else at the size recorded (ADR 26-11-23-445 §§2, 5). It returns the key
 // of the snapshot it was made from, empty for none. A create whose answer was
 // lost made one already, which is found by its name.
-func (r *MachineSandboxRuntime) ensureInstance(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) (machine.Instance, string, error) {
+//
+// With start, a machine it makes is made running, as a start leaves it
+// (engine.CreateOptions.Start, disco-vm ADR 26-11-23-458): the start that follows
+// finds it up, with nothing placed, and places it without starting it again
+// (startLocked). A create asked to start that fails leaves no machine. A
+// machine it finds is returned as it is, running or not.
+func (r *MachineSandboxRuntime) ensureInstance(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest, start bool) (machine.Instance, string, error) {
 	size := requestedSize(req)
 	if req != nil {
 		if err := r.recordBoxSize(sandboxID, size); err != nil {
@@ -1086,6 +1136,9 @@ func (r *MachineSandboxRuntime) ensureInstance(ctx context.Context, sandboxID st
 		return machine.Instance{}, "", err
 	}
 	opts := r.createOptions(name, size.machine())
+	if start {
+		opts.Start = &engine.StartOptions{Timeout: machineStartTimeout}
+	}
 	// Where the driver attaches them, the sandbox's data and its cache are
 	// on volumes of the machine's own, which a new root keeps
 	// (keepsDataOnVolume). The cache is the machine's alone, under a key of

@@ -1159,10 +1159,10 @@ pool's proxy (`proxyagent.EngineSentinel`, ADR 26-11-11-080 §9):
 
 ```mermaid
 flowchart LR
-    create["CreateSandbox"] --> inst["machine named by the sandbox ID\nfrom its plan's snapshot, or the driver's base\n(isolated, on the pool's network\nor at its edge on none,\nfenced to the pool,\npool URL on, no ingress URL)"]
+    create["CreateSandbox"] --> inst["machine named by the sandbox ID\nfrom its plan's snapshot, or the driver's base\n(isolated, on the pool's network\nor at its edge on none,\nfenced to the pool,\npool URL on, no ingress URL;\nmade running when the create starts it)"]
     inst --> newroot{"machine.json asks\na new root?"}
     newroot -->|yes| upgrade["upgradeMachine:\nengine.Upgrade, keeping\nits data and cache volumes"]
-    newroot -->|no| start["startLocked: engine.Start"]
+    newroot -->|no| start["startLocked: engine.Start,\nnone for one made running"]
     upgrade --> start
     start --> place{"place: sandbox.json,\nagentlayer.Archive"}
     place -->|"placed as before"| apply["discobox-provision apply:\nnothing to mount"]
@@ -1195,6 +1195,20 @@ flowchart LR
   no pool is refused, and a machine found by name whose fence its
   driver reports otherwise — made before the fence, or by hand — is refused
   rather than run (`fenced`).
+- **A new machine that is to start is made running** (`ensureInstance`,
+  `engine.CreateOptions.Start`, disco-vm ADR 26-11-23-458): a create asked to
+  start (or not told otherwise) of a sandbox with no machine makes it
+  started, as `Start` would leave it, in the one create. The start that
+  follows finds it running with nothing placed, and places it without
+  starting it again. How many boots that saves is the driver's: a fresh
+  archil machine is started once, its data disk mounted by its create; one
+  archil forks from a snapshot is still stopped and started once by its
+  driver to mount its disk; a fresh boxd machine skips its power-off. A
+  create not asked to start, a machine made again (`remakeMachine`), and one
+  still to be given a new root are made stopped. A started create that fails
+  leaves no machine. From the create until its start takes over, the
+  sandbox is marked booting, and a create that fails in between stops the
+  machine, as a failed start does.
 - **A machine first placed on is refused when its base carries no
   systemd** (`provisioner.RequireSystemd`), before anything is placed: every
   unit below runs under it ([ADR 26-11-16-619](../docs/adr/26-11-16-619-a-pool-on-a-driver-with-no-networks-fences-each-sandbox-at-the-providers-edge-and-starts-systemd-in-the-guest.md)
@@ -1973,7 +1987,9 @@ flowchart LR
 
 - **The build is one exec** (`runSnapshotCommand`, through
   `provisioner.Provision` on both runtimes: a container as
-  `provisioner.ContainerGuest`). The taker starts its box, places the agent,
+  `provisioner.ContainerGuest`). The taker starts its box (a machine pool
+  makes its machine running, one create asked to start,
+  `engine.CreateOptions.Start`), places the agent,
   its units and its pins, and runs the agent's `snapshot` command as one
   blocking exec with the plan on its stdin, whose exit status and stderr are
   the build's result. The
