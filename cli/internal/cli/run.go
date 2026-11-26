@@ -513,7 +513,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 		return err
 	}
 	if opts.fromJSON {
-		return writeJSON(cmd.OutOrStdout(), sandbox)
+		return writeTerminalSafeJSON(cmd.OutOrStdout(), sandbox)
 	}
 	if opts.detach {
 		return a.writeSandbox(cmd, sandbox)

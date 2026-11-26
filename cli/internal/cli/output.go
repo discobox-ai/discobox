@@ -48,7 +48,8 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error 
 		return nil
 	}
 	if a.output == "json" {
-		return writeJSON(cmd.OutOrStdout(), sandbox)
+		// The agent's status in it is the box's text (cli/REVIEW.md).
+		return writeTerminalSafeJSON(cmd.OutOrStdout(), sandbox)
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tSTATE\tHARNESS\tGIT\tCHANGES\tSTARTED FROM\tERROR\tUPDATED")
@@ -86,7 +87,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 	}
 	if a.output == "json" {
 		if serverOf == nil {
-			return writeJSON(cmd.OutOrStdout(), map[string]any{"sandboxes": sandboxes})
+			return writeTerminalSafeJSON(cmd.OutOrStdout(), map[string]any{"sandboxes": sandboxes})
 		}
 		rows := make([]json.RawMessage, 0, len(sandboxes))
 		for _, sandbox := range sandboxes {
@@ -96,7 +97,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 			}
 			rows = append(rows, row)
 		}
-		return writeJSON(cmd.OutOrStdout(), map[string]any{"sandboxes": rows})
+		return writeTerminalSafeJSON(cmd.OutOrStdout(), map[string]any{"sandboxes": rows})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	header := []string{"ID", "NAME"}
