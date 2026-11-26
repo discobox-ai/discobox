@@ -1094,8 +1094,10 @@ is a container the pool agent limits; vz, libkrun and wslc also set
 `BoxesInPoolVM`, so a box larger than a size its pool sets for the VM is
 refused, and the pool's size, which the driver may clamp (vz to the host's
 cores), is never copied to a box. execvm and DigitalOcean size no VM from a
-pool's size, so on them it is only the boxes' default. A disco-vm provider declares none until disco-vm says which of its
-drivers size a machine; a box or a pool asking for a size there is refused.
+pool's size, so on them it is only the boxes' default. A disco-vm provider
+declares CPU and memory where disco-vm declares that its driver sizes a
+machine, and none where it does not
+([discovm](discovm/DESIGN.md#drivers)).
 The pool and sandbox services refuse any non-zero field the provider does not
 declare (`ProviderDefinition.CheckSize`), so a size is never stored only to
 be ignored. Nothing is checked against what a pool reports as available

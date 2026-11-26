@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -119,6 +120,36 @@ func TestDefinitionIsTheDriversRegistry(t *testing.T) {
 	}
 	if held["controlPlaneUrl"] || held["base"] {
 		t.Fatalf("a held driver's catalog %v lists a field it refuses", held)
+	}
+}
+
+// A driver's provider type acts on a box's CPU and memory, and its pool's as
+// their default, exactly when disco-vm declares that the driver sizes the
+// machine it makes; archil does, so an archil box may ask for a size (ADR
+// 26-11-23-445 §6).
+func TestDefinitionSizesWhatTheDriverDeclares(t *testing.T) {
+	isolateStateRoot(t)
+	for _, name := range append(Types(), "fake") {
+		def, err := machine.DefinitionOf(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var want []sandbox.SizeField
+		if def.Sizes {
+			want = []sandbox.SizeField{sandbox.SizeCPU, sandbox.SizeMemory}
+		}
+		if got := Definition(name).SizeFields; !slices.Equal(got, want) {
+			t.Errorf("Definition(%s).SizeFields = %v, want %v (disco-vm's Sizes is %t)", name, got, want, def.Sizes)
+		}
+	}
+	archil := Definition("archil")
+	for _, field := range []sandbox.SizeField{sandbox.SizeCPU, sandbox.SizeMemory} {
+		if !archil.ActsOnSize(field) {
+			t.Errorf("Definition(archil) does not act on %s", field)
+		}
+	}
+	if archil.ActsOnSize(sandbox.SizeStorage) {
+		t.Error("Definition(archil) acts on storageBytes, which no disco-vm driver is given")
 	}
 }
 

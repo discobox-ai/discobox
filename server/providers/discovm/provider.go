@@ -389,16 +389,27 @@ func Definition(name string) sandbox.ProviderDefinition {
 			fields = append(fields, base)
 		}
 	}
-	// No SizeFields: which drivers size a machine is disco-vm's to declare,
-	// next to the code that honors it, and it declares none yet, so a box or
-	// a pool asking for a size here is refused rather than made at the
-	// driver's default (ADR 26-11-23-445 §6).
 	return sandbox.ProviderDefinition{
 		Name:         name,
 		Icon:         "server",
 		Description:  def.Description,
 		ConfigFields: append(fields, poolruntime.PoolPolicyConfigFields()...),
+		SizeFields:   sizeFields(def),
 	}
+}
+
+// sizeFields are the size fields a provider of the driver acts on: a box's
+// CPU and memory, and its pool's as their default, where disco-vm declares
+// that the driver makes a machine at the size it is given (Definition.Sizes),
+// and none where it does not, so a size asked of that driver is refused
+// rather than made at the driver's default (ADR 26-11-23-445 §6). Which
+// drivers size a machine is disco-vm's to say, next to the code that does;
+// the pool agent's machine runtime passes the box's size to the engine (§5).
+func sizeFields(def machine.Definition) []sandbox.SizeField {
+	if !def.Sizes {
+		return nil
+	}
+	return []sandbox.SizeField{sandbox.SizeCPU, sandbox.SizeMemory}
 }
 
 // Register registers a provider type for each driver of Types with manager,
