@@ -544,7 +544,8 @@ changed. A step added that lays a binary needs it there too.
   whose record says current, no agent, and every request a 502.
 - **What runs in a machine straight after `engine.Start` does not assume
   systemd has settled.** At disco-vm be1c6f74 boxd's `Start` returns once
-  boxd says the machine runs, so a placement, `provision apply` or a
+  boxd says the machine runs, and at b940c6d6 archil's once systemd is
+  launched, so a placement, `provision apply` or a
   snapshot build's command may land mid-boot, before systemd's bus answers:
   `systemctl` sent then can fail on the bus at once, or return while systemd
   is still starting (discobox-ai/vm#180, boxd's sandbox image). A step that runs
@@ -553,8 +554,8 @@ changed. A step added that lays a binary needs it there too.
   `/run/systemd/system` existing is not that; the sandbox start's
   `applyDeliveredBundles` does not wait yet (#1240). When the pin moves, compare
   what `Start` waits for, and
-  check a box's start and restart on a live boxd pool if it waits for less
-  (done for #1238). Why: the fake driver boots instantly, so CI cannot show
+  check a box's start and restart on a live pool of that driver if it waits for less
+  (boxd: done for #1238; archil: done for #1819). Why: the fake driver boots instantly, so CI cannot show
   a step that needs a settled system.
 
 ## A provider's pause is not a sleep

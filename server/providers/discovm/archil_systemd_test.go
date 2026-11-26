@@ -69,10 +69,14 @@ func TestArchilGuestRunsThePoolsAndSandboxsUnits(t *testing.T) {
 		if out := g.run(ctx, t, "cat", "/proc/1/comm"); out != "systemd" {
 			t.Fatalf("PID 1 where guest operations run is %q, not systemd", out)
 		}
-		g.settled(ctx, t)
+		g.launched(ctx, t)
 		// A file copied in, to /run, and a disk mounted after systemd
 		// started, as Archil mounts a data disk at a start, both reach a
-		// unit.
+		// unit. systemd mounts its /run early in its boot, so the copy
+		// waits until systemd answers: one made the moment it is launched
+		// can land under that mount, where no unit sees it. What a pool
+		// places after a start is on the root disk (/etc, /opt), not there.
+		g.answering(ctx, t)
 		var tree bytes.Buffer
 		tw := tar.NewWriter(&tree)
 		writeTar(t, tw, "run/discobox-archil-test", "copied\n")
@@ -96,7 +100,7 @@ func TestArchilGuestRunsThePoolsAndSandboxsUnits(t *testing.T) {
 
 	t.Run("pool", func(t *testing.T) {
 		g := startArchilGuest(ctx, t, "pool")
-		g.settled(ctx, t)
+		g.launched(ctx, t)
 		placement := archilPoolPlacement(box)
 		if _, err := poolruntime.ProvisionBox(ctx, g, enrollAny{}, placement); err != nil {
 			t.Fatalf("provision the pool's box: %v\n%s", err, g.journal(ctx, t))
@@ -110,7 +114,7 @@ func TestArchilGuestRunsThePoolsAndSandboxsUnits(t *testing.T) {
 
 	t.Run("sandbox", func(t *testing.T) {
 		g := startArchilGuest(ctx, t, "sandbox")
-		g.settled(ctx, t)
+		g.launched(ctx, t)
 		placeSandbox(ctx, t, g, box)
 		// As a pool restarts a machine onto its first placement, so the
 		// wiring runs before anything starts (ADR 26-11-02-023 §3).
@@ -150,18 +154,45 @@ if [ -e /.fake-archil/disk-at ]; then
 	mkdir -p "$at" && mount --bind /.fake-archil/disk "$at"
 fi
 for f in /var/lib/fake-archil/services/*; do
+	case ${f##*/} in *.*) continue ;; esac
 	[ -f "$f" ] && /opt/archil/archil-client services start "${f##*/}"
 done
 trap 'exit 0' TERM
 while :; do sleep 1 & wait $!; done
 `
 
-// archilClient stands in for Archil's supervisor, `archil-client services`:
-// a service is its argv in a file of the root disk, run again whenever it
-// exits, and started at every boot by archilInit.
+// archilFakeGrace is how long the fake's stop waits for a service it sent
+// TERM before it gives up, as Archil's waits about 30 s (vm#217).
+const archilFakeGrace = 30
+
+// archilClient stands in for Archil's archil-client: services, where a
+// service is its argv in a file of the root disk, run again whenever it
+// exits, and started at every boot by archilInit; sync, which flushes a
+// mount; and halt, the fake's own, which plays Archil's stop: no service is
+// run again, each is sent TERM, and the stop waits up to $2 seconds for them
+// to exit, failing if one outlives that. A service's restart loop's PID is in
+// <name>.loop, and the PID of its process in <name>.pid.
 const archilClient = `#!/bin/sh
 d=/var/lib/fake-archil/services
-[ "$1" = services ] || { echo "archil-client: $*" >&2; exit 2; }
+case $1 in
+sync) exec sync -f "$2" ;;
+halt)
+	for l in "$d"/*.loop; do [ -f "$l" ] && kill -KILL "$(cat "$l")" 2>/dev/null; done
+	pids=$(cat "$d"/*.pid 2>/dev/null)
+	[ -n "$pids" ] || exit 0
+	kill -TERM $pids 2>/dev/null
+	i=0
+	while [ $i -lt $(($2 * 10)) ]; do
+		up=
+		for p in $pids; do kill -0 "$p" 2>/dev/null && up=1; done
+		[ -n "$up" ] || exit 0
+		sleep 0.1; i=$((i + 1))
+	done
+	echo "a service outlived the stop's grace of $2 s" >&2
+	exit 4 ;;
+services) ;;
+*) echo "archil-client: $*" >&2; exit 2 ;;
+esac
 case $2 in
 get) [ -f "$d/$3" ] ;;
 create)
@@ -171,7 +202,7 @@ create)
 	mkdir -p "$d" && printf '%s\0' "$@" > "$d/$n" || exit
 	exec "$0" services start "$n" ;;
 start)
-	setsid sh -c 'while :; do xargs -0 sh -c '\''exec "$@"'\'' sh < "$1"; sleep 1; done' sh "$d/$3" </dev/null >/dev/null 2>&1 &
+	setsid sh -c 'echo $$ > "$1.loop"; while :; do xargs -0 sh -c '\''echo $$ > "$0.pid"; exec "$@"'\'' "$1" < "$1"; sleep 1; done' sh "$d/$3" </dev/null >/dev/null 2>&1 &
 	;;
 *) echo "archil-client: services $2" >&2; exit 2 ;;
 esac
@@ -179,11 +210,30 @@ esac
 
 // The lines disco-vm's archil driver runs in a guest, as it runs them at the
 // pinned revision (pkg/machine/archil/systemd.go): systemd registered with
-// Archil's supervisor at Create, and every guest operation entered into its
-// namespaces.
+// Archil's supervisor at Create, every guest operation entered into its
+// namespaces, and the halt that readies a guest for its stop, run outside
+// them ("archilClient" there is /opt/archil/archil-client).
 const (
-	archilSystemdService = `mount --make-rshared / || exit
-exec unshare --pid --fork --mount-proc --propagation slave --kill-child /lib/systemd/systemd --system --unit=multi-user.target`
+	archilSystemdService = `trap 'exit 143' TERM INT HUP
+mount --make-rshared / || exit
+unshare --pid --fork --mount-proc --propagation slave --kill-child /lib/systemd/systemd --system --unit=multi-user.target </dev/null &
+u=$!
+trap 'kill -KILL "$u"; exit 143' TERM INT HUP
+wait "$u"`
+	archilHalt = `for d in /proc/[0-9]*; do
+	[ "$(cat "$d/comm" 2>/dev/null)" = systemd ] || continue
+	grep -Eq '^NSpid:[[:space:]]+[0-9]+[[:space:]]+1$' "$d/status" 2>/dev/null || continue
+	kill -KILL "${d#/proc/}" 2>/dev/null
+done
+sync
+if [ -n "$1" ] && cut -d ' ' -f 2 /proc/self/mounts | grep -qxF -- "$1"; then
+	a=$(command -v archil) || a=/opt/archil/archil-client
+	if ! out=$("$a" sync "$1" 2>&1); then
+		echo "archil sync $1: $out" >&2
+		exit 3
+	fi
+fi
+exit 0`
 	archilEnter = `p=
 for d in /proc/[0-9]*; do
 	[ "$(cat "$d/comm" 2>/dev/null)" = systemd ] || continue
@@ -297,13 +347,23 @@ func eventually(ctx context.Context, t *testing.T, what string, check func() (st
 	}
 }
 
-// settled waits until systemd runs where guest operations run and has
-// settled, as the archil driver's Create and Start wait.
-func (g *archilGuest) settled(ctx context.Context, t *testing.T) {
+// launched waits until a guest operation enters systemd's namespaces, as the
+// archil driver's Create and Start wait, and no longer: systemd may still be
+// booting, so what the test runs next meets a guest as a pool's does.
+func (g *archilGuest) launched(ctx context.Context, t *testing.T) {
 	t.Helper()
-	eventually(ctx, t, "systemd settles", func() (string, bool) {
+	eventually(ctx, t, "systemd launched", func() (string, bool) {
+		return g.try(ctx, "true")
+	})
+}
+
+// answering waits until systemd answers on its bus, in whatever state its
+// boot is: its early mounts, /run's among them, are made by then.
+func (g *archilGuest) answering(ctx context.Context, t *testing.T) {
+	t.Helper()
+	eventually(ctx, t, "systemd answers", func() (string, bool) {
 		state, _ := g.try(ctx, "systemctl", "is-system-running")
-		return state, state == "running" || state == "degraded" || state == "maintenance"
+		return state, state != "" && state != "offline" && state != "unknown"
 	})
 }
 
@@ -314,12 +374,17 @@ func (g *archilGuest) mountDisk(ctx context.Context, t *testing.T, path string) 
 	g.outer(ctx, t, "sh", "-c", `echo "$1" > /.fake-archil/disk-at && mkdir -p "$1" && mount --bind /.fake-archil/disk "$1"`, "sh", path)
 }
 
-// reboot stops the guest and starts it again: Archil's init starts systemd
-// again, by its supervisor, and nothing of the test's.
+// reboot stops the guest as the archil driver's Stop does, and starts it
+// again: the driver's halt kills systemd and flushes the data disk where it
+// is mounted, then Archil's stop sends its services TERM, which
+// archilSystemdService must end at within the grace; at the start Archil's
+// init starts systemd again, by its supervisor, and nothing of the test's.
 func (g *archilGuest) reboot(ctx context.Context, t *testing.T) {
 	t.Helper()
+	g.outer(ctx, t, "sh", "-c", archilHalt, "sh", "/.discobox/data")
+	g.outer(ctx, t, "/opt/archil/archil-client", "halt", strconv.Itoa(archilFakeGrace))
 	docker(ctx, t, "restart", "--time", "10", g.name)
-	g.settled(ctx, t)
+	g.launched(ctx, t)
 }
 
 // started waits until systemd has started unit, its main process being

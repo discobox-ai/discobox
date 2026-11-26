@@ -114,6 +114,17 @@
   starting. Call `awaitSystemdBus` first, as `provision apply` does for
   both its paths (a sandbox machine's start, a pool box's provisioning) and
   the snapshot command does (#1240).
+  A start can also return before `/run/systemd/system` exists: archil's
+  returns once systemd is launched (disco-vm b940c6d6), which can be before
+  systemd's early mounts. So decide "systemd runs here" once, from PID 1
+  (`systemdIsInit`) as well as that directory, wait for the bus on it, and
+  let every later check of the directory (`provision.Apply`'s `booted`)
+  follow from that wait, never from a reading taken before it. Place
+  nothing under `/run` before systemd answers: systemd mounts a tmpfs over
+  it where the base has none. Why: apply read the directory once, found it
+  missing, skipped the wait, and seconds later `provision.Apply` found it
+  and ran `systemctl` on a bus not yet up, the #1240 failure on an archil
+  pool box (#1819).
 
 - **A `merge: json` source that stops setting a member sets it to `null`
   instead of dropping it.** The merge keeps every member the file there has

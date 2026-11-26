@@ -131,12 +131,17 @@ func runProvisionCommand(args []string) int {
 // provisionApply applies a box's bundles: the verified contents its maker
 // placed, or, on a box delivered without them, the agent's start. Either
 // runs systemctl on a box systemd is running, and apply runs straight after
-// the box's start, which a provider may return from once the machine runs:
-// systemd's directory under /run is there by then, its bus not always. So it
-// waits for the bus first, rather than failing the start on the first
-// systemctl that cannot reach it.
+// the box's start, which a provider may return from once the machine runs
+// (boxd) or once systemd is launched (archil), so systemd's bus may not
+// answer yet, and on archil its directory under /run may not be there yet
+// either. So wherever systemd runs, as PID 1 or by that directory, it waits
+// for the bus first, rather than failing the start on the first systemctl
+// that cannot reach it. Once the bus answers the directory is there, so
+// every later reading of it (provision.Apply's booted, the delivered path's
+// own check) agrees with this one; an image's build, where systemd is not
+// PID 1, waits for nothing.
 func provisionApply(ctx context.Context, wait, restartAgent bool) int {
-	if _, err := os.Stat("/run/systemd/system"); err == nil {
+	if _, err := os.Stat("/run/systemd/system"); err == nil || systemdIsInit() {
 		busCtx, cancel := context.WithTimeout(ctx, systemdReadyTimeout)
 		err = awaitSystemdBus(busCtx)
 		cancel()
