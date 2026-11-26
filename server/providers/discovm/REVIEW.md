@@ -91,24 +91,26 @@
   left one bullet saying Archil's image stands while another said
   `DefaultOCIBase` replaced it.
 - When the disco-vm pin moves, compare each linked driver's definition
-  (`machine.DefinitionOf`: fields, secrets and their sends, base) with the
-  old pin's, and say in the change what a provider now offers and runs
+  (`machine.DefinitionOf`: fields, secrets and their sends, base, `Sizes`)
+  with the old pin's, and say in the change what a provider now offers and runs
   with. Why: a provider's catalog, validation and secret are the driver's,
   so a field the new pin adds is offered with no change here, and one it
   marks `Privileged` fails `TestPrivilegedFieldsAreTheCheckedEndpoints` until
   it is checked (ADR 26-11-11-080 §3).
 - When the disco-vm pin moves, also compare what a driver's `Start` waits
-  for. Since be1c6f74 boxd's returns once boxd says the machine runs, not
-  once systemd has settled, so the guest commands that follow it here (key
+  for. Since be1c6f74 boxd's returns once boxd says the machine runs, and
+  since b940c6d6 archil's once systemd is launched, neither once systemd has
+  settled, so the guest commands that follow it here (key
   placement, `guest.Info`, the fence, `provision apply`) may run mid-boot;
   they must not assume a settled system, and a pin that waits for less
-  again is checked on a live boxd pool, whose fresh machine and out-of-band
-  stop converge on the first pass (done for #1238). The pool agent's side
+  again is checked on a live pool of that driver, whose fresh machine and out-of-band
+  stop converge on the first pass (boxd: done for #1238; archil: done for
+  #1819). The pool agent's side
   is in `pool-agent/REVIEW.md`. Why: the fake driver boots instantly, so CI
   cannot show it.
-- When the disco-vm pin moves, diff `archilSystemdService` and
-  `archilEnter` in `archil_systemd_test.go` against `systemdScript` and
-  `enterScript` in disco-vm's `pkg/machine/archil/systemd.go` at the new pin,
+- When the disco-vm pin moves, diff `archilSystemdService`, `archilEnter`
+  and `archilHalt` in `archil_systemd_test.go` against `systemdScript`,
+  `enterScript` and `haltScript` in disco-vm's `pkg/machine/archil/systemd.go` at the new pin,
   and the fake init and client against its `container_test.go`, and carry
   any change over. Why: disco-vm exports none of them, so the test runs
   copies; it is gated on Docker, and its copies would keep passing after

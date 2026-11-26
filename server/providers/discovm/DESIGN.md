@@ -233,9 +233,11 @@ as ADR 26-10-09-106 §1 places it:
   PID 1 of namespaces of its own and runs every guest operation in them
   (disco-vm ADR 26-11-20-447). It installs systemd in a base that has none
   where the machine's fence lets it, and refuses the create naming
-  `/lib/systemd/systemd` where not, and its `Start` waits (up to two
-  minutes) for systemd to settle, stopping a machine whose systemd does not.
-  So the units are unchanged and nothing here knows Archil (ADR 26-11-16-619
+  `/lib/systemd/systemd` where not. Its `Create` and `Start` wait (up to a
+  minute) only until systemd is launched, not until its boot settles, as
+  boxd's do, so what runs here next may meet a guest mid-boot; its `Stop`
+  kills systemd and flushes the data disk before Archil's stop (disco-vm
+  vm#217, vm#219). So the units are unchanged and nothing here knows Archil (ADR 26-11-16-619
   §4). An archil provider that names no base runs `DefaultOCIBase`
   (above), which carries systemd, so neither path is taken. One that names
   a base without systemd takes them: the driver installs systemd in the
@@ -243,7 +245,8 @@ as ADR 26-10-09-106 §1 places it:
   from the mirror, so its create fails naming `/lib/systemd/systemd`. `TestArchilGuestRunsThePoolsAndSandboxsUnits` (`go tool
   task test:e2e:archil-systemd`) provisions a pool's box and
   places a sandbox's machine from the real bundles in containers whose PID 1
-  is not systemd, entered by copies of the driver's lines, and reboots each.
+  is not systemd, entered by copies of the driver's lines, each placed as
+  soon as systemd is launched, and reboots each as the driver stops it.
 - The pool's machine is created on a network of the pool's own (its scope's
   name) and no other, off the account's default one, so no other machine of
   the provider's reaches it; it is not isolated, since boxd peers an isolated
