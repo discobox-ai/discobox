@@ -250,15 +250,30 @@ def wait_settled(label, seconds=330):
     return elapsed
 
 
+# The pool agent's units, in either of its slots (pool-agent/bundle, AgentUnit):
+# for journalctl, which takes the pattern.
+POOL_AGENT_UNITS = "discobox-pool-agent@*.service"
+
+
+def pool_agent_unit(container):
+    """The pool agent's unit running in the pool's box: the one slot active."""
+    out = command(["docker", "exec", container, "systemctl", "list-units", "--state=active",
+                   "--plain", "--no-legend", POOL_AGENT_UNITS])
+    units = [line.split()[0] for line in out.splitlines() if line.strip()]
+    assert len(units) == 1, f"want one active pool agent unit, got {units}"
+    return units[0]
+
+
 def restart_control_plane(box):
     pool = obj("admin", "box", "get", box)["poolId"]
     container = "discobox-vm-" + pool
-    identity_args = ["docker", "exec", container, "systemctl", "show", "discobox-pool-agent",
+    agent = pool_agent_unit(container)
+    identity_args = ["docker", "exec", container, "systemctl", "show", agent,
                      "--property=MainPID,InvocationID,ActiveEnterTimestampMonotonic"]
     before = command(identity_args)
     (ARTIFACTS / "pool-agent-before-restart.log").write_text(before)
     command(["docker", "exec", container, "sh", "-c",
-             'sha256sum /proc/$(systemctl show -p MainPID --value discobox-pool-agent)/exe'])
+             f'sha256sum /proc/$(systemctl show -p MainPID --value {agent})/exe'])
     # Keep the nonce only in the primary shell's memory. Terminal IDs alone
     # survive a relaunch, so cannot prove that its program survived.
     cli("send", box, f"export RESTART_SMOKE_TOKEN={RUN}; printf 'restart-armed:%s\\n' \"$RESTART_SMOKE_TOKEN\"")
@@ -271,7 +286,7 @@ def restart_control_plane(box):
     # Leave a full heartbeat interval with no server, exercising a failed
     # report before recovery rather than a restart between two successful beats.
     time.sleep(35)
-    failed_beat = command(["docker", "exec", container, "journalctl", "-u", "discobox-pool-agent",
+    failed_beat = command(["docker", "exec", container, "journalctl", "-u", POOL_AGENT_UNITS,
                            "--no-pager", "--since", f"@{stopped_at:.6f}"])
     (ARTIFACTS / "pool-failed-heartbeat.log").write_text(failed_beat)
     assert "report pool status" in failed_beat, "no failed pool heartbeat observed during outage"
@@ -300,7 +315,7 @@ def restart_control_plane(box):
                              "ready, schedulable, conditions, provision_progress from pools where id = ?",
                              (pool,)).fetchone()
             (ARTIFACTS / "pool-restart-persisted.json").write_text(json.dumps(dict(row), indent=2))
-        journal = command(["docker", "exec", container, "journalctl", "-u", "discobox-pool-agent",
+        journal = command(["docker", "exec", container, "journalctl", "-u", POOL_AGENT_UNITS,
                            "--no-pager", "-n", "200"])
         (ARTIFACTS / "pool-restart-journal.log").write_text(journal)
     print("PASS server restart recovers pool, terminal and service access without agent restart", flush=True)
