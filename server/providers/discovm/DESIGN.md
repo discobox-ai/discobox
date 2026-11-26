@@ -158,7 +158,7 @@ its sandboxes one of two ways, decided from its capabilities alone by
 | fencing | the driver reports | pool and sandbox machines |
 | --- | --- | --- |
 | on networks (boxd) | `Bare` strips, `Networks`, an `EgressAllow` fence | on the pool's own network |
-| at its provider's edge (archil) | `Bare` strips or always, no `Networks` needed, `EgressAllow` and `EgressCloseDNS`, `URLs.Credential` | on no network; a sandbox reaches the pool only at its URL, through the edge |
+| at its provider's edge (archil) | `Bare` strips or always, no `Networks` needed, `EgressAllow` and `EgressCloseDNS`, `URLs.Credential` | on no network; a sandbox reaches the pool only at its URL, through the edge, and Archil's own mount hosts while its data disk is mounted |
 
 A driver that does both is taken on its networks. One that does neither is
 refused when the pool is created, by the type's `PoolOSValidator` (`fences`),
