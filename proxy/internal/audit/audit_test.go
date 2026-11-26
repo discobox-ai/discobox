@@ -486,9 +486,10 @@ func TestRecorderRecordsSecretsAndUpgradesAnOlderDatabase(t *testing.T) {
 }
 
 // A database an earlier proxy wrote holds swapped_use_ids, which nothing reads
-// or writes any more (ADR 26-10-27-880). Opening it drops the column and keeps
-// the rows.
-func TestOpenDropsTheRetiredUseIDColumn(t *testing.T) {
+// or writes any more (ADR 26-10-27-880). Opening it keeps the column, which a
+// proxy still draining beside this one may write (ADR 26-11-26-536 §3), and
+// the drop once none is keeps the rows.
+func TestTheRetiredUseIDColumnIsDroppedOnceNoOtherProxyWrites(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.db")
 	recorder, err := Open(context.Background(), path, 8, true)
 	if err != nil {
@@ -511,8 +512,14 @@ func TestOpenDropsTheRetiredUseIDColumn(t *testing.T) {
 		t.Fatalf("reopening an older database: %v", err)
 	}
 	t.Cleanup(func() { _ = recorder.Close() })
+	if !recorder.db.Migrator().HasColumn(&HTTPExchange{}, "swapped_use_ids") {
+		t.Fatal("Open dropped swapped_use_ids, which a proxy draining beside it may still write")
+	}
+	if err := recorder.DropRetiredColumns(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	if recorder.db.Migrator().HasColumn(&HTTPExchange{}, "swapped_use_ids") {
-		t.Fatal("swapped_use_ids is still there after Open")
+		t.Fatal("swapped_use_ids is still there after DropRetiredColumns")
 	}
 	recorder.RecordHTTP(HTTPEvent{ClientID: "sandbox-1", URL: "https://new.example.com"})
 	drainRecorder(t, recorder)

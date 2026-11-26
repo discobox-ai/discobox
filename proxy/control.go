@@ -60,6 +60,13 @@ func (s *Server) ListenAndServeControl(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	return s.ServeControl(ctx, listener)
+}
+
+// ServeControl serves the control API on listener until ctx ends, or the
+// listener is closed, which a drain does: the requests it accepted are still
+// answered, each a short read or one purge.
+func (s *Server) ServeControl(ctx context.Context, listener net.Listener) error {
 	server := &http.Server{
 		Handler:           s.ControlHandler(),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -72,7 +79,10 @@ func (s *Server) ListenAndServeControl(ctx context.Context) error {
 		_ = listener.Close()
 		_ = server.Close()
 	}()
-	err = server.Serve(listener)
+	err := server.Serve(listener)
+	if errors.Is(err, net.ErrClosed) && ctx.Err() == nil {
+		return server.Shutdown(ctx)
+	}
 	if errors.Is(err, http.ErrServerClosed) || errors.Is(err, net.ErrClosed) {
 		return nil
 	}

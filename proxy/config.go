@@ -3,6 +3,7 @@
 package proxy
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -146,6 +147,13 @@ type CacheConfig struct {
 // generously. StreamQueueSize is per upgraded stream and buffers raw payload
 // chunks, so its depth multiplies by both chunk size and concurrent streams.
 type RecordingConfig struct {
+	// SweepGate, when set, is waited on before the retention sweeper's first
+	// pass, and before the columns this schema retired are dropped, until it
+	// returns nil: a pool proxy taking over from one still draining sweeps
+	// nothing of the trees that one still writes, and drops no column its
+	// inserts still name. Nil sweeps at once, and drops them before serving.
+	SweepGate func(context.Context) error `json:"-" yaml:"-"`
+
 	Enabled         bool
 	QueueSize       int
 	MaxHeaderBytes  int
