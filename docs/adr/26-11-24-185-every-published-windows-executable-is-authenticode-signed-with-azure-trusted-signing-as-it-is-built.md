@@ -1,7 +1,13 @@
 # 26-11-24-185 — Every published Windows executable is Authenticode-signed with Azure Trusted Signing, as it is built
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-24
+  Accepted by the owner by merging #1671, 2026-11-25.
+- **Amended**: 2026-11-25, §3, §4 and §5, during implementation and before
+  anything shipped against it. §4: a published build with no signing
+  configuration ships unsigned with a warning, the owner's choice while the
+  Azure account does not exist yet. §5: the expected subject is a repository
+  variable. §3: the Linux leg is its own `binaries-linux` job.
 - **Issue**: #1422
 - **Relates to**: [0066](0066-the-build-is-nix-plus-taskfile-and-github-actions-only-triggers-it.md)
   §1 (workflows hold no logic) and §5 (signing is part of the build, not of
@@ -107,7 +113,9 @@ Following 0066 §5, signing is part of the build. In `release:binary`, and in
 4. `release:windows-zip`, `release:manifest` and `release:installers` read
    files that are already signed, so they are unchanged.
 
-The signing credential sits in **the Linux leg of the `binaries` job**, in
+The signing credential sits in **the Linux leg of the build, `binaries-linux`**
+(amended: split out of the `binaries` matrix, so the darwin job never holds the
+identity), in
 `release.yml` and in `main-build.yml`. That leg gets `id-token: write`, runs in
 a GitHub environment (`windows-signing`) whose deployment rule allows only `v*`
 tags and `main`, and is the only job that runs `azure/login`. This narrows 787
@@ -117,21 +125,25 @@ attest. The server's digest has to be taken from signed bytes before the CLI
 links, so signing can't move out of the job that builds them (see Rejected).
 The darwin leg and `ci.yml` never get the environment.
 
-### 4. Every published build is signed, and a published build can't skip it
+### 4. Every published build is signed once signing is configured, and a configured build can't skip it
 
 The owner chose every published channel: tagged releases (`stable`, `beta`,
 `edge`, a pinned tag) and every **main** build. Windows users on main run into
 SAC the same way.
 
-- **A published build must be signed.** A build is published when
+- **A configured published build must be signed.** A build is published when
   `release:binary` has a `PIN_TAG` and a `PUBLISH_REPO`, the same condition
-  that already decides whether a manifest is linked. In `discobox-ai/discobox`,
-  if a published build lacks the signing configuration, it fails before it
-  builds anything. That is the `MAIN_RELEASE_TOKEN` rule `main-build.yml`
-  already applies.
-- **A fork's release is unsigned, with a notice.** A fork has no Trusted
-  Signing profile. Its builds aren't `discobox-ai/discobox`'s, and signing them
-  under its identity would be wrong.
+  that already decides whether a manifest is linked. When the signing
+  configuration is there, a file that fails to sign or timestamp fails the
+  build, and so does a configuration with only some of its values.
+- **A published build with no signing configuration is unsigned, with a
+  warning** (amended, 2026-11-25). That covers a fork, which has no Trusted
+  Signing profile and must not sign under discobox-ai/discobox's identity. It
+  also covers discobox-ai/discobox itself until the owner's Azure account,
+  profile and `windows-signing` environment exist. The owner chose this over
+  failing every main build and release until then. *Revisit:* once the first
+  signed release is out, discobox-ai/discobox's missing configuration fails the
+  build again, as the `MAIN_RELEASE_TOKEN` rule in `main-build.yml` does.
 - **Untagged builds are never signed.** That covers `ci.yml`'s per-push
   `release:build`, `task build`, and the dev loop. They gain no Azure
   dependency, and the 5,000 signatures a month in Trusted Signing's Basic tier
@@ -145,16 +157,18 @@ Releases cut before this lands stay unsigned, and nothing backfills them. A
 binary can't be re-signed after its digest is stamped into installers, CLI
 manifests and winget manifests.
 
-### 5. `release:verify` refuses an unsigned published Windows executable
+### 5. `release:verify` refuses an unsigned Windows executable in a configured published build
 
 For a published build, `release:verify` checks every `*-windows-*.exe` it
 already reads with `discobox-winres verify`. It also checks the clipboard
 helper inside `cli/internal/clipwatch/artifacts/` for each architecture. For
 each file it runs `osslsigncode verify` and checks three things: an
 Authenticode signature chained to a trusted root, a timestamp, and the
-expected subject (the Trusted Signing profile's validated name, set in one
-place in the Taskfile). An unsigned file, or one signed by another subject,
-fails the release before publish. The check reads the file, so it runs on the
+expected subject (the Trusted Signing profile's validated name). The subject
+is a repository variable passed in with the rest of the signing configuration
+(amended, 2026-11-25: the validated name isn't known until the owner's
+identity validation finishes). When the build was signed, an unsigned file,
+or one signed by another subject, fails the release before publish. The check reads the file, so it runs on the
 Linux runner like the version-resource check does.
 
 ### 6. Nothing on the user's machine checks the signer, and Windows enforces it
@@ -202,7 +216,7 @@ Linux runner like the version-resource check does.
   which comes up for renewal on Microsoft's schedule. If the validation lapses,
   the profile stops issuing certificates and every published build fails at
   §4's check until the validation is renewed.
-- The Linux `binaries` leg gains `id-token: write` and an environment. A
+- The `binaries-linux` job gains `id-token: write` and an environment. A
   compromise of that job can get files signed as Discobox for the duration of
   the job, the same blast radius it already has over the bytes it builds.
 - Windows files are named as published by the validated identity in Explorer's
