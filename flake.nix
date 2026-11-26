@@ -99,6 +99,12 @@
               # `guest:verify` reads the assembled root filesystem with
               # dumpe2fs; the guest image itself is built by Docker.
               pkgs.e2fsprogs
+              # The Windows executables are cross-compiled on Linux, so they are
+              # signed there too (ADR 26-11-24-185): `sign:windows` signs with
+              # jsign against Azure Trusted Signing, and `release:verify`
+              # checks the result with osslsigncode, a tool that did not sign.
+              pkgs.jsign
+              pkgs.osslsigncode
             ];
 
             # Nix supplies a bootstrap Go only. The toolchain that actually

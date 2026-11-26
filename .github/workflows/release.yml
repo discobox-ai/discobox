@@ -49,20 +49,48 @@ jobs:
           path: build/release/notes
           if-no-files-found: error
 
-  # Each platform builds what only it can build: darwin because cgo, the macOS
-  # SDK, and codesigning are native-only; Linux because it also cross-compiles
-  # the Windows binary (ADR 0066 §4).
-  binaries:
+  # Each platform builds what only it can build, in a job of its own.
+  # Linux also cross-compiles the Windows executables (ADR 0066 §4), and signs
+  # them as it builds them, before any digest is taken (ADR 26-11-24-185). So
+  # this is the one job that holds the Authenticode identity: an OIDC token
+  # that only the windows-signing environment's refs can mint, for an Azure
+  # identity that can sign with one Trusted Signing profile and nothing else.
+  # Without the WINDOWS_SIGNING_* variables, Azure is never asked, and the
+  # build ships the Windows executables unsigned and says so.
+  binaries-linux:
     needs: vm-pins
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runs-on: depot-ubuntu-24.04-4
-            artifact: linux
-          - runs-on: depot-macos-15
-            artifact: darwin
-    runs-on: ${{ matrix.runs-on }}
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 45
+    environment: windows-signing
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: azure/login@v2.3.0
+        if: vars.WINDOWS_SIGNING_ACCOUNT != ''
+        with:
+          client-id: ${{ vars.WINDOWS_SIGNING_CLIENT_ID }}
+          tenant-id: ${{ vars.WINDOWS_SIGNING_TENANT_ID }}
+          subscription-id: ${{ vars.WINDOWS_SIGNING_SUBSCRIPTION_ID }}
+      - uses: ./.github/actions/task
+        env:
+          WINDOWS_SIGNING_ENDPOINT: ${{ vars.WINDOWS_SIGNING_ENDPOINT }}
+          WINDOWS_SIGNING_ACCOUNT: ${{ vars.WINDOWS_SIGNING_ACCOUNT }}
+          WINDOWS_SIGNING_PROFILE: ${{ vars.WINDOWS_SIGNING_PROFILE }}
+          WINDOWS_SIGNING_SUBJECT: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
+        with:
+          target: release:build
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-bin-linux
+          path: build/release/bin
+          if-no-files-found: error
+
+  # darwin because cgo, the macOS SDK, and codesigning are native-only.
+  binaries-darwin:
+    needs: vm-pins
+    runs-on: depot-macos-15
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6.0.2
@@ -71,7 +99,7 @@ jobs:
           target: release:build
       - uses: actions/upload-artifact@v7.0.1
         with:
-          name: release-bin-${{ matrix.artifact }}
+          name: release-bin-darwin
           path: build/release/bin
           if-no-files-found: error
 
@@ -106,7 +134,7 @@ jobs:
           target: release:images
 
   publish:
-    needs: [vm-pins, binaries, images]
+    needs: [vm-pins, binaries-linux, binaries-darwin, images]
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     permissions:
