@@ -73,7 +73,12 @@
   their errors carry the boot's or shutdown's own deadline, which
   `unreachable` reads as a fault, so a guest that never boots would be
   waited on forever. Nor an exec or file placement in the guest: its error
-  is the guest's.
+  is the guest's. A create asked to start (`CreateOptions.Start`) boots the
+  machine too, so the error of one its deadline ended is a start's and stays
+  unmapped (`poolMachine.create`); only a service that fails before then is
+  waited on. Why: the pool machine's create took on its boot (#1818), and
+  mapping it whole would make, wait on and remove a machine that never
+  boots at every pass.
 - The provider's `base` is disco-vm's (`machine.Config.Base`), passed to the
   driver as it is, never resolved, listed or matched here: what it names is
   the driver's to say. Do not grow per-driver handling of it in this package:

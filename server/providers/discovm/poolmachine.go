@@ -31,7 +31,8 @@ import (
 
 const (
 	// poolStartTimeout bounds a pool machine's boot until its guest
-	// operations answer.
+	// operations answer: a start's, and a create's, which boots it
+	// (create), from the provider's create on.
 	poolStartTimeout = 10 * time.Minute
 	// poolStopTimeout is how long a pool machine gets to power off in order
 	// before it is forced off.
@@ -354,9 +355,12 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 			if err != nil {
 				return err
 			}
-			created = true
+			// Made running (create): the state check below finds it up
+			// and starts nothing.
+			created, started = true, true
 			steps.BringingUp(ctx)
 			steps.Step(ctx, "made the pool's machine", "machine", inst.ID)
+			steps.Step(ctx, "started the pool's machine", "machine", inst.ID)
 			// create ran the driver's Check, so its limit is read.
 			record.MaxMachines, record.LimitCheckedAt = machineLimit(h.engine.Driver.Capabilities()), time.Now()
 		}
@@ -586,6 +590,12 @@ func machineLimit(caps machine.Capabilities) map[machine.OS]int {
 // which every driver that carries a pool gives. A sandbox's machine asks for
 // its pool URL on and its ingress URL off, both strictly (disco-vm ADR
 // 26-11-14-610).
+//
+// It is made running, as a start leaves it (engine.CreateOptions.Start,
+// disco-vm ADR 26-11-23-458), bounded as a start of it is: one create, not a
+// machine made stopped and then started, which on archil stops the sandbox
+// Archil makes running only for the start to boot it again. A create whose
+// start fails leaves no machine.
 func (h *poolMachine) create(ctx context.Context, pool *model.Pool, scope string, networks []string) (engine.Instance, error) {
 	// The driver checks its account through its provider's API first (boxd's
 	// Check: that the key is accepted, and the region enabled), so an
@@ -594,9 +604,26 @@ func (h *poolMachine) create(ctx context.Context, pool *model.Pool, scope string
 	if err := checkDriver(ctx, h.engine, sandbox.ErrPoolNotReachable); err != nil {
 		return engine.Instance{}, fmt.Errorf("pool %s: %w", pool.ID, err)
 	}
-	inst, err := h.engine.Create(ctx, engine.CreateOptions{Name: scope, Networks: networks, URLs: machine.URLRequests{Ingress: machine.URLRequest{Mode: machine.URLOn, Strict: true}}})
+	// The boot's deadline is bootCtx's, which the engine's own timeout,
+	// the same and begun later, never comes before: a create it ends is
+	// told by bootCtx's error.
+	bootCtx, cancel := context.WithTimeout(ctx, poolStartTimeout)
+	defer cancel()
+	inst, err := h.engine.Create(bootCtx, engine.CreateOptions{
+		Name: scope, Networks: networks,
+		URLs:  machine.URLRequests{Ingress: machine.URLRequest{Mode: machine.URLOn, Strict: true}},
+		Start: &engine.StartOptions{Timeout: poolStartTimeout},
+	})
 	if err != nil {
-		return engine.Instance{}, fmt.Errorf("create pool %s's machine from the %s driver's base: %w", pool.ID, h.engine.Driver.Name(), notReachable(err))
+		// A create its deadline ended was a boot that did not finish, the
+		// guest's, as a start's is: never waited on, or a guest that never
+		// boots would be made, waited on and removed at every pass
+		// (REVIEW.md). A service that does not answer before then is
+		// waited on, as any other call is.
+		if bootCtx.Err() == nil {
+			err = notReachable(err)
+		}
+		return engine.Instance{}, fmt.Errorf("create pool %s's machine from the %s driver's base: %w", pool.ID, h.engine.Driver.Name(), err)
 	}
 	return inst, nil
 }
