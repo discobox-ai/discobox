@@ -1643,6 +1643,53 @@ a small fake on loopback and watch what the server asks of it.
   directories). The pool runtime's side is `TestMachineNewRootOnDocker`, run
   with `DISCO_VM_DOCKER_IMAGE=debian:sid` and `DISCO_VM_AGENT` set.
 
+# Verifying a pool's handover (`poolunits`, `handover`, ADR 26-11-26-536)
+
+The dev pool runs the same units as a disco-vm pool machine: socket units
+`discobox-pool-*.socket`, and the agent and proxy in slots
+`discobox-pool-agent@{a,b}` / `discobox-proxy@{a,b}`. The slot it runs is in
+`/var/lib/discobox/pool-units.json`; `systemctl show -P StatusText <unit>`
+says `standby`, `active` or `draining`.
+
+- **Force one on the dev pool** (`docker exec` into `discobox-vm-<pool>`): a
+  Docker pool never asks for a handover, and `units apply` moves nothing
+  until what the slot started with moves. Append a comment line to
+  `/etc/discobox/pool-agent/environment`, then run
+  `docker exec -e DISCOBOX_POOL_HAND_OVER=1 <c> /usr/local/bin/discobox-pool-agent units apply`.
+  Without the variable it restarts the running slot instead. Delete the
+  comment lines afterwards.
+- **What to drive across it**: a `discobox exec <box> -- sh -c 'for i in $(seq
+  1 60); do echo tick $i; sleep 1; done'` (through the old agent), a
+  throttled download inside the box (`curl --limit-rate 40k` of a ~3MB file,
+  through the old proxy), and new `discobox exec … echo` calls every second
+  or two. Each from a bash script: zsh does not word-split `$D` for a
+  command held in a variable.
+- **A rebind**: adding or removing a socket (`DISCOBOX_POOL_TUNNEL_URL="wss://…"`
+  appended to the environment file adds the tunnels socket) makes `units
+  apply` stop every slot socket, then the slots, and bind them again.
+- **A channel pool** (what boxd and archil are): an `exec` provider with no
+  `controlPlaneUrl` on this host's Docker (the driver script in "Verifying a
+  pool reached over a control-plane channel" above, with `agentPort` other
+  than the dev pool's). Its container does not inherit this box's egress
+  proxy, so a box on it reaches nothing outside: drive execs, not egress.
+  The agent's journal shows `took over`, `pool agent serving`, then
+  `control-plane channel open` and one `pool marked ready` within a few
+  seconds (the draining agent's channel closes once quiet, `drainQuiet`).
+- **On Archil**: an isolated server with the raw key (provider `--type
+  archil`, `driver.region`), a pool and a box; change the provider's
+  `sandboxIdleTimeout` (`admin provider update --config … --secret
+  driver.apiKey=@<raw key file>`, which replaces the config) and the server
+  places the pool again and hands over. Every exec there reaches Archil
+  through the pool proxy, whose credential resolves over the control-plane
+  channel: a channel gap shows as `could not be resolved` on new execs.
+- **Clean up**: `discobox rm` only archives, and an archived box still holds
+  its pool: purge with `POST /projects/default/sandboxes/<id>/purge` on
+  `http://127.0.0.1:8080` (no `/api` prefix), then `admin pool rm` and
+  `admin provider rm`.
+- A non-TTY `exec` whose stream is cut while a newer agent already answers
+  exits 0 with its output cut short (#1831): judge a cut stream by its
+  output, not its exit code.
+
 # Verifying an upgrade from a release (server first, pool agents after)
 
 For anything about the window where the server is already on the new build and
