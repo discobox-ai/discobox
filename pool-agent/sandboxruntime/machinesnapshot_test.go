@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -101,6 +102,15 @@ func TestAMachinePoolMakesTheNextSandboxFromItsPlansSnapshot(t *testing.T) {
 	record, ok, err := r.readSnapshotRecord(key)
 	if err != nil || !ok {
 		t.Fatalf("snapshot record = %v, %v; want the build recorded", ok, err)
+	}
+	// The build's machine is made running, booted once, and never started
+	// apart from its create: the sandbox's create and the build's are the
+	// two asked to start.
+	if got, want := f.driver.takeEvents(snapshotMachineName(key)), []string{"boot"}; !slices.Equal(got, want) {
+		t.Fatalf("the build's machine = %v, want %v", got, want)
+	}
+	if got := f.driver.createdStarted.Load(); got != 2 {
+		t.Fatalf("creates asked to start = %d, want the sandbox's and the build's", got)
 	}
 	snap, err := f.owner.Instance(ctx, snapshotMachineName(key))
 	if err != nil || snap.ID != record.Instance {

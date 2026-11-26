@@ -267,6 +267,11 @@ func TestAMachinesFirstPlacementIsAppliedInPlace(t *testing.T) {
 	if got, want := f.driver.takeEvents("sbx-9"), []string{"boot", "apply in place"}; !slices.Equal(got, want) {
 		t.Fatalf("create = %v, want %v: one start, provisioned while it runs", got, want)
 	}
+	// Made running by its create (engine.CreateOptions.Start), and not
+	// started again: the boot above is the create's.
+	if got := f.driver.createdStarted.Load(); got != 1 {
+		t.Fatalf("creates asked to start = %d, want the sandbox's one", got)
+	}
 	inst, err := f.owner.Instance(ctx, "sbx-9")
 	if err != nil {
 		t.Fatal(err)
@@ -707,6 +712,120 @@ func TestMachineStoppedSpecChangeGivesANewRootAtItsStart(t *testing.T) {
 	assertNewRootKeptVolumes(t, r, inst)
 }
 
+// A create not asked to start makes its machine stopped, as it was, and the
+// start that follows boots it once and places it while it runs.
+func TestAMachineCreateNotAskedToStartMakesItStopped(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	req := machineCreate("sbx_s")
+	req.Config.Start = workerclient.NewOptBool(false)
+	sb, err := r.CreateSandbox(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sb.Status != StatusCreated || f.driver.createdStarted.Load() != 0 {
+		t.Fatalf("sandbox = %+v after %d creates asked to start, want it made and none", sb, f.driver.createdStarted.Load())
+	}
+	if got := f.driver.takeEvents("sbx-s"); len(got) != 0 {
+		t.Fatalf("create = %v, want nothing booted", got)
+	}
+	if err := r.StartSandbox(ctx, "sbx_s", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := f.driver.takeEvents("sbx-s"), []string{"boot", "apply in place"}; !slices.Equal(got, want) {
+		t.Fatalf("start = %v, want %v", got, want)
+	}
+}
+
+// A create that made its machine running and fails before its start has
+// begun its own boot stops it, and leaves no boot mark: a machine running with nothing
+// placed would answer nothing until it was deleted. The next create starts
+// it and places it.
+func TestAMachineMadeRunningWhoseCreateFailsIsStopped(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	ctx := context.Background()
+	r := f.runtime
+	// The engine's started create reads it to tell the guest; the pool's
+	// read after it, for the bootstrap, fails.
+	f.driver.listenRefused.Store(true)
+	f.driver.listenAllowed.Store(1)
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_f")); err == nil {
+		t.Fatal("a create whose machine's service address cannot be read succeeded")
+	}
+	if got := f.driver.createdStarted.Load(); got != 1 {
+		t.Fatalf("creates asked to start = %d, want one", got)
+	}
+	inst, err := f.owner.Instance(ctx, "sbx-f")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state := r.engine.State(ctx, inst); state != engine.Stopped {
+		t.Fatalf("the machine is %s after its create failed, want stopped", state)
+	}
+	if r.SandboxBooting("sbx_f") {
+		t.Fatal("the failed create left the sandbox marked booting")
+	}
+	f.driver.takeEvents("sbx-f")
+	f.driver.listenRefused.Store(false)
+	sb, err := r.CreateSandbox(ctx, machineCreate("sbx_f"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sb.Status != StatusRunning {
+		t.Fatalf("sandbox = %+v after the create again, want running", sb)
+	}
+	if got, want := f.driver.takeEvents("sbx-f"), []string{"boot", "apply in place"}; !slices.Equal(got, want) {
+		t.Fatalf("create again = %v, want %v", got, want)
+	}
+}
+
+// A create whose caller goes away while its new machine's agent comes up
+// leaves the machine booting, as a start's does ("Running is not ready"):
+// the start has taken it over, and its boot goes on detached. The machine is
+// not stopped under it.
+func TestAMachineMadeRunningWhoseCallerGoesMidBootKeepsBooting(t *testing.T) {
+	f := newMachineFixture(t, nil)
+	r := f.runtime
+	f.agents.healthzHeld, f.agents.healthzAsked = make(chan struct{}), make(chan struct{}, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := r.CreateSandbox(ctx, machineCreate("sbx_g"))
+		done <- err
+	}()
+	select {
+	case <-f.agents.healthzAsked:
+	case err := <-done:
+		t.Fatalf("the create returned %v before its agent was asked whether it is up", err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("the agent was never asked whether it is up")
+	}
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("the create whose caller went = %v, want canceled", err)
+	}
+	inst, err := f.owner.Instance(context.Background(), "sbx-g")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state := r.engine.State(context.Background(), inst); state != engine.Running {
+		t.Fatalf("the machine is %s once its caller went, want running, still booting", state)
+	}
+	if !r.SandboxBooting("sbx_g") {
+		t.Fatal("the sandbox is not marked booting while its agent comes up")
+	}
+	close(f.agents.healthzHeld)
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer waitCancel()
+	if err := r.AwaitSandboxBoot(waitCtx, "sbx_g"); err != nil {
+		t.Fatalf("the boot the caller left = %v, want it finished", err)
+	}
+	if state := r.engine.State(context.Background(), inst); state != engine.Running {
+		t.Fatalf("the machine is %s after its boot, want running", state)
+	}
+}
+
 // An upgrade cut short fails its start, and the next start finishes it: the
 // pool's record asks for it until the driver has given the root.
 func TestMachineUpgradeCutShortIsFinishedByTheNextStart(t *testing.T) {
@@ -1119,7 +1238,7 @@ func TestMachineRuntimeFencesASandboxAtTheEdge(t *testing.T) {
 	if opts := r.createOptions("sbx-1", MachineSize{}); len(opts.Networks) != 0 || opts.Bare || opts.Egress != fence {
 		t.Fatalf("an edge sandbox's create = %+v, want no network, nothing stripped and the pool's fence", opts)
 	}
-	inst, _, err := r.ensureInstance(ctx, "sbx_edge", nil)
+	inst, _, err := r.ensureInstance(ctx, "sbx_edge", nil, false)
 	if err != nil {
 		t.Fatalf("ensure a machine at the edge: %v", err)
 	}
@@ -1129,7 +1248,7 @@ func TestMachineRuntimeFencesASandboxAtTheEdge(t *testing.T) {
 	if _, err := driver.Create(ctx, machine.InstanceSpec{Name: "sbx-dns", Egress: &machine.Egress{Allow: fence.Allow}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := r.ensureInstance(ctx, "sbx_dns", nil); err == nil || !strings.Contains(err.Error(), "not fenced") {
+	if _, _, err := r.ensureInstance(ctx, "sbx_dns", nil, false); err == nil || !strings.Contains(err.Error(), "not fenced") {
 		t.Fatalf("ensure a machine made with DNS open = %v, want it refused", err)
 	}
 }
@@ -1230,7 +1349,15 @@ type agentDriver struct {
 	// ErrUnsupported, as archil refuses one at a size other than its
 	// source's: a copy keeps its source's size.
 	copyRefused atomic.Bool
-	mu          sync.Mutex
+	// createdStarted counts the creates asked to start the machine they
+	// make (machine.InstanceSpec.Start).
+	createdStarted atomic.Int32
+	// listenRefused has every read of where a machine's service listens
+	// fail, as a driver that cannot be asked does, once listenAllowed more
+	// reads have answered.
+	listenRefused atomic.Bool
+	listenAllowed atomic.Int32
+	mu            sync.Mutex
 	// events is each machine's boots and applies, in order.
 	events map[string][]string
 	// forcedOff, when set, is a machine whose orderly shutdown times out, so
@@ -1239,11 +1366,24 @@ type agentDriver struct {
 	forcedOff func(ctx context.Context, guest machine.Machine) error
 }
 
+// Create asked to start (spec.Start) makes the machine and starts it as this
+// driver's Start does, so it boots as a start's machine boots: a create and a
+// start, as disco-vm's local drivers make one. A start that fails removes it.
 func (d *agentDriver) Create(ctx context.Context, spec machine.InstanceSpec) (machine.Instance, error) {
 	if d.copyRefused.Load() && spec.From != nil {
 		return machine.Instance{}, fmt.Errorf("a VM made from %s has its size: %w", spec.From.Name, machine.ErrUnsupported)
 	}
-	return d.Driver.Create(ctx, spec)
+	start := spec.Start
+	spec.Start = nil
+	inst, err := d.Driver.Create(ctx, spec)
+	if err != nil || start == nil {
+		return inst, err
+	}
+	d.createdStarted.Add(1)
+	if _, err := d.Start(ctx, inst, *start); err != nil {
+		return machine.Instance{}, errors.Join(err, d.Destroy(context.WithoutCancel(ctx), inst))
+	}
+	return inst, nil
 }
 
 func (d *agentDriver) record(name, event string) {
@@ -1285,6 +1425,9 @@ func (d *agentDriver) Service(ctx context.Context, inst machine.Instance) (machi
 }
 
 func (d *agentDriver) Listen(ctx context.Context, inst machine.Instance) (string, error) {
+	if d.listenRefused.Load() && d.listenAllowed.Add(-1) < 0 {
+		return "", fmt.Errorf("listen %s: refused: %w", inst.Name, machine.ErrUnavailable)
+	}
 	service, err := d.agents.service(ctx, inst.Name)
 	return "tcp:" + strings.TrimPrefix(service.PoolURL, "http://"), err
 }
@@ -1558,9 +1701,13 @@ type fakeMachineAgents struct {
 	snapshotFails, sealedBroken bool
 	// unnamed has every agent name no layer on /healthz, as one older than
 	// agentlayer.Health's layer does.
-	unnamed   bool
-	servers   map[string]*fakeMachineAgent
-	endpoints map[string]*fakeMachineEndpoint
+	unnamed bool
+	// healthzHeld, when set, holds every agent's /healthz until it is
+	// closed, as an agent still coming up does; healthzAsked is told of
+	// each request it holds.
+	healthzHeld, healthzAsked chan struct{}
+	servers                   map[string]*fakeMachineAgent
+	endpoints                 map[string]*fakeMachineEndpoint
 	// last is each sandbox's agent that ran last, kept after its machine
 	// stops, so a test reads what it was told.
 	last map[string]*fakeMachineAgent
@@ -1623,7 +1770,7 @@ func (a *fakeMachineAgents) start(name string, cfg sandboxconfig.Config, layer s
 	if a.unnamed {
 		layer = ""
 	}
-	agent := &fakeMachineAgent{sandboxID: cfg.SandboxID, poolKey: a.poolKey, layer: layer}
+	agent := &fakeMachineAgent{sandboxID: cfg.SandboxID, poolKey: a.poolKey, layer: layer, healthzHeld: a.healthzHeld, healthzAsked: a.healthzAsked}
 	if a.servers == nil {
 		a.servers = map[string]*fakeMachineAgent{}
 	}
@@ -1691,6 +1838,8 @@ type fakeMachineAgent struct {
 	poolKey   ed25519.PublicKey
 	// layer is the agent layer it runs from, which its /healthz names.
 	layer string
+	// healthzHeld and healthzAsked are fakeMachineAgents'.
+	healthzHeld, healthzAsked chan struct{}
 
 	mu        sync.Mutex
 	delivered []int64
@@ -1725,6 +1874,17 @@ func (a *fakeMachineAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	prefix := "/api/projects/proj_1/sandboxes/" + a.sandboxID
 	switch {
 	case r.URL.Path == "/healthz":
+		if a.healthzHeld != nil {
+			select {
+			case a.healthzAsked <- struct{}{}:
+			default:
+			}
+			select {
+			case <-a.healthzHeld:
+			case <-r.Context().Done():
+				return
+			}
+		}
 		if err := json.NewEncoder(w).Encode(agentlayer.Health{OK: true, Layer: a.layer}); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -1961,21 +2121,21 @@ func TestMachineCreateFencesTheMachine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	inst, _, err := r.ensureInstance(ctx, "sbx_fenced", nil)
+	inst, _, err := r.ensureInstance(ctx, "sbx_fenced", nil, false)
 	if err != nil {
 		t.Fatalf("ensure a fenced machine: %v", err)
 	}
 	if got := driver.fences[inst.Name]; got == nil || len(got.Allow) != 0 {
 		t.Fatalf("the machine was made with fence %+v, want one that reaches nothing beyond its network", got)
 	}
-	if _, _, err := r.ensureInstance(ctx, "sbx_fenced", nil); err != nil {
+	if _, _, err := r.ensureInstance(ctx, "sbx_fenced", nil, false); err != nil {
 		t.Fatalf("find the fenced machine again: %v", err)
 	}
 
 	if _, err := e.Create(ctx, engine.CreateOptions{Name: "sbx-open"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := r.ensureInstance(ctx, "sbx_open", nil); err == nil || !strings.Contains(err.Error(), "not fenced") {
+	if _, _, err := r.ensureInstance(ctx, "sbx_open", nil, false); err == nil || !strings.Contains(err.Error(), "not fenced") {
 		t.Fatalf("ensure a machine made without the fence = %v, want it refused", err)
 	}
 }

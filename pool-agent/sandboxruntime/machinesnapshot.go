@@ -291,16 +291,18 @@ func (r *MachineSandboxRuntime) buildMachineSnapshot(ctx context.Context, plan s
 	if plan.Size != nil {
 		size = *plan.Size
 	}
-	inst, err := r.engine.Create(ctx, r.createOptions(name, size))
+	// Made running (engine.CreateOptions.Start): one create, no stop and
+	// start of a machine made stopped. A create that fails to start it
+	// leaves none.
+	opts := r.createOptions(name, size)
+	opts.Start = &engine.StartOptions{Timeout: machineStartTimeout}
+	inst, err := r.engine.Create(ctx, opts)
 	if err != nil {
 		// ErrExists too: what holds the name is not this build's to use,
 		// nor to destroy; the sweep finds it unrecorded.
 		return fmt.Errorf("create the build's machine: %w", err)
 	}
 	made = true
-	if err := r.engine.Start(ctx, inst, engine.StartOptions{Timeout: machineStartTimeout}); err != nil {
-		return fmt.Errorf("start the build's machine: %w", err)
-	}
 	guest, err := r.engine.Guest(ctx, inst)
 	if err != nil {
 		return err

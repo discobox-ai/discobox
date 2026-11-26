@@ -403,9 +403,10 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 		}
 	}
 	// A running machine is started already only once what it boots on is
-	// placed in it: one whose start stopped short of that — the pool agent
-	// gone mid-start, or the stop after a failed placement failing too — runs
-	// with no agent, and is placed now. One still to be given a new root
+	// placed in it: one its create made running (ensureInstance), or one
+	// whose start stopped short of that — the pool agent gone mid-start, or
+	// the stop after a failed placement failing too — runs with no agent,
+	// and is placed now. One still to be given a new root
 	// (upgradeMachine) is stopped for it: a root is given only to a stopped
 	// machine. A paused machine, one its provider paused (StatusPaused) or
 	// one the pool froze (StatusSuspended, ADR 26-11-21-395 §5), is resumed
@@ -473,7 +474,12 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 				return err
 			}
 		}
-		slog.InfoContext(ctx, "placing what a running sandbox machine boots on, which its start did not finish", "sandboxId", sandboxID)
+		if record.Started {
+			slog.InfoContext(ctx, "placing what a running sandbox machine boots on, which its start did not finish", "sandboxId", sandboxID)
+		} else {
+			// Made running by its create (ensureInstance), and placed now.
+			slog.DebugContext(ctx, "placing what a sandbox machine made running boots on", "sandboxId", sandboxID)
+		}
 	}
 	// A paused or frozen one too: it is not stopped, and only a stopped
 	// machine is given a root (engine.Upgrade). The stop resumes it to shut
