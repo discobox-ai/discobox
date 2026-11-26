@@ -335,6 +335,20 @@ func TestNPMGlobalOwnsItsScratchCache(t *testing.T) {
 	}
 }
 
+// npm-global says what it installs on the step's progress file, and writes
+// nothing when it has none.
+func TestNPMGlobalReportsWhatItInstalls(t *testing.T) {
+	b := newBox(t)
+	b.installedNode()
+	b.run("node/select-node.sh", nil)
+	progress := filepath.Join(t.TempDir(), "progress")
+	b.run("node/npm-global", []string{"DISCOBOX_PROVISION_PROGRESS=" + progress}, "install", "@anthropic-ai/claude-code", "pnpm")
+	if got := readFile(t, progress); got != "installing @anthropic-ai/claude-code pnpm\n" {
+		t.Fatalf("progress file = %q", got)
+	}
+	b.run("node/npm-global", nil, "install", "pnpm")
+}
+
 // npm-global's check fails when what it installed went or is shadowed again,
 // so the step is applied again at the box's next boot.
 func TestNPMGlobalCheckFindsDrift(t *testing.T) {

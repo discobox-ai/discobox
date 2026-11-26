@@ -12,7 +12,9 @@ import (
 	"io/fs"
 	"maps"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -259,8 +261,8 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// Fetch opens url for reading.
-type Fetch func(ctx context.Context, url string) (io.ReadCloser, error)
+// Fetch opens url for reading, with its length, or -1 when it is not known.
+type Fetch func(ctx context.Context, url string) (io.ReadCloser, int64, error)
 
 // fetchStall is how long a download may wait for its response, or for its
 // next byte, before it is given up: a server that stops sending would
@@ -274,7 +276,7 @@ var fetchClient = &http.Client{Transport: &http.Transport{
 	ResponseHeaderTimeout: fetchStall,
 }}
 
-func httpFetch(ctx context.Context, url string) (io.ReadCloser, error) {
+func httpFetch(ctx context.Context, url string) (io.ReadCloser, int64, error) {
 	ctx, cancel := context.WithCancelCause(ctx)
 	stalled := time.AfterFunc(fetchStall, func() {
 		cancel(fmt.Errorf("GET %s: nothing received for %s", url, fetchStall))
@@ -284,7 +286,7 @@ func httpFetch(ctx context.Context, url string) (io.ReadCloser, error) {
 		var resp *http.Response
 		if resp, err = fetchClient.Do(req); err == nil {
 			if resp.StatusCode == http.StatusOK {
-				return &stallReader{body: resp.Body, ctx: ctx, stalled: stalled, cancel: cancel}, nil
+				return &stallReader{body: resp.Body, ctx: ctx, stalled: stalled, cancel: cancel}, resp.ContentLength, nil
 			}
 			resp.Body.Close()
 			err = fmt.Errorf("GET %s: %s", url, resp.Status)
@@ -293,9 +295,9 @@ func httpFetch(ctx context.Context, url string) (io.ReadCloser, error) {
 	stalled.Stop()
 	cancel(nil)
 	if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
-		return nil, cause
+		return nil, 0, cause
 	}
-	return nil, err
+	return nil, 0, err
 }
 
 // stallReader is a response body whose request is canceled once no byte has
@@ -329,8 +331,9 @@ func (s *stallReader) Close() error {
 
 // applyDownload fetches this architecture's file beside its path and moves it
 // into place only once its sha256 matches, so a failed or tampered fetch
-// leaves what was there.
-func (r *Runner) applyDownload(ctx context.Context, step *provisionspec.DownloadStep) error {
+// leaves what was there. It counts what it copies into its progress, of the
+// response's length when it has one.
+func (r *Runner) applyDownload(ctx context.Context, progress *stepProgress, step *provisionspec.DownloadStep) error {
 	download, ok := step.Arch[r.Platform.Arch]
 	if !ok {
 		return fmt.Errorf("download names nothing for %s", r.Platform.Arch)
@@ -339,11 +342,13 @@ func (r *Runner) applyDownload(ctx context.Context, step *provisionspec.Download
 	if fetch == nil {
 		fetch = httpFetch
 	}
-	body, err := fetch(ctx, download.URL)
+	body, length, err := fetch(ctx, download.URL)
 	if err != nil {
 		return err
 	}
 	defer body.Close()
+	counted := &downloadCount{progress: progress, detail: "downloading " + downloadName(download.URL), total: max(length, 0)}
+	counted.report()
 	target := r.path(step.Path)
 	dir := filepath.Dir(target)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -355,7 +360,7 @@ func (r *Runner) applyDownload(ctx context.Context, step *provisionspec.Download
 	}
 	defer func() { _ = staged.Discard() }()
 	hash := sha256.New()
-	_, err = io.Copy(io.MultiWriter(staged, hash), body)
+	_, err = io.Copy(io.MultiWriter(staged, hash, counted), body)
 	if err == nil {
 		err = staged.Chmod(fileMode(step.Mode))
 	}
@@ -378,13 +383,44 @@ func (r *Runner) applyDownload(ctx context.Context, step *provisionspec.Download
 	return staged.Commit()
 }
 
+// downloadCount reports a download's bytes as they are copied.
+type downloadCount struct {
+	progress *stepProgress
+	detail   string
+	done     int64
+	total    int64
+}
+
+func (c *downloadCount) Write(p []byte) (int, error) {
+	c.done += int64(len(p))
+	c.report()
+	return len(p), nil
+}
+
+func (c *downloadCount) report() {
+	c.progress.report(&provisionspec.Progress{Detail: c.detail, Done: c.done, Total: c.total})
+}
+
+// downloadName is what a download's progress calls it: the URL's host and
+// the last segment of its path, never its query, which may carry a token.
+func downloadName(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		return "a file"
+	}
+	if base := path.Base(parsed.Path); base != "." && base != "/" {
+		return base + " from " + parsed.Host
+	}
+	return parsed.Host
+}
+
 // applyPackages installs a Debian family box's packages, the list its
 // distribution names (PackagesStep.For), refreshing the
 // package lists once per run. Its caller holds the apt lock, which features
 // provisioning at once share. A configuration file already at a package's
 // path is kept, never asked about: it is the box's, or a feature's that was
 // provisioned before the package arrived, and there is nobody to answer.
-func (r *Runner) applyPackages(ctx context.Context, out io.Writer, step *provisionspec.PackagesStep) error {
+func (r *Runner) applyPackages(ctx context.Context, out io.Writer, progress *stepProgress, step *provisionspec.PackagesStep) error {
 	packages, ok := step.For(r.Platform.ID, r.Platform.IDLike)
 	if !ok {
 		return fmt.Errorf("packages: no list for %s", r.Platform.ID)
@@ -397,14 +433,26 @@ func (r *Runner) applyPackages(ctx context.Context, out io.Writer, step *provisi
 		return err
 	}
 	if !r.aptUpdated {
+		progress.report(&provisionspec.Progress{Detail: "updating package lists"})
 		if err := r.command(ctx, out, "/", env, "apt-get", "update", "--error-on=any"); err != nil {
 			return err
 		}
 		r.aptUpdated = true
 	}
+	progress.report(nil)
 	args := []string{"install", "-y", "--no-install-recommends", "-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--force-confold"}
+	if progressEnv := progress.env(); len(progressEnv) > 0 {
+		// apt's machine-readable progress, on fd 3, appended to the step's
+		// progress file, which reads apt's lines as they are.
+		return r.command(ctx, out, "/", append(env, progressEnv...), "/bin/sh",
+			append([]string{"-c", aptWithStatus, "sh", "-o", "APT::Status-Fd=3"}, append(args, packages...)...)...)
+	}
 	return r.command(ctx, out, "/", env, "apt-get", append(args, packages...)...)
 }
+
+// aptWithStatus runs apt-get with its arguments and fd 3 appending to the
+// step's progress file.
+const aptWithStatus = `exec apt-get "$@" 3>>"$` + provisionspec.ProgressEnv + `"`
 
 // packagesSatisfied checks the actual dpkg database, even when a step has a
 // matching record. Query under the apt lock so another feature cannot change

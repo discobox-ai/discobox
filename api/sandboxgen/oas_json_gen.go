@@ -4000,6 +4000,39 @@ func (s *OptSandboxAgentProvisionFeatureHow) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes SandboxAgentProvisionProgress as json.
+func (o OptSandboxAgentProvisionProgress) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SandboxAgentProvisionProgress from json.
+func (o *OptSandboxAgentProvisionProgress) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxAgentProvisionProgress to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxAgentProvisionProgress) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxAgentProvisionProgress) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SandboxAgentProvisionRetry as json.
 func (o OptSandboxAgentProvisionRetry) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -7230,6 +7263,12 @@ func (s *SandboxAgentProvisionFeature) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Progress.Set {
+			e.FieldStart("progress")
+			s.Progress.Encode(e)
+		}
+	}
+	{
 		if s.Reason.Set {
 			e.FieldStart("reason")
 			s.Reason.Encode(e)
@@ -7253,15 +7292,16 @@ func (s *SandboxAgentProvisionFeature) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxAgentProvisionFeature = [8]string{
+var jsonFieldsNameOfSandboxAgentProvisionFeature = [9]string{
 	0: "async",
 	1: "error",
 	2: "how",
 	3: "log",
-	4: "reason",
-	5: "state",
-	6: "step",
-	7: "version",
+	4: "progress",
+	5: "reason",
+	6: "state",
+	7: "step",
+	8: "version",
 }
 
 // Decode decodes SandboxAgentProvisionFeature from json.
@@ -7269,7 +7309,7 @@ func (s *SandboxAgentProvisionFeature) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode SandboxAgentProvisionFeature to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -7313,6 +7353,16 @@ func (s *SandboxAgentProvisionFeature) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"log\"")
 			}
+		case "progress":
+			if err := func() error {
+				s.Progress.Reset()
+				if err := s.Progress.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"progress\"")
+			}
 		case "reason":
 			if err := func() error {
 				s.Reason.Reset()
@@ -7324,7 +7374,7 @@ func (s *SandboxAgentProvisionFeature) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"reason\"")
 			}
 		case "state":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				if err := s.State.Decode(d); err != nil {
 					return err
@@ -7362,8 +7412,9 @@ func (s *SandboxAgentProvisionFeature) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b00100000,
+	for i, mask := range [2]uint8{
+		0b01000000,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -7493,6 +7544,154 @@ func (s SandboxAgentProvisionFeatureState) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxAgentProvisionFeatureState) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SandboxAgentProvisionProgress) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SandboxAgentProvisionProgress) encodeFields(e *jx.Encoder) {
+	{
+		if s.Detail.Set {
+			e.FieldStart("detail")
+			s.Detail.Encode(e)
+		}
+	}
+	{
+		if s.Done.Set {
+			e.FieldStart("done")
+			s.Done.Encode(e)
+		}
+	}
+	{
+		if s.Percent.Set {
+			e.FieldStart("percent")
+			s.Percent.Encode(e)
+		}
+	}
+	{
+		if s.Received.Set {
+			e.FieldStart("received")
+			s.Received.Encode(e)
+		}
+	}
+	{
+		if s.ReceivedAt.Set {
+			e.FieldStart("receivedAt")
+			s.ReceivedAt.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
+		if s.Total.Set {
+			e.FieldStart("total")
+			s.Total.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSandboxAgentProvisionProgress = [6]string{
+	0: "detail",
+	1: "done",
+	2: "percent",
+	3: "received",
+	4: "receivedAt",
+	5: "total",
+}
+
+// Decode decodes SandboxAgentProvisionProgress from json.
+func (s *SandboxAgentProvisionProgress) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxAgentProvisionProgress to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "detail":
+			if err := func() error {
+				s.Detail.Reset()
+				if err := s.Detail.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"detail\"")
+			}
+		case "done":
+			if err := func() error {
+				s.Done.Reset()
+				if err := s.Done.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"done\"")
+			}
+		case "percent":
+			if err := func() error {
+				s.Percent.Reset()
+				if err := s.Percent.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"percent\"")
+			}
+		case "received":
+			if err := func() error {
+				s.Received.Reset()
+				if err := s.Received.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"received\"")
+			}
+		case "receivedAt":
+			if err := func() error {
+				s.ReceivedAt.Reset()
+				if err := s.ReceivedAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"receivedAt\"")
+			}
+		case "total":
+			if err := func() error {
+				s.Total.Reset()
+				if err := s.Total.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"total\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxAgentProvisionProgress")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SandboxAgentProvisionProgress) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxAgentProvisionProgress) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

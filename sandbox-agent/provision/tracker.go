@@ -36,14 +36,30 @@ type Tracker struct {
 	// running is whether a run is still provisioning.
 	running bool
 	// changes moves when the document's state, its readiness or a feature's
-	// state does, never a step within a feature (ADR 26-11-11-560 §6).
+	// state does, never a step within a feature (ADR 26-11-11-560 §6); and
+	// with a step's progress, at most once per ProgressSpacing (ADR
+	// 26-11-24-336 §5).
 	changes statuswait.Signal
 	// rerunning is whether the run in progress is a reprovision's, and
 	// reprovisioned is closed, and replaced, when it ends.
 	rerunning     bool
 	reprovisioned chan struct{}
 	automatic     automaticRetry
+	// progressSpacing is the least time between two publishes of a running
+	// step's progress (ADR 26-11-24-336 §5); zero is ProgressSpacing.
+	progressSpacing time.Duration
+	// progressPending is progress folded into the document that has not been
+	// published yet, progressPublished when it last was, and progressTimer
+	// the publish that waits out the spacing.
+	progressPending   bool
+	progressPublished time.Time
+	progressTimer     *time.Timer
 }
+
+// ProgressSpacing is the least time between two publishes of a running
+// step's progress: what a box downloading quickly costs its pool in status
+// waits and rewrites of provision.json (ADR 26-11-24-336 §5).
+const ProgressSpacing = 5 * time.Second
 
 // NewTracker is a tracker writing path, or nothing when path is empty. Its
 // document is pending until a run starts.
@@ -117,8 +133,9 @@ func (t *Tracker) AwaitReady(ctx context.Context) error {
 }
 
 // Changes is the signal that moves when the document's state, its readiness
-// or a feature's state does: what the agent's status wait holds the pool on
-// (ADR 26-11-11-560 §6). A nil tracker's never moves.
+// or a feature's state does, and with a running step's progress at most once
+// per ProgressSpacing: what the agent's status wait holds the pool on (ADR
+// 26-11-11-560 §6, ADR 26-11-24-336 §5). A nil tracker's never moves.
 func (t *Tracker) Changes() *statuswait.Signal {
 	if t == nil {
 		return nil
@@ -267,12 +284,58 @@ func (t *Tracker) step(feature, step string) {
 		if current.State.Done() {
 			return
 		}
-		current.Step = step
+		current.Step, current.Progress = step, nil
 		if step != "" {
 			current.State = provisionspec.StateProvisioning
 		}
 		status.Features[feature] = current
 	})
+}
+
+// progress folds a running step's progress into the document. Unlike a
+// state change it is published, written and moved on the status wait at most
+// once per ProgressSpacing; Status reads it at once. Progress for a step the
+// feature is no longer on is dropped, and so is progress that has not changed.
+func (t *Tracker) progress(feature, step string, progress provisionspec.Progress) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	current, ok := t.status.Features[feature]
+	if !ok || current.State != provisionspec.StateProvisioning || current.Step != step {
+		return
+	}
+	if current.Progress != nil && *current.Progress == progress {
+		return
+	}
+	current.Progress = &progress
+	t.status.Features[feature] = current
+	t.progressPending = true
+	t.publishProgressLocked()
+}
+
+// publishProgressLocked publishes the progress pending, now or once the
+// spacing since the last publish has passed.
+func (t *Tracker) publishProgressLocked() {
+	if !t.progressPending || t.progressTimer != nil {
+		return
+	}
+	spacing := t.progressSpacing
+	if spacing == 0 {
+		spacing = ProgressSpacing
+	}
+	if wait := spacing - time.Since(t.progressPublished); wait > 0 {
+		t.progressTimer = time.AfterFunc(wait, func() {
+			t.mu.Lock()
+			defer t.mu.Unlock()
+			t.progressTimer = nil
+			t.publishProgressLocked()
+		})
+		return
+	}
+	t.progressPending = false
+	t.progressPublished = time.Now()
+	t.status.UpdatedAt = t.progressPublished.UTC()
+	t.writeLocked()
+	t.changes.Changed()
 }
 
 // logPath reports where a feature's log is.
@@ -288,7 +351,7 @@ func (t *Tracker) logPath(feature, path string) {
 func (t *Tracker) finish(plan *featurePlan) {
 	t.update(func(status *provisionspec.Status) {
 		current := status.Features[plan.feature.Name]
-		current.Step = ""
+		current.Step, current.Progress = "", nil
 		if plan.failed != nil {
 			current.State, current.Error = provisionspec.StateFailed, plan.failed.Error()
 		} else {

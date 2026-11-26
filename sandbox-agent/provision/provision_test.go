@@ -66,12 +66,12 @@ func newBox(t *testing.T) *box {
 			}
 			return runCommand(ctx, out, dir, env, name, args...)
 		},
-		Fetch: func(_ context.Context, url string) (io.ReadCloser, error) {
+		Fetch: func(_ context.Context, url string) (io.ReadCloser, int64, error) {
 			body, ok := b.served[url]
 			if !ok {
-				return nil, errors.New("not served: " + url)
+				return nil, 0, errors.New("not served: " + url)
 			}
-			return io.NopCloser(strings.NewReader(body)), nil
+			return io.NopCloser(strings.NewReader(body)), int64(len(body)), nil
 		},
 	}
 	if err := os.MkdirAll(filepath.Join(b.root, "etc"), 0o755); err != nil {
@@ -633,7 +633,7 @@ func TestFetchGivesUpOnAStalledServer(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	t.Cleanup(func() { close(release) })
-	body, err := httpFetch(context.Background(), server.URL)
+	body, _, err := httpFetch(context.Background(), server.URL)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -71,6 +71,14 @@ type Runner struct {
 	// LogDir holds each feature's log, <feature>.log, which its steps write
 	// their output to; empty writes it to stderr.
 	LogDir string
+	// ProgressDir holds each running step's progress file, which its scripts
+	// are told of and report on (ADR 26-11-24-336 §2); empty gives them none.
+	ProgressDir string
+	// NetDev is where the box's interfaces count what they received
+	// (/proc/net/dev), which a running step's progress carries (ADR
+	// 26-11-24-336 §4); empty counts nothing. With neither, a run reports no
+	// progress.
+	NetDev string
 	// Placeholders is the directory a feature's placeholder commands are
 	// written to while it provisions in the background; empty writes none.
 	Placeholders string
@@ -156,8 +164,10 @@ type featurePlan struct {
 	// is done before the run starts, and the run does nothing of it.
 	satisfied bool
 	done      chan struct{}
-	out       io.Writer
-	logs      *os.File
+	// progress is the step running now's, which its scripts report on.
+	progress *stepProgress
+	out      io.Writer
+	logs     *os.File
 }
 
 // blocks reports whether the feature's step at index waits for readiness.
@@ -480,7 +490,10 @@ func (r *Runner) runSteps(ctx context.Context, plan *featurePlan, want func(int,
 			return outcomes, plan.failed
 		}
 		r.tracker().step(feature.Name, step.Name)
+		plan.progress = r.watchStep(plan, step.Name)
 		result, err := r.applyStep(ctx, out, plan, step)
+		plan.progress.end()
+		plan.progress = nil
 		if err != nil {
 			plan.failed = fmt.Errorf("feature %q: step %q: %w", feature.Name, step.Name, err)
 			fmt.Fprintf(out, "discobox provision: %s: step %s failed: %v\n", feature.Name, step.Name, err)
@@ -810,9 +823,9 @@ func (r *Runner) apply(ctx context.Context, out io.Writer, plan *featurePlan, st
 	case step.Env != nil:
 		return r.applyEnv(feature, step)
 	case step.Download != nil:
-		return r.applyDownload(ctx, step.Download)
+		return r.applyDownload(ctx, plan.progress, step.Download)
 	case step.Packages != nil:
-		return r.applyPackages(ctx, out, step.Packages)
+		return r.applyPackages(ctx, out, plan.progress, step.Packages)
 	case step.Run != "":
 		if step.Apt {
 			r.apt.Lock()
@@ -828,7 +841,8 @@ func (r *Runner) apply(ctx context.Context, out io.Writer, plan *featurePlan, st
 
 // script runs one of the feature's scripts from the feature's directory. An
 // adopted feature's scripts, its checks among them, are also told what it
-// adopted (AdoptedEnv).
+// adopted (AdoptedEnv); and every script of a step that has a progress file
+// is told where it is (provisionspec.ProgressEnv).
 func (r *Runner) script(ctx context.Context, out io.Writer, plan *featurePlan, script string) error {
 	feature := plan.feature
 	env := []string{
@@ -838,6 +852,7 @@ func (r *Runner) script(ctx context.Context, out io.Writer, plan *featurePlan, s
 	if plan.adopted {
 		env = append(env, AdoptedEnv(plan.commands)...)
 	}
+	env = append(env, plan.progress.env()...)
 	return r.command(ctx, out, feature.Dir, env, filepath.Join(feature.Dir, filepath.FromSlash(script)))
 }
 

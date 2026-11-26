@@ -66,11 +66,16 @@ what the harness needs comes first; others may still be installing while you
 work. `/run/discobox/provision.json` says where each stands:
 
 ```bash
-jq '.features | map_values({state, how, step, log, reason, error})' /run/discobox/provision.json
+jq '.features | map_values({state, how, step, progress, log, reason, error})' /run/discobox/provision.json
 ```
 
 - `state` is `pending`, `provisioning`, `ready`, `failed` or `off`. `log` is
   the feature's log; read it when one failed.
+- `progress`, while a feature provisions, is how far its step has got: what
+  the step says it is doing (`detail`, with `done`/`total` bytes or a
+  `percent`), and what the whole box has `received` since the step started,
+  last moving at `receivedAt`. A `received` that stays put means nothing is
+  arriving.
 - Wait for one with `discobox-provision wait docker` (any number of names). It
   exits non-zero if one failed or is off, and says why.
 - **One failed** (a download hit a network blip, say): read its log, then run
