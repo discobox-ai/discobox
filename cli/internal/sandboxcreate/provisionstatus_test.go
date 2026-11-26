@@ -1,12 +1,14 @@
 package sandboxcreate
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
 // provisioning builds a sandbox whose runtime says what the test is about.
@@ -349,5 +351,48 @@ func TestProvisionStatusDescribesBlockingPreparation(t *testing.T) {
 				t.Fatalf("status = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// A running step's progress: what it says, how far, and what the box has
+// received or how long nothing has arrived (ADR 26-11-24-336 §7).
+func TestProgressText(t *testing.T) {
+	now := time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC)
+	recent := now.Add(-2 * time.Second)
+	for _, tc := range []struct {
+		name     string
+		progress *provisionspec.Progress
+		want     string
+	}{
+		{"none", nil, ""},
+		{"nothing yet", &provisionspec.Progress{ReceivedAt: recent}, ""},
+		{"npm", &provisionspec.Progress{Detail: "installing @anthropic-ai/claude-code", Received: 18 << 20, ReceivedAt: recent}, "installing @anthropic-ai/claude-code — 18.0 MiB received"},
+		{"apt", &provisionspec.Progress{Detail: "installing nodejs (amd64)", Percent: 62, ReceivedAt: recent}, "installing nodejs (amd64), 62%"},
+		{"stalled", &provisionspec.Progress{Detail: "installing @anthropic-ai/claude-code", Received: 100, ReceivedAt: now.Add(-47 * time.Second)}, "installing @anthropic-ai/claude-code — nothing received for 45s"},
+		{"stalled, no detail", &provisionspec.Progress{ReceivedAt: now.Add(-3 * time.Minute)}, "nothing received for 3m0s"},
+		{"received only", &provisionspec.Progress{Received: 512, ReceivedAt: recent}, "512 B received"},
+		{"download", &provisionspec.Progress{Detail: "downloading go.tar.gz from go.dev", Done: 12 << 20, Total: 48 << 20, Received: 13 << 20, ReceivedAt: now.Add(-time.Hour)}, "downloading go.tar.gz from go.dev, 12.0 MiB of 48.0 MiB (25%)"},
+		{"no total", &provisionspec.Progress{Done: 3 << 10, ReceivedAt: recent}, "3.0 KiB"},
+		{"a total under done", &provisionspec.Progress{Done: 3 << 10, Total: 1, ReceivedAt: recent}, "3.0 KiB"},
+		{"escaped", &provisionspec.Progress{Detail: "bad\u001b[31m\nline", ReceivedAt: recent}, `bad\x1b[31m line`},
+		{"no count", &provisionspec.Progress{Detail: "x"}, "x"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ProgressText(tc.progress, now); got != tc.want {
+				t.Fatalf("ProgressText = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The wait for a box says how far each blocking feature's step has got.
+func TestProvisionStatusCarriesAStepsProgress(t *testing.T) {
+	at := time.Now().UTC().Format(time.RFC3339Nano)
+	report := fmt.Sprintf(`{"state":"provisioning","ready":false,"features":{"core":{"state":"ready"},"claude-code":{"state":"provisioning","step":"cli","progress":{"detail":"installing @anthropic-ai/claude-code","received":19293798,"receivedAt":%q}}}}`, at)
+	runtime := apimodel.SandboxRuntime{State: apiclientgen.SandboxRuntimeStateReady, Generation: 1, ObservedGeneration: 1, RuntimeState: apiclientgen.NewOptSandboxRuntimeRuntimeState(apiclientgen.SandboxRuntimeRuntimeStateRunning), DisplayState: apiclientgen.NewOptSandboxRuntimeDisplayState(apiclientgen.SandboxRuntimeDisplayStateStarting)}
+	runtime.AgentStatus = apiclientgen.NewOptNilSandboxRuntimeAgentStatus(apiclientgen.SandboxRuntimeAgentStatus{"provision": []byte(report)})
+	want := "provisioning claude-code / cli: installing @anthropic-ai/claude-code — 18.4 MiB received"
+	if got := ProvisionStatus(provisioning(runtime)); string(got) != want {
+		t.Fatalf("status = %q, want %q", got, want)
 	}
 }

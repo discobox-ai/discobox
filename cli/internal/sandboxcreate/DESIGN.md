@@ -369,7 +369,13 @@ holds creation until a current status report permits placement.
 
 Provision narration also respects the server display state: a converged running
 container shown as `starting` describes the agent's blocking feature and step,
-while it runs. Before its feature plan arrives it
+while it runs, and how far that step has got (`ProgressText`,
+[ADR 26-11-24-336](../../../docs/adr/26-11-24-336-a-provisioning-step-reports-its-progress-and-the-agent-counts-what-the-box-receives.md)
+§7): the step's detail, its bytes (a percentage only of a total it reports,
+and no total when it is under what is done) or its own percentage, and, for a
+step that counts no bytes, what the box has received, or how long nothing has
+once that reaches `ProgressStalled` (30 s). A box that could not count what
+it received says neither. Every part is the box's word and is escaped. Before its feature plan arrives it
 says "loading provisioning bundles". A missing agent report falls back to
 "preparing the discobox" until readiness. This current agent report outranks the pool phase
 from boot or source delivery, even while that older phase is fresh. This is
