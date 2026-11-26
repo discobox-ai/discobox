@@ -70,7 +70,13 @@ flowchart TD
   size line alone does the job. A source that fails on a terminal shows curl's
   own error, then says the next source is being tried.
 - **Verification** runs `discobox version --client`, checking the installed
-  binary without contacting or starting the server.
+  binary without contacting or starting the server. When Windows refuses to
+  start it under an Application Control policy, `install.ps1` removes it, puts
+  back the one it replaced, and says why. It suggests turning Smart App Control
+  off only when that is on and the file is unsigned. Any other policy is an
+  organisation's to allow. The script never checks the signer itself: the
+  stamped digest already pins the signed bytes, and Windows enforces the
+  signature (ADR 26-11-24-185 §6).
 - **The server is not part of the install.** Both scripts close by saying what
   the Homebrew formula's caveats say: the CLI fetches the server it was cut
   against on first use, checked against digests it carries (ADR 0099).

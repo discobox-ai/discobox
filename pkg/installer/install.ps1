@@ -375,6 +375,37 @@ function Install-Discobox {
         Write-DiscoboxOk "added $Dir to your PATH; open a new terminal to use discobox there"
     }
 
+    # What to say when Windows refused to start the binary it just installed
+    # because a code integrity policy does not allow it, or nothing for any
+    # other failure. PowerShell reports that refusal as "An Application Control
+    # policy has blocked this file", from ERROR_SYSTEM_INTEGRITY_POLICY_VIOLATION
+    # (4551); the text is matched too, for a wrapper that drops the code.
+    #
+    # Smart App Control is one such policy. It is on by default on a new
+    # Windows 11, and it refuses an unsigned file Microsoft has no reputation
+    # for, which a release cut every few days never earns. An organisation's
+    # App Control policy is another, and refuses whatever it was written to.
+    # Turning Smart App Control off is the answer to the first only, so it is
+    # suggested only when it is on and the file is unsigned.
+    function Get-DiscoboxBlockedMessage([Exception]$Exception, [string]$Path) {
+        $blocked = $Exception.Message -match 'Application Control policy'
+        for ($e = $Exception; $e; $e = $e.InnerException) {
+            if ($e -is [ComponentModel.Win32Exception] -and $e.NativeErrorCode -eq 4551) { $blocked = $true }
+        }
+        if (-not $blocked) { return $null }
+        $sac = $false
+        try {
+            $policy = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy' -Name VerifiedAndReputablePolicyState -ErrorAction Stop
+            $sac = $policy.VerifiedAndReputablePolicyState -eq 1
+        } catch { }
+        $unsigned = $false
+        try { $unsigned = (Get-AuthenticodeSignature -LiteralPath $Path).Status -eq 'NotSigned' } catch { }
+        if ($sac -and $unsigned) {
+            return "Windows Smart App Control blocked discobox.exe because this build of discobox $release is not code-signed, so the installer removed it again. To install it, turn Smart App Control off in Windows Security > App & browser control > Smart App Control settings, which turns it off for every program on this machine, and run the installer again."
+        }
+        return "Windows blocked discobox.exe because an Application Control policy on this machine does not allow it, so the installer removed it again. If your organisation manages this machine, ask its administrator to allow discobox $release."
+    }
+
     function Install-DiscoboxRelease {
         $asset = "discobox-$($platform.OS)-$($platform.Arch)$($platform.Exe)"
         if (-not $assets.ContainsKey($asset)) { throw "$release has no build for $($platform.OS) on $($platform.Arch)" }
@@ -411,6 +442,7 @@ function Install-Discobox {
         $staged = Join-Path $dir ".$name.new"
         Copy-Item -LiteralPath $downloaded -Destination $staged -Force
         if ($platform.OS -ne 'windows') { & chmod 755 $staged }
+        $old = $null
         if ($platform.OS -eq 'windows' -and (Test-Path -LiteralPath $dest)) {
             # Windows will not overwrite an executable that is running, but it
             # will rename one.
@@ -425,6 +457,14 @@ function Install-Discobox {
         try {
             $out = (& $dest version --client | Out-String).Trim()
         } catch {
+            $blocked = if ($platform.OS -eq 'windows') { Get-DiscoboxBlockedMessage $_.Exception $dest }
+            if ($blocked) {
+                # A binary Windows will never run is not left where discobox
+                # should be, and the one it replaced, if any, goes back.
+                Remove-Item -LiteralPath $dest -Force -ErrorAction SilentlyContinue
+                if ($old) { Move-Item -LiteralPath $old -Destination $dest -Force -ErrorAction SilentlyContinue }
+                throw $blocked
+            }
             throw "installed $dest, but it does not run: $($_.Exception.Message)"
         }
         if ($LASTEXITCODE -ne 0) { throw "installed $dest, but it does not run: $out" }
