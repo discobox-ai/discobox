@@ -1213,7 +1213,11 @@ func (r *MachineSandboxRuntime) createOptions(name string, size MachineSize) eng
 // report as the runtime's fence: one made before the fence, or by hand,
 // would let its sandbox reach around the pool's proxy (ADR 26-10-29-481 §4).
 // A machine the runtime makes is fenced by its create, which reads the fence
-// back before it returns.
+// back before it returns. An archil machine with its data disk mounted also
+// reaches the two hosts Archil adds for the mount, which its driver leaves out
+// of the fence it reports; discobox cannot take them away, so they are
+// accepted, and what they let a box reach is in pool-agent DESIGN.md (One
+// machine per sandbox).
 func (r *MachineSandboxRuntime) fenced(inst machine.Instance) error {
 	if r.egress == nil || sameEgress(inst.Egress, r.egress) {
 		return nil
