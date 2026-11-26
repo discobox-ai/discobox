@@ -126,6 +126,12 @@ one, which `TestPrivilegedFieldsAreTheCheckedEndpoints` holds back. A field
 disco-vm marks `Required` must be set at creation. A boxd provider stored
 without a region fails to resolve until the owner replaces it and its pools
 (ADR 26-11-15-507). An Archil provider must specify its region.
+`Definition` also reads whether the driver sizes the machine it makes
+(`machine.Definition.Sizes`): one that does gets `cpuVcpus` and
+`memoryBytes` as its `SizeFields`, so a box's size, or its pool's as their
+default, reaches the engine through the pool agent; one that does not gets
+none, and a size asked of it is refused (ADR 26-11-23-445 §6). At this pin
+archil, boxd and hcs do. The pool's own machine is not sized from them (§5).
 
 The server reads no driver's environment (ADR 26-11-11-080 §2): a variable a
 linked driver names, set in the server's environment, is warned of at start,
