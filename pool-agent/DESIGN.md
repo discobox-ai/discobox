@@ -1196,7 +1196,10 @@ flowchart LR
   systemd** (`provisioner.RequireSystemd`), before anything is placed: every
   unit below runs under it ([ADR 26-11-16-619](../docs/adr/26-11-16-619-a-pool-on-a-driver-with-no-networks-fences-each-sandbox-at-the-providers-edge-and-starts-systemd-in-the-guest.md)
   §4). The create fails naming `/lib/systemd/systemd`.
-- **Every start places**: sandbox.json at `/etc/discobox`, the agent layer
+- **Every start places**: sandbox.json at `/etc/discobox`, the machine's
+  name (`/etc/hostname`, and an `/etc/hosts` resolving it at `127.0.1.1`: the
+  sandbox's hostname a container sandbox gets from Docker, which a machine
+  would otherwise take from its base's files), the agent layer
   when the pool's record does not say it is there, the units
   (`agentlayer.MachineUnits`: the agent's, and the drop-in that runs
   `discobox-wire.service` on a machine) and the pins, then runs

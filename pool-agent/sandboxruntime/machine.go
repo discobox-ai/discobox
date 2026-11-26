@@ -1285,7 +1285,7 @@ func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, ins
 			return false, nil, fmt.Errorf("sandbox %s's machine: %w", sandboxID, err)
 		}
 	}
-	if err := guest.CopyTo(ctx, "/", bootstrapTree(bootstrap, keypair)); err != nil {
+	if err := guest.CopyTo(ctx, "/", bootstrapTree(bootstrap, keypair, sandboxHostname(sandboxID))); err != nil {
 		return false, nil, fmt.Errorf("place sandbox %s's bootstrap: %w", sandboxID, err)
 	}
 	reader, writer := io.Pipe()
@@ -1393,10 +1393,27 @@ func (r *MachineSandboxRuntime) placementCurrent(ctx context.Context, sandboxID,
 // secret (its runtime-config document is what carries them). Beside it is the
 // keypair the agent serves its API over TLS with, where it does, its key
 // root's alone.
-func bootstrapTree(data []byte, keypair *sandboxconfig.AgentTLS) io.Reader {
+//
+// It also names the machine hostname, as Docker names a container sandbox
+// (sandboxHostname): /etc/hostname, and an /etc/hosts that resolves it. A
+// container runtime mounts its own of both over its image's; a machine boots
+// its base's as they are, which name whatever built the base (Debian's,
+// "debuerreotype") and leave the machine unable to resolve its own name, as
+// every sudo then says. Both are written whole at every start, as a container
+// runtime writes its own at each: the name follows from the sandbox ID, so a
+// machine made from another's snapshot takes its own. They are no part of
+// the bootstrap's digest, since the ID they follow from is in it. A
+// placement the machine restarts onto (every first one in an instance) boots
+// on the name; a machine already running takes it at its next boot. An empty
+// hostname writes neither, leaving the base's.
+func bootstrapTree(data []byte, keypair *sandboxconfig.AgentTLS, hostname string) io.Reader {
 	var buf bytes.Buffer
 	tw := configTree(&buf)
 	writeTreeFile(tw, "etc/discobox/"+sandboxDocumentName, 0o644, data)
+	if hostname != "" {
+		writeTreeFile(tw, "etc/hostname", 0o644, []byte(hostname+"\n"))
+		writeTreeFile(tw, "etc/hosts", 0o644, []byte(machineHosts(hostname)))
+	}
 	if keypair != nil {
 		agentTLSDir := "etc/discobox/" + sandboxconfig.AgentTLSDirName + "/"
 		_ = tw.WriteHeader(&tar.Header{Name: agentTLSDir, Typeflag: tar.TypeDir, Mode: 0o755, ModTime: time.Unix(0, 0)})
@@ -1406,6 +1423,19 @@ func bootstrapTree(data []byte, keypair *sandboxconfig.AgentTLS) io.Reader {
 	}
 	_ = tw.Close()
 	return &buf
+}
+
+// machineHosts is a machine's /etc/hosts: localhost, and hostname at
+// 127.0.1.1 as Debian and Ubuntu name a machine with no fixed address
+// (vm-image/assemble-guest-image writes the pool guest's alike).
+func machineHosts(hostname string) string {
+	return "127.0.0.1\tlocalhost\n" +
+		"127.0.1.1\t" + hostname + "\n" +
+		"::1\tlocalhost ip6-localhost ip6-loopback\n" +
+		"fe00::\tip6-localnet\n" +
+		"ff00::\tip6-mcastprefix\n" +
+		"ff02::1\tip6-allnodes\n" +
+		"ff02::2\tip6-allrouters\n"
 }
 
 // configTree starts a tar, placed at a machine's root, of what goes in

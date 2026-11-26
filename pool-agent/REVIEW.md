@@ -102,8 +102,15 @@ sandbox.json, the agent's TLS keypair where it serves TLS, the agent layer,
 its units and its pins into a running machine at every start, and restarts it
 when what it boots on moved (ADR 26-10-24-953 §2, ADR 26-10-27-345, ADR
 26-10-29-481 §3). The keypair is no part of what moved: the agent reads it
-afresh for every handshake. Nothing else is written into a machine either: no
-record of the pool's, and nothing into the sandbox's own files.
+afresh for every handshake. With them goes the machine's name, the
+`/etc/hostname` and `/etc/hosts` a container runtime would mount over a
+container's (`bootstrapTree`, #1599): its base's name the build tool's, with
+no hosts line, otherwise. Both are written whole, as Docker writes a
+container's at each start, so an edit to `/etc/hosts` in the box does not
+survive a start. Not appended to as `ensurePoolName` does the pool host's: a
+machine made from another's snapshot carries the other's name line, and an
+append would leave it resolving both. Nothing else is written into a machine
+either: no record of the pool's, and nothing into the sandbox's own files.
 
 The one other write is the agent's placement in a delivered sandbox's
 container, before each start and never into a running one: the agent layer,
