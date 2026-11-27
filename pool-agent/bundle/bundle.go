@@ -56,10 +56,13 @@ const AgentBinary = "/usr/local/bin/discobox-pool-agent"
 const (
 	AgentTemplate = "discobox-pool-agent@.service"
 	ProxyTemplate = "discobox-proxy@.service"
-	// UnitsService is what a pool's socket starts when traffic finds no slot
-	// serving it: `discobox-pool-agent units start`, which starts the
-	// enabled slot.
-	UnitsService = "discobox-pool-units.service"
+	// UnitsTemplate is what a pool's socket starts when traffic finds no
+	// slot serving it, an instance per socket (UnitsInstance): `discobox-pool-
+	// agent units start`, which starts the enabled slot. One instance per
+	// socket, since systemd refuses to start a socket whose service is
+	// already active, and one socket's traffic must never keep another
+	// from starting.
+	UnitsTemplate = "discobox-pool-units@.service"
 	// MediatorUnit is the builder's mediator, which its own sockets start.
 	MediatorUnit = "discobox-buildkit-mediator.service"
 )
@@ -83,4 +86,9 @@ func AgentUnits() []string {
 		units = append(units, AgentUnit(slot))
 	}
 	return units
+}
+
+// UnitsInstance is UnitsTemplate's instance the socket named name starts.
+func UnitsInstance(name string) string {
+	return "discobox-pool-units@" + name + ".service"
 }

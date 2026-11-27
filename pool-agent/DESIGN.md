@@ -1931,8 +1931,9 @@ bundle. `bundle` names the files its maker places beside it.
   - `pool-agent`, which requires `pool-builder-units`: `discobox-pool-agent`,
     `git` where absent, the template units `discobox-pool-agent@.service`
     and `discobox-proxy@.service` (two slots, `a` and `b`; see
-    [Handing Over](#handing-over)), `discobox-pool-units.service`, which a
-    socket starts when traffic finds no slot serving it, the `units` step
+    [Handing Over](#handing-over)), `discobox-pool-units@.service`, whose
+    instance for a socket (`discobox-pool-units@<socket>.service`) the socket
+    starts when traffic finds no slot serving it, the `units` step
     that runs `discobox-pool-agent units apply`, and a journald drop-in
     keeping the journal on disk, bounded at 256M: it is what says why the
     agent did not come up, and a boxd base keeps none;
@@ -2081,10 +2082,19 @@ restarts its units as it did then (`poolruntime.unitsCommand`).
     restarts until it takes over; the apply fails, with the new slot
     recorded.
   - It retires the units of a box from before slots once, and a change to a
-    slot's socket rebinds every slot socket: both stop the agent and proxy
-    of every slot together, which cuts what they served. Every pool takes
-    that once, at the upgrade that first brings slots, since its old units
-    bound their own ports and have nothing to hand over.
+    slot's socket (one moved since the last apply recorded them, or one not
+    listening) rebinds every slot socket: both stop the agent and proxy of
+    every slot together, which cuts what they served. Every pool takes that
+    once, at the upgrade that first brings slots, since its old units bound
+    their own ports and have nothing to hand over. A rebind is refused, and
+    nothing recorded, while a slot drains; the next apply after it has
+    exited binds them.
+  - Each socket starts its own `discobox-pool-units@<socket>.service`
+    (`units start`) when traffic finds no slot serving it, which waits out
+    an apply under way: systemd refuses to start a socket whose service is
+    active, and re-triggers a socket whose service returned at once, to its
+    trigger limit. A rebind stops every instance before it starts the
+    sockets again.
   - With nothing moved, a pool that hands over still finishes what a
     handover left of the old slot (`finishHandOver`): a unit of it that
     says it is active (a signal that reached only some of its units, or a

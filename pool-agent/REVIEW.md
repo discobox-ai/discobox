@@ -1016,10 +1016,20 @@ tracked in #1699, not a pattern to copy.
   serves. Why: the first draft stopped both in one call, which on a pool's
   first apply with slots held its egress and agent down for a build's drain.
 - **Every slot socket is stopped before the slots, when any of them moves,
-  and `units start` does nothing while an apply holds the units' lock.** Why:
-  traffic on a socket nothing serves starts `units start`, which would start
-  the slot on a socket about to move, or wait on the apply while systemd
-  refuses to start the sockets beside it.
+  and `units start` waits out an apply that holds the units' lock.** Each
+  socket starts an instance of its own (`discobox-pool-units@<socket>`), and
+  `rebind` stops every instance before it starts the sockets again. Why:
+  traffic on a socket nothing serves starts `units start`. Returned at once,
+  it had its socket start it again until the socket's trigger limit
+  (20 in 2s) failed it; one service shared by every socket had systemd
+  refuse to start the sockets beside the one whose traffic started it,
+  which left the DNS and proxy-control sockets down under traffic on the
+  dev pool.
+- **An apply binds the slots' sockets when one moved since the last apply
+  recorded them, or one is not listening** (`socketsToBind`), and never while
+  a slot drains. Why: a refused or failed bind left the socket files laid
+  and the next apply saw nothing move, and a bind stops every slot, which
+  would cut one draining.
 - **The pool's maker reaches a bundle from before slots too.** It runs the
   feature's units step only where the bundle has one (`unitsCommand`), and
   says whether the box hands over in the environment, never the bootstrap

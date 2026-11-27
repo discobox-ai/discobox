@@ -167,6 +167,8 @@ type fingerprint struct {
 	Binary string `json:"binary,omitempty"`
 	Units  string `json:"units,omitempty"`
 	Inputs string `json:"inputs,omitempty"`
+	// Sockets digests the slots' socket units: what they listen on.
+	Sockets string `json:"sockets,omitempty"`
 }
 
 // Apply has the box run, in a slot, the agent and proxy of the bundle and
@@ -188,9 +190,10 @@ func Apply(ctx context.Context, cfg Config) error {
 }
 
 // Start starts the slot the box runs, when it is not running: what a socket
-// starts when traffic finds nothing serving it. While an apply runs it does
-// nothing: that apply starts the slot once it has bound its sockets, and one
-// started here meanwhile would serve the sockets it is about to replace.
+// starts when traffic finds nothing serving it. While an apply runs it waits
+// for it, starting nothing: that apply starts the slot once it has bound its
+// sockets, and one started here meanwhile would serve the sockets it is
+// about to replace.
 func Start(ctx context.Context, cfg Config) error {
 	if !cfg.Booted {
 		return nil
@@ -199,8 +202,14 @@ func Start(ctx context.Context, cfg Config) error {
 	if err := a.awaitSystemd(ctx); err != nil {
 		return err
 	}
-	lock, held, err := handover.TryAcquire(cfg.StateFile + ".lock")
-	if err != nil || !held {
+	// An apply under way is waited out rather than left: the socket that
+	// started this is not started again while it waits, so its traffic
+	// cannot reach the socket's trigger limit, and the apply starts the
+	// slot itself, which this then finds running.
+	wait, cancel := context.WithTimeout(ctx, startWait)
+	defer cancel()
+	lock, err := handover.Acquire(wait, cfg.StateFile+".lock")
+	if err != nil {
 		return err
 	}
 	defer func() { _ = lock.Release() }()
@@ -214,6 +223,28 @@ func Start(ctx context.Context, cfg Config) error {
 	}
 	_, err = cfg.Systemctl(ctx, "start", "--no-block", bundle.AgentUnit(slot), bundle.ProxyUnit(slot))
 	return err
+}
+
+// startWait bounds how long Start waits out an apply.
+const startWait = 15 * time.Minute
+
+// unitsInstances names every running `units start` a socket began.
+const unitsInstances = "discobox-pool-units@*.service"
+
+// socketsToBind reports whether the slots' sockets are bound again: one
+// moved in this render (changed) or since the last apply recorded them, or
+// one is not listening.
+func (a *applier) socketsToBind(ctx context.Context, changed []string, recorded, now fingerprint) (bool, error) {
+	if len(a.byRole(changed, RoleAgent, RoleProxy)) > 0 || recorded.Sockets != now.Sockets {
+		return true, nil
+	}
+	for _, unit := range a.ofRole(RoleAgent, RoleProxy) {
+		running, err := a.active(ctx, unit)
+		if err != nil || !running {
+			return err == nil, err
+		}
+	}
+	return false, nil
 }
 
 type applier struct {
@@ -292,8 +323,24 @@ func (a *applier) apply(ctx context.Context) error {
 	// drains builds.
 	// Every one of the slots' sockets, not just the ones that moved: a
 	// socket left listening while the slots are down starts `units start`.
+	// They are bound again when one moved, in this render or since the last
+	// apply recorded them (one refused below), or one is not listening.
 	var slotSockets []string
-	if len(a.byRole(changed, RoleAgent, RoleProxy)) > 0 {
+	rebound, err := a.socketsToBind(ctx, changed, current.Fingerprint, now)
+	if err != nil {
+		return err
+	}
+	if rebound {
+		// Binding them stops every slot, which would cut one draining:
+		// it is left to finish, and nothing is recorded, so the next
+		// apply after it has exited binds them.
+		slotUnits := append(bundle.AgentUnits(), proxyUnits()...)
+		if draining, err := a.anyDraining(ctx, slotUnits...); err != nil || draining {
+			if err != nil {
+				return err
+			}
+			return errors.New("the pool's sockets moved while a slot still drains from the last handover; they are bound once it has exited")
+		}
 		slotSockets = a.ofRole(RoleAgent, RoleProxy)
 	}
 	stopped, err := a.rebind(ctx, slotSockets, append(bundle.AgentUnits(), proxyUnits()...))
@@ -429,7 +476,7 @@ func (a *applier) render() (changed, stale []string, err error) {
 // starts the slot the box runs (Start), and the mediator's starts the
 // mediator.
 func socketUnit(socket Socket) string {
-	service := bundle.UnitsService
+	service := bundle.UnitsInstance(socket.Name)
 	if socket.Role == RoleMediator {
 		service = bundle.MediatorUnit
 	}
@@ -522,6 +569,12 @@ func (a *applier) rebind(ctx context.Context, sockets, units []string) (bool, er
 	}
 	a.log.Info("binding the pool's sockets", "sockets", sockets, "stopping", running)
 	if _, err := a.cfg.Systemctl(ctx, append([]string{"stop"}, sockets...)...); err != nil {
+		return false, err
+	}
+	// A socket whose own service is active is refused a start: a `units
+	// start` that traffic began waits on this apply, and would hold its
+	// socket down. It has nothing to do that this apply does not.
+	if _, err := a.cfg.Systemctl(ctx, "stop", unitsInstances); err != nil {
 		return false, err
 	}
 	if len(running) > 0 {
@@ -824,7 +877,15 @@ func (a *applier) fingerprint() (fingerprint, error) {
 	if err != nil {
 		return fingerprint{}, err
 	}
-	return fingerprint{Binary: binary, Units: units, Inputs: inputs}, nil
+	var socketFiles []string
+	for _, unit := range a.ofRole(RoleAgent, RoleProxy) {
+		socketFiles = append(socketFiles, filepath.Join(a.cfg.SystemdDir, unit))
+	}
+	sockets, err := hashFiles(socketFiles)
+	if err != nil {
+		return fingerprint{}, err
+	}
+	return fingerprint{Binary: binary, Units: units, Inputs: inputs, Sockets: sockets}, nil
 }
 
 // hashFiles digests the named files' contents, a file not there included as

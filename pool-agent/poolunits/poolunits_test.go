@@ -232,7 +232,7 @@ func TestTheFirstApplyBindsTheSocketsAndStartsTheFirstSlot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"ListenStream=0.0.0.0:7443\n", "FileDescriptorName=ingress\n", "Service=" + bundle.UnitsService + "\n", "WantedBy=sockets.target\n"} {
+	for _, want := range []string{"ListenStream=0.0.0.0:7443\n", "FileDescriptorName=ingress\n", "Service=" + bundle.UnitsInstance("ingress") + "\n", "WantedBy=sockets.target\n"} {
 		if !strings.Contains(string(ingress), want) {
 			t.Errorf("the ingress socket's unit lacks %q:\n%s", want, ingress)
 		}
@@ -606,29 +606,42 @@ func TestStartStartsTheSlotTheBoxRuns(t *testing.T) {
 	}
 }
 
-// A socket's start while an apply runs does nothing: the apply starts the
-// slot once it has bound its sockets.
-func TestStartStepsAsideForAnApplyUnderWay(t *testing.T) {
+// A socket's start while an apply runs waits it out, starting nothing
+// meanwhile: the apply starts the slot once it has bound its sockets, and a
+// start that returned at once would have its socket start it again and
+// again, to the socket's trigger limit. Once the apply is done, it starts the
+// slot the box runs, which the apply has already started.
+func TestStartWaitsOutAnApplyUnderWay(t *testing.T) {
 	b := newBox(t, true)
 	b.apply(t)
 	lock, err := handover.Acquire(context.Background(), b.cfg.StateFile+".lock")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = lock.Release() }()
 	b.systemd.reset()
 	done := make(chan error, 1)
 	go func() { done <- Start(context.Background(), b.cfg) }()
+	select {
+	case err := <-done:
+		_ = lock.Release()
+		t.Fatalf("start returned (%v) while an apply held the units", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if len(b.systemd.ranAny("start")) != 0 {
+		_ = lock.Release()
+		t.Fatalf("start ran %q while an apply held the units", b.systemd.commands)
+	}
+	_ = lock.Release()
 	select {
 	case err := <-done:
 		if err != nil {
 			t.Fatal(err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("start waited for the apply under way")
+		t.Fatal("start did not end once the apply had")
 	}
-	if len(b.systemd.ranAny("start")) != 0 {
-		t.Fatalf("start ran %q while an apply held the units", b.systemd.commands)
+	if !b.systemd.ran("start", "--no-block", bundle.AgentUnit("a"), bundle.ProxyUnit("a")) {
+		t.Fatalf("start did not start the slot the box runs: %q", b.systemd.commands)
 	}
 }
 
@@ -700,5 +713,62 @@ func TestAnApplyStopsAStandbyOfTheOldSlot(t *testing.T) {
 	}
 	if !b.systemd.ran("stop", bundle.AgentUnit("a")) {
 		t.Fatalf("a standby of the old slot was not stopped: %q", b.systemd.commands)
+	}
+}
+
+// A socket change while a slot still drains from the last handover binds
+// nothing, and records nothing, so the draining slot is not cut; the next
+// apply once it has exited binds the sockets.
+func TestASocketChangeWaitsOutADrainingSlot(t *testing.T) {
+	b := newBox(t, true)
+	b.apply(t)
+	b.systemd.reset()
+	b.write(t, b.cfg.Binary, "agent v2")
+	b.apply(t)
+	if got := b.slot(t); got != "b" {
+		t.Fatalf("slot recorded = %q, want b", got)
+	}
+	// Slot a drains; a socket moves.
+	b.cfg.Sockets[0].Listen = "0.0.0.0:7444"
+	b.systemd.reset()
+	err := Apply(context.Background(), b.cfg)
+	if err == nil || !strings.Contains(err.Error(), "still drains") {
+		t.Fatalf("a socket change over a draining slot = %v, want it refused", err)
+	}
+	if slices.ContainsFunc(b.systemd.commands, func(c []string) bool {
+		return c[0] == "stop" && (slices.Contains(c, bundle.AgentUnit("a")) || slices.Contains(c, bundle.ProxyUnit("a")))
+	}) {
+		t.Fatalf("the draining slot was stopped for a socket change: %q", b.systemd.commands)
+	}
+
+	// Slot a has exited: the next apply binds the moved socket.
+	for _, unit := range []string{bundle.AgentUnit("a"), bundle.ProxyUnit("a")} {
+		b.systemd.active[unit], b.systemd.status[unit] = false, ""
+	}
+	b.systemd.reset()
+	b.apply(t)
+	if !b.systemd.ran("enable", "--now", b.cfg.Sockets[0].Unit()) && !slices.ContainsFunc(b.systemd.commands, func(c []string) bool {
+		return c[0] == "enable" && slices.Contains(c, "--now") && slices.Contains(c, b.cfg.Sockets[0].Unit())
+	}) {
+		t.Fatalf("the moved socket was not bound once the drain ended: %q", b.systemd.commands)
+	}
+}
+
+// A slot socket that is not listening, which a refused start left down, is
+// bound again by the next apply though nothing it fingerprints moved.
+func TestAnApplyBindsASocketLeftDown(t *testing.T) {
+	b := newBox(t, true)
+	b.apply(t)
+	down := b.cfg.Sockets[0].Unit()
+	b.systemd.active[down] = false
+	b.systemd.reset()
+	b.apply(t)
+	if !slices.ContainsFunc(b.systemd.commands, func(c []string) bool {
+		return c[0] == "enable" && slices.Contains(c, "--now") && slices.Contains(c, down)
+	}) {
+		t.Fatalf("a socket left down was not bound again: %q", b.systemd.commands)
+	}
+	if !b.systemd.ran("stop", unitsInstances) {
+		t.Fatalf("the sockets were bound with a socket's own units start still running: %q", b.systemd.commands)
 	}
 }

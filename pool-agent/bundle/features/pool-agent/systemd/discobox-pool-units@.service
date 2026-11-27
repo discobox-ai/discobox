@@ -1,0 +1,15 @@
+[Unit]
+Description=Discobox Pool Units (socket %i)
+Documentation=https://github.com/discobox-ai/discobox
+# What a pool's socket starts when traffic finds no slot serving it: the slot
+# the box runs, which a stop or a failure left down. An instance per socket,
+# since systemd refuses to start a socket whose service is already active.
+# Never enabled.
+
+[Service]
+Type=oneshot
+# It waits out an apply under way, which starts the slot itself: while it
+# waits, its socket is not triggered again (and cannot reach its trigger
+# limit). The wait is bounded by `units start` itself.
+TimeoutStartSec=infinity
+ExecStart=/usr/local/bin/discobox-pool-agent units start
