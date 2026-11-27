@@ -54,8 +54,9 @@ func (r *sandboxCore) lockPower(ctx context.Context, sandboxID string) (func(), 
 // forgetLocks removes sandboxID's power lock and boot mark, as its removal
 // ends, holding its power lock; a waiter for its lock locks a new file
 // (handover.Remove). A later power operation on the removed sandbox (a reaper,
-// an update, that waiter) makes its lock file again, and that file lasts until
-// the boot ends (layout.PoolLocks).
+// an update, that waiter) makes its lock file again: on a pool container it
+// lasts until the boot ends, and on a host root it stays an unlocked file
+// (layout.PoolLocks).
 func (r *sandboxCore) forgetLocks(sandboxID string) {
 	for _, path := range []string{r.powerLockPath(sandboxID), r.bootMarkPath(sandboxID)} {
 		if err := handover.Remove(path); err != nil {
