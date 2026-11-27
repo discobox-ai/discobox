@@ -15,19 +15,35 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// DrainRequested is closed when this process is told to drain: systemd's
-// `kill --signal=SIGUSR2`, which poolunits sends to the old slot once the new
-// one is up. It is never closed if ctx ends first.
-func DrainRequested(ctx context.Context) <-chan struct{} {
+// DrainRequested is the drain units apply asks this process for (SIGUSR2),
+// taken only once this process holds its draining mark at markPath: a
+// process that could not mark itself draining would let the one taking over
+// sweep what it still holds. A signal whose mark cannot be taken is refused
+// (refused is told why) and this process serves on, as if it had not come;
+// units apply then finds it never began to drain. The drain is closed when
+// the mark is held, which it is until Release or this process exits.
+func DrainRequested(ctx context.Context, markPath string, refused func(error)) *Drain {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGUSR2)
-	drain := make(chan struct{})
+	drain := &Drain{requested: make(chan struct{})}
 	go func() {
 		defer signal.Stop(signals)
-		select {
-		case <-signals:
-			close(drain)
-		case <-ctx.Done():
+		for {
+			select {
+			case <-signals:
+			case <-ctx.Done():
+				return
+			}
+			wait, cancel := context.WithTimeout(ctx, drainMarkWait)
+			mark, err := Mark(wait, markPath)
+			cancel()
+			if err != nil {
+				refused(err)
+				continue
+			}
+			drain.mark = mark
+			close(drain.requested)
+			return
 		}
 	}()
 	return drain

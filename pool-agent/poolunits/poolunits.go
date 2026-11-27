@@ -319,6 +319,11 @@ func (a *applier) apply(ctx context.Context) error {
 			return err
 		}
 	case current.Fingerprint == now:
+		if a.cfg.HandOver {
+			if err := a.finishHandOver(ctx, slot); err != nil {
+				return err
+			}
+		}
 	case a.cfg.HandOver && a.ingressHeld():
 		next := other(slot)
 		serving, err := a.handOver(ctx, slot, next, state{Slot: slot, Fingerprint: current.Fingerprint}, state{Slot: next, Fingerprint: now})
@@ -555,11 +560,11 @@ func (a *applier) handOver(ctx context.Context, slot, next string, prev, now sta
 	a.log.Info("handing the pool over to a new agent", "from", slot, "to", next)
 	nextUnits := []string{bundle.AgentUnit(next), bundle.ProxyUnit(next)}
 	for _, unit := range nextUnits {
-		status, err := a.status(ctx, unit)
+		draining, err := a.draining(ctx, unit)
 		if err != nil {
 			return "", err
 		}
-		if status == handover.StatusDraining {
+		if draining {
 			return "", fmt.Errorf("%s still drains from the last handover; the pool hands over to slot %s once it has exited", unit, next)
 		}
 	}
@@ -595,17 +600,18 @@ func (a *applier) handOver(ctx context.Context, slot, next string, prev, now sta
 		if !running {
 			continue
 		}
-		if _, err := a.cfg.Systemctl(ctx, "kill", "--kill-who=main", "--signal=SIGUSR2", unit); err != nil {
+		if err := a.tellToDrain(ctx, unit); err != nil {
 			if !signaled {
-				return stopNext(fmt.Errorf("tell %s to drain: %w", unit, err))
+				return stopNext(err)
 			}
-			return next, fmt.Errorf("tell %s to drain: %w", unit, err)
+			// What is left untold is told by the next apply (finishHandOver).
+			return next, err
 		}
 		signaled = true
 	}
 	if err := a.awaitTakeOver(ctx, nextUnits); err != nil {
 		err = fmt.Errorf("the pool's new agent in slot %s did not take over: %w", next, err)
-		draining, statusErr := a.anyStatus(ctx, handover.StatusDraining, bundle.AgentUnit(slot), bundle.ProxyUnit(slot))
+		draining, statusErr := a.anyDraining(ctx, bundle.AgentUnit(slot), bundle.ProxyUnit(slot))
 		if statusErr == nil && !draining {
 			return stopNext(err)
 		}
@@ -613,6 +619,69 @@ func (a *applier) handOver(ctx context.Context, slot, next string, prev, now sta
 		return next, err
 	}
 	return next, nil
+}
+
+// drainSignalTries is how many times a slot's unit is told to drain before
+// the handover gives up on it.
+const drainSignalTries = 3
+
+// tellToDrain sends unit the drain signal, trying again on a failure.
+func (a *applier) tellToDrain(ctx context.Context, unit string) error {
+	var err error
+	for try := range drainSignalTries {
+		if try > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(try) * 200 * time.Millisecond):
+			}
+		}
+		if _, err = a.cfg.Systemctl(ctx, "kill", "--kill-who=main", "--signal=SIGUSR2", unit); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("tell %s to drain: %w", unit, err)
+}
+
+// finishHandOver tells each unit of the slot other than serving that still
+// runs and does not drain to drain: what a handover whose signal reached only
+// some of the old slot's units left. The unit taking over from one never
+// told waits on its lock, and no apply moves anything while the fingerprint
+// stands, so this is what ends it.
+func (a *applier) finishHandOver(ctx context.Context, serving string) error {
+	old := other(serving)
+	for _, unit := range []string{bundle.AgentUnit(old), bundle.ProxyUnit(old)} {
+		running, err := a.active(ctx, unit)
+		if err != nil || !running {
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		draining, err := a.draining(ctx, unit)
+		if err != nil {
+			return err
+		}
+		if draining {
+			continue
+		}
+		a.log.Info("telling the pool's old slot to drain, as its handover left it", "unit", unit)
+		if err := a.tellToDrain(ctx, unit); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// draining reports whether unit runs and says it drains: a unit that has
+// exited does not, whatever its last status said.
+func (a *applier) draining(ctx context.Context, unit string) (bool, error) {
+	running, err := a.active(ctx, unit)
+	if err != nil || !running {
+		return false, err
+	}
+	status, err := a.status(ctx, unit)
+	return status == handover.StatusDraining, err
 }
 
 // record writes st as the state, and enables its slot alone.
@@ -623,15 +692,12 @@ func (a *applier) record(ctx context.Context, st state) error {
 	return writeState(a.cfg.StateFile, st)
 }
 
-// anyStatus reports whether any of units says status.
-func (a *applier) anyStatus(ctx context.Context, status string, units ...string) (bool, error) {
+// anyDraining reports whether any of units runs and says it drains.
+func (a *applier) anyDraining(ctx context.Context, units ...string) (bool, error) {
 	for _, unit := range units {
-		got, err := a.status(ctx, unit)
-		if err != nil {
-			return false, err
-		}
-		if got == status {
-			return true, nil
+		draining, err := a.draining(ctx, unit)
+		if err != nil || draining {
+			return draining, err
 		}
 	}
 	return false, nil

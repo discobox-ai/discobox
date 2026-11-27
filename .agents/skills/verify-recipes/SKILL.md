@@ -1674,7 +1674,7 @@ says `standby`, `active` or `draining`.
   proxy, so a box on it reaches nothing outside: drive execs, not egress.
   The agent's journal shows `took over`, `pool agent serving`, then
   `control-plane channel open` and one `pool marked ready` within a few
-  seconds (the draining agent's channel closes once quiet, `drainQuiet`).
+  seconds (the draining agent's channel closes once every request on it is answered).
 - **On Archil**: an isolated server with the raw key (provider `--type
   archil`, `driver.region`), a pool and a box; change the provider's
   `sandboxIdleTimeout` (`admin provider update --config … --secret

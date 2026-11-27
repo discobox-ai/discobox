@@ -62,8 +62,14 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 		return err
 	}
 	// Asked for before anything slow: a drain asked of this agent before is
-	// lost, since Go ignores the signal it is until it is asked for.
-	drainRequested := handover.DrainRequested(ctx)
+	// lost, since Go ignores the signal it is until it is asked for. A drain
+	// is taken only with this agent's draining mark held: one it cannot mark
+	// is refused, and the agent serves on.
+	drain := handover.DrainRequested(ctx, layout.Container().System(handover.AgentDraining), func(err error) {
+		logger.Warn("pool agent refused a drain it could not mark; it serves on", "error", err)
+	})
+	defer drain.Release()
+	drainRequested := drain.Requested()
 	// The sockets systemd holds for the pool, when it runs this agent in a
 	// slot (poolunits): the agent serves them rather than binding its own, so
 	// a new agent beside it can serve them too (ADR 26-11-26-536 §4).
@@ -231,8 +237,6 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	// What runs once per pool runs in the active agent alone: a drain ends it
 	// while what was accepted is still served.
 	loops := untilDrained(ctx, drainRequested)
-	var draining *handover.Lock
-	defer func() { _ = draining.Release() }()
 	lifecycle := Lifecycle{
 		Drain:   drainRequested,
 		Sockets: sockets,
@@ -240,17 +244,10 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 			if channelListener != nil {
 				_ = channelListener.Close()
 			}
-			// Held until this process exits, from before the agent taking
-			// over can accept: it sweeps nothing this one still holds until
-			// then (sweepsAfterDrain). Without the mark, this agent keeps the
-			// active lock until it exits instead, so the one taking over
-			// waits for it, sweeps included.
-			var markErr error
-			if draining, markErr = handover.Mark(ctx, root.System(handover.AgentDraining)); markErr != nil {
-				logger.Warn("pool agent draining unmarked; the agent taking over waits until this one exits", "error", markErr)
-			} else {
-				_ = active.Release()
-			}
+			// The draining mark (drain) is held until this process exits,
+			// from before the agent taking over can accept: it sweeps
+			// nothing this one still holds until then (sweepsAfterDrain).
+			_ = active.Release()
 			_ = agentsystemd.NotifyStatus(handover.StatusDraining)
 			logger.Info("pool agent stopped accepting; the agent that took over serves what arrives")
 			if channel != nil {
@@ -364,7 +361,8 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	// before (firstReport).
 	// It says it is active only now, with everything it serves with built:
 	// one that fails before this never says so, and the apply that started
-	// it rolls back to the slot before it (poolunits).
+	// it stops it while the slot before it has not begun to drain, or leaves
+	// it to systemd's restarts while that slot drains (poolunits).
 	_ = agentsystemd.NotifyStatus(handover.StatusActive)
 	return serveTakingOver(ctx, tookOver, drainRequested, firstReport, func(ctx context.Context) error {
 		return Serve(ctx, logger, root, bootstrap, identity, runtime, client, assets, front, audit, lifecycle)

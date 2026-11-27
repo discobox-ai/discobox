@@ -219,3 +219,26 @@ func AwaitFree(ctx context.Context, path string) error {
 		}
 	}
 }
+
+// drainMarkWait bounds how long a drain waits to take its mark.
+const drainMarkWait = 5 * time.Second
+
+// Drain is a drain this process was asked for and holds the draining mark of
+// (DrainRequested).
+type Drain struct {
+	requested chan struct{}
+	mark      *Lock
+}
+
+// Requested is closed once the drain is asked for and marked.
+func (d *Drain) Requested() <-chan struct{} { return d.requested }
+
+// Release lets go of the draining mark, which the process otherwise holds
+// until it exits.
+func (d *Drain) Release() {
+	select {
+	case <-d.requested:
+		_ = d.mark.Release()
+	default:
+	}
+}

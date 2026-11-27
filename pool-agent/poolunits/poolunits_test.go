@@ -32,6 +32,8 @@ type fakeSystemd struct {
 	onKill func()
 	// ignoreKill leaves a slot told to drain as it was.
 	ignoreKill bool
+	// failKillUnit fails every kill of the unit.
+	failKillUnit string
 	// failKill fails every kill, a drain signal systemd cannot send.
 	failKill bool
 }
@@ -91,7 +93,7 @@ func (f *fakeSystemd) systemctl(_ context.Context, args ...string) (string, erro
 			f.status[unit] = ""
 		}
 	case "kill":
-		if f.failKill {
+		if f.failKill || (f.failKillUnit != "" && slices.Contains(units, f.failKillUnit)) {
 			return "", errors.New("kill failed")
 		}
 		if f.onKill != nil {
@@ -627,5 +629,52 @@ func TestStartStepsAsideForAnApplyUnderWay(t *testing.T) {
 	}
 	if len(b.systemd.ranAny("start")) != 0 {
 		t.Fatalf("start ran %q while an apply held the units", b.systemd.commands)
+	}
+}
+
+// A handover whose drain signal reached the old agent but not the old proxy
+// is finished by the next apply, which tells the proxy, though nothing it
+// fingerprints moved.
+func TestAnApplyFinishesAHandOverLeftHalfTold(t *testing.T) {
+	b := newBox(t, true)
+	b.cfg.TakeOver = 200 * time.Millisecond
+	b.apply(t)
+	b.systemd.failKillUnit = bundle.ProxyUnit("a")
+	b.systemd.reset()
+	b.write(t, b.cfg.Binary, "agent v2")
+	if err := Apply(context.Background(), b.cfg); err == nil {
+		t.Fatal("an apply that could not tell the old proxy to drain succeeded")
+	}
+	if got := b.systemd.status[bundle.ProxyUnit("a")]; got == handover.StatusDraining {
+		t.Fatal("the old proxy drains though it was never told")
+	}
+	if got := b.slot(t); got != "b" {
+		t.Fatalf("slot recorded = %q, want b", got)
+	}
+
+	b.systemd.failKillUnit = ""
+	b.systemd.reset()
+	b.apply(t)
+	if !b.systemd.ran("kill", "--kill-who=main", "--signal=SIGUSR2", bundle.ProxyUnit("a")) {
+		t.Fatalf("the next apply did not tell the old proxy to drain: %q", b.systemd.commands)
+	}
+	if b.systemd.ran("kill", "--kill-who=main", "--signal=SIGUSR2", bundle.AgentUnit("a")) {
+		t.Fatalf("the next apply told the already draining agent again: %q", b.systemd.commands)
+	}
+}
+
+// A slot whose units have exited is no drain, whatever status they last
+// said: a handover to it goes ahead.
+func TestAnExitedSlotIsNoDrain(t *testing.T) {
+	b := newBox(t, true)
+	b.apply(t)
+	for _, unit := range []string{bundle.AgentUnit("b"), bundle.ProxyUnit("b")} {
+		b.systemd.active[unit], b.systemd.status[unit] = false, handover.StatusDraining
+	}
+	b.systemd.reset()
+	b.write(t, b.cfg.Binary, "agent v2")
+	b.apply(t)
+	if got := b.slot(t); got != "b" {
+		t.Fatalf("slot recorded = %q, want b: a slot whose units exited was taken for one draining", got)
 	}
 }
