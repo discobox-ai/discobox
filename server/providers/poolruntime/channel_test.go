@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"bufio"
+	"fmt"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/pool-agent/cpchannel"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -41,16 +43,47 @@ type recordingSink struct {
 	pushed chan string
 }
 
+// Push answers the stream's one request "pong", as the control plane's API
+// answers on a stream the pool opens, and records the pool and the path.
 func (s recordingSink) Push(poolID string, conn net.Conn, _ <-chan struct{}) error {
 	go func() {
 		defer func() { _ = conn.Close() }()
-		buf := make([]byte, 4)
-		if _, err := io.ReadFull(conn, buf); err != nil {
+		req, err := http.ReadRequest(bufio.NewReader(conn))
+		if err != nil {
 			return
 		}
-		_, _ = conn.Write([]byte("pong"))
-		s.pushed <- poolID + " " + string(buf)
+		_, _ = io.WriteString(conn, "HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\npong")
+		s.pushed <- poolID + " " + req.URL.Path
 	}()
+	return nil
+}
+
+// pingSocket asks the control plane for /ping through the pool's
+// control-plane socket, as the pool's processes do, and wants "pong".
+func pingSocket(ctx context.Context, socket string) error {
+	client := &http.Client{Transport: &http.Transport{
+		DisableKeepAlives: true,
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var dialer net.Dialer
+			return dialer.DialContext(ctx, "unix", socket)
+		},
+	}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://control-plane/ping", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK || string(body) != "pong" {
+		return fmt.Errorf("control plane replied %s %q", resp.Status, body)
+	}
 	return nil
 }
 
@@ -110,22 +143,13 @@ func TestAProviderHoldsAChannelToItsPoolAndPushesItsStreams(t *testing.T) {
 		t.Fatalf("the channel was asked for with %q, want the server's token", got)
 	}
 
+	if err := pingSocket(ctx, socket); err != nil {
+		t.Fatal(err)
+	}
 	var dialer net.Dialer
-	local, err := dialer.DialContext(ctx, "unix", socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = local.Close() }()
-	if _, err := local.Write([]byte("ping")); err != nil {
-		t.Fatal(err)
-	}
-	reply := make([]byte, 4)
-	if _, err := io.ReadFull(local, reply); err != nil || string(reply) != "pong" {
-		t.Fatalf("reply = %q, %v", reply, err)
-	}
 	select {
 	case got := <-sink.pushed:
-		if got != "pool-1 ping" {
+		if got != "pool-1 /ping" {
 			t.Fatalf("the hub got %q, want pool-1's stream", got)
 		}
 	case <-ctx.Done():

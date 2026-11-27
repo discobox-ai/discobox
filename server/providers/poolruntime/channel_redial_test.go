@@ -4,8 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
-	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -66,25 +64,7 @@ func TestAnInFlightCreateSurvivesAChannelRedial(t *testing.T) {
 	// Probe the pool's actual control-plane socket while dispatching each create.
 	// The retry's probe must wait for the replacement channel when necessary.
 	probe := func(ctx context.Context) error {
-		var dial net.Dialer
-		conn, err := dial.DialContext(ctx, "unix", socket)
-		if err != nil {
-			return err
-		}
-		defer conn.Close()
-		stop := context.AfterFunc(ctx, func() { conn.Close() })
-		defer stop()
-		if _, err = io.WriteString(conn, "ping"); err != nil {
-			return err
-		}
-		var reply [4]byte
-		if _, err = io.ReadFull(conn, reply[:]); err != nil {
-			return err
-		}
-		if string(reply[:]) != "pong" {
-			return fmt.Errorf("control plane replied %q", reply)
-		}
-		return nil
+		return pingSocket(ctx, socket)
 	}
 	memory := sandboxruntime.NewMemorySandboxRuntime()
 	authKey, token := newPoolAgentTestAuth(t, "project-1", "pool-1", poolagentserver.ScopeSandboxRead, poolagentserver.ScopeSandboxWrite)
