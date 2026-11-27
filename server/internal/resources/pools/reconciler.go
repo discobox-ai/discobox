@@ -319,6 +319,13 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 			_, _ = sandbox.ReportBootstrap(ctx, model.BootstrapEvidence{Repaired: true})
 		}
 	} else if err = runtimeProvider.ReconcilePool(ctx, r.pools, project, provider, pool, begin); err != nil {
+		// A pool whose last handover still drains moved nothing and failed
+		// nothing: it serves as it was. This pass settles nothing, records no
+		// failure, and asks again once the drain may have ended.
+		if errors.Is(err, sandbox.ErrPoolSlotDraining) {
+			slog.InfoContext(ctx, "pool waits for its last handover to drain before it moves", "pool", pool.ID, "requeue", poolSlotDrainingRequeue)
+			return reconcile.RequeueAfter(poolSlotDrainingRequeue), nil
+		}
 		// A host that is still coming up is not a failed reconcile. Repairing
 		// one removes and recreates the container whose healthcheck has not
 		// passed yet, which restarts that healthcheck — and a pool container
@@ -328,13 +335,6 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 		// asks again: no failure is recorded, no repair runs, the pool keeps
 		// the state it had, and this generation is not marked observed over a
 		// runtime the reconcile never reached.
-		// A pool whose last handover still drains moved nothing and failed
-		// nothing: it serves as it was. This pass settles nothing, records no
-		// failure, and asks again once the drain may have ended.
-		if errors.Is(err, sandbox.ErrPoolSlotDraining) {
-			slog.InfoContext(ctx, "pool waits for its last handover to drain before it moves", "pool", pool.ID, "requeue", poolSlotDrainingRequeue)
-			return reconcile.RequeueAfter(poolSlotDrainingRequeue), nil
-		}
 		if errors.Is(err, sandbox.ErrPoolNotReachable) {
 			waitingOnHost = true
 			r.beginHostWait(ctx, pool.ID, err)
