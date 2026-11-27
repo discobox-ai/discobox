@@ -95,8 +95,9 @@ nothing ([ADR 26-10-30-875](../docs/adr/26-10-30-875-a-remote-pool-reaches-its-c
    §§1–2) is reached the other way: the server opens the channel, a WebSocket
    that runs TLS pinned to the pool's key and the server's issuer key, with
    a `cpmux` session inside ([`cpchannel`](cpchannel)); the agent serves
-   `unix:///run/discobox/control-plane.sock`, its control-plane URL, by
-   opening a stream on the latest channel for each connection, so it and the
+   `unix:///run/discobox/control-plane.sock`, its control-plane URL, as HTTP,
+   forwarding each request on a stream of its own over the latest channel
+   (ADR 26-11-26-536 narrows 26-10-30-875 §2's stream per connection), so it and the
    proxy unit dial it with `wire` like any other. It waits up to three
    minutes for the first channel before the first report, and fails its boot
    without one.
@@ -2026,7 +2027,10 @@ restarts its units as it did then (`poolruntime.unitsCommand`).
 - **Probes take nothing.** A lock or mark is asked about with `F_OFD_GETLK`
   (`handover.Held`), never by taking it: two probes, or a probe and a mark
   being taken, never see each other as held.
-- **A drain** (`SIGUSR2`, which only `units apply` sends): the process closes
+- **A drain** (`SIGUSR2`, which only `units apply` sends) is taken only once
+  the process holds its kind's draining mark (`handover.DrainRequested`); one
+  it cannot mark is refused, and it serves on, holding its lock, so `units
+  apply` finds it never began to drain. A drain taken: the process closes
   its descriptors of the sockets (the sockets stay open), lets go of its lock,
   says `STATUS=draining`, and ends its loops. It finishes each request it
   received, an upgraded stream's whole life included (`handover.InFlight`
@@ -2044,7 +2048,8 @@ restarts its units as it did then (`poolruntime.unitsCommand`).
   (30 minutes), cutting what is left. `SIGTERM` is still the quick stop.
 - **No sweep while another drains.** A draining process holds its kind's
   draining mark (`handover.AgentDraining`, `handover.ProxyDraining`) from
-  before it lets go of the active lock until it exits. The process that took
+  before it stops accepting until it exits; one that cannot take it does not
+  drain. The process that took
   over starts its sweeps only once the mark is free (`sweepsAfterDrain`: the
   image, snapshot-build and agent sweep, the tree and orphan reapers, the
   proxy-material reaper, the asset sweep; the proxy's retention and spool

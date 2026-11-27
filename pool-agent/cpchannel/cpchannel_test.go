@@ -519,3 +519,47 @@ func TestADrainEndsAtItsBound(t *testing.T) {
 		t.Fatal("the channel is still open after the drain's bound")
 	}
 }
+
+// A request still arriving when the drain begins is answered before the
+// channel closes, not left to wait for a channel this agent will not get.
+func TestADrainAnswersARequestStillArriving(t *testing.T) {
+	serverKey, poolKey := newKey(t), newKey(t)
+	channel, agentAPI, socket := agent(t, poolKey, public(serverKey))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	session := openChannel(ctx, t, channel, agentAPI.URL, serverKey, poolKey)
+	serveControlPlane(t, session, pong())
+	var dialer net.Dialer
+	conn, err := dialer.DialContext(ctx, "unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := io.WriteString(conn, "GET /late HTTP/1.1\r\nHost: control-plane\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	drained := make(chan struct{})
+	go func() {
+		channel.Drain(ctx)
+		close(drained)
+	}()
+	time.Sleep(200 * time.Millisecond)
+	if _, err := io.WriteString(conn, "\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if err != nil {
+		t.Fatalf("the request still arriving was cut by the drain: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || string(body) != "pong /late" {
+		t.Fatalf("answer = %s %q", resp.Status, body)
+	}
+	select {
+	case <-drained:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the drain did not end once the request was answered")
+	}
+}

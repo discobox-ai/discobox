@@ -1032,9 +1032,19 @@ tracked in #1699, not a pattern to copy.
 - **A slot says `active` only once nothing before serving can fail.** Build
   its listener, channel and front before `NotifyReady`, and the engine,
   fencing and runtime before `StatusActive`; after that, only serve. Why: the
-  old slot is drained on readiness, and `units apply` rolls back only a slot
-  that never says `active`. One that fails after saying so crash-loops with
-  nothing else serving.
+  old slot is drained on readiness, and `units apply` stops the new one only
+  while the old has not begun to drain. One that fails after saying so
+  crash-loops while the old drains away.
+- **A drain is taken only with its draining mark held**
+  (`handover.DrainRequested`): a signal whose mark cannot be taken is
+  refused, and the process serves on. Why: a process that drained unmarked
+  let the one taking over sweep what it still held; one that kept its lock
+  unmarked instead left nothing accepting for the drain bound.
+- **`units apply` never stops or restarts a slot that drains**, and records
+  the new slot before telling the old: it finishes a half-told handover
+  (`finishHandOver`) rather than leaving the untold unit serving. Why: a
+  rollback that restarted the old slot cut every stream it carried, and ran
+  the new binary anyway.
 - **A drain ends a process with `handover.DrainedExitCode`, whatever else it
   ends.** A first report, or any work a drain cancels, that fails because of
   the drain must not cut what the process serves or end it with another

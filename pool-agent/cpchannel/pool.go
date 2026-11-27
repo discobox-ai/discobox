@@ -35,9 +35,11 @@ type Channel struct {
 	// arrived is closed when a session is installed, and replaced by a fresh
 	// one, so a waiter wakes for each new session.
 	arrived chan struct{}
-	// forwarding counts the requests being forwarded onto a session, an
+	// forwarding counts the socket's connections that are new or in a
+	// request (busy), and the requests being forwarded onto a session, an
 	// upgraded one's whole life included (Drain).
 	forwarding handover.InFlight
+	busy       map[net.Conn]func()
 	// server serves the socket (Serve), for Drain to stop keeping its
 	// connections alive.
 	server *http.Server
@@ -111,9 +113,10 @@ func (c *Channel) install(session *cpmux.Session) {
 // Drain closes the channel once every request already forwarded onto it has
 // its whole answer, or when ctx ends, whichever is first: what a draining
 // agent does once it has stopped accepting its socket (ADR 26-11-26-536 §4).
-// The socket's connections stop being kept alive first, so an idle one closes
-// at once and one in a request closes once answered; a streamed answer or an
-// upgraded connection runs to its end or ctx's. The server then dials a
+// The socket's connections stop being kept alive first: an idle one closes at
+// once, and one in a request, its request still arriving included, closes
+// once answered; a streamed answer or an upgraded connection runs to its end
+// or ctx's. The server then dials a
 // channel again, which reaches the agent that took over, the only one still
 // accepting; a draining agent's own calls to the control plane reach it
 // through the socket that agent now serves. Until then, the agent that took
@@ -123,6 +126,9 @@ func (c *Channel) Drain(ctx context.Context) {
 	server := c.server
 	c.mu.Unlock()
 	if server != nil {
+		// An idle connection closes at once, and one in a request closes
+		// once answered. Not Shutdown: a request still arriving as it
+		// begins would be closed unanswered.
 		server.SetKeepAlivesEnabled(false)
 	}
 	if err := c.forwarding.Wait(ctx); err != nil {
@@ -172,6 +178,7 @@ func (c *Channel) Serve(ctx context.Context, listener net.Listener) error {
 		Handler:           c.forwarder(),
 		ReadHeaderTimeout: 30 * time.Second,
 		BaseContext:       func(net.Listener) context.Context { return ctx },
+		ConnState:         c.connState,
 	}
 	c.mu.Lock()
 	c.server = server
@@ -181,6 +188,29 @@ func (c *Channel) Serve(ctx context.Context, listener net.Listener) error {
 		return nil
 	}
 	return err
+}
+
+// connState counts a connection of the socket while it is new or in a
+// request, so a drain waits for a request still arriving as well as one
+// being answered.
+func (c *Channel) connState(conn net.Conn, state http.ConnState) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	end, busy := c.busy[conn]
+	switch state {
+	case http.StateNew, http.StateActive:
+		if !busy {
+			if c.busy == nil {
+				c.busy = make(map[net.Conn]func())
+			}
+			c.busy[conn] = c.forwarding.Begin()
+		}
+	default:
+		if busy {
+			end()
+			delete(c.busy, conn)
+		}
+	}
 }
 
 // forwarder sends each request to the control plane on a stream of the
@@ -211,9 +241,12 @@ func (c *Channel) forwarder() http.Handler {
 		},
 		Transport:     transport,
 		FlushInterval: -1,
-		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+		// A request the control plane never answered is dropped as the
+		// splice before this dropped it: the caller sees an unreachable
+		// control plane, never an answer it did not give.
+		ErrorHandler: func(_ http.ResponseWriter, r *http.Request, err error) {
 			c.logger.Warn("control-plane request dropped", "path", r.URL.Path, "error", err)
-			w.WriteHeader(http.StatusBadGateway)
+			panic(http.ErrAbortHandler)
 		},
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

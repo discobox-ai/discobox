@@ -7,10 +7,13 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 const listenersChildEnv = "DISCOBOX_HANDOVER_LISTENERS_CHILD"
@@ -83,5 +86,47 @@ func TestListenersAreNoneWhenNothingWasPassed(t *testing.T) {
 	listeners, err := Listeners()
 	if err != nil || len(listeners) != 0 {
 		t.Fatalf("Listeners for another process's sockets = %v, %v; want none", listeners, err)
+	}
+}
+
+// A drain asked for while its mark cannot be taken is refused, and the
+// process serves on; one asked for once it can is taken, with the mark held.
+func TestADrainIsTakenOnlyWithItsMarkHeld(t *testing.T) {
+	dir := t.TempDir()
+	markPath := filepath.Join(dir, "agent.draining")
+	// A directory where the mark's file goes: it cannot be taken.
+	if err := os.Mkdir(markPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	refused := make(chan error, 4)
+	drain := DrainRequested(t.Context(), markPath, func(err error) { refused <- err })
+	defer drain.Release()
+	if err := syscall.Kill(os.Getpid(), syscall.SIGUSR2); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-refused:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a drain whose mark cannot be taken was not refused")
+	}
+	select {
+	case <-drain.Requested():
+		t.Fatal("a drain was taken without its mark")
+	default:
+	}
+
+	if err := os.Remove(markPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Kill(os.Getpid(), syscall.SIGUSR2); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-drain.Requested():
+	case <-time.After(5 * time.Second):
+		t.Fatal("a drain asked for once its mark could be taken was not taken")
+	}
+	if held, err := Held(markPath); err != nil || !held {
+		t.Fatalf("the drain's mark held = %v, %v; want held", held, err)
 	}
 }
