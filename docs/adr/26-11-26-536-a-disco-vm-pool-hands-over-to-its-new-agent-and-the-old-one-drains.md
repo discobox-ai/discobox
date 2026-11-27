@@ -6,7 +6,9 @@
 - Amended 2026-11-26, while nothing had shipped against it, with what its
   implementation (#1118) found: §2's builder drain, §3's sweeps, §4's lock
   files, control-plane channel and a handover that does not take, and two of
-  its open questions answered.
+  its open questions answered; and again the same day, before it shipped,
+  with a drain that is never cut by the apply and a channel drained by
+  request.
 - **Issue**: [#1118](https://github.com/discobox-ai/discobox/issues/1118)
 - **Would narrow**, for a pool whose host is a disco-vm pool machine only:
   - [26-10-24-953](26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
@@ -24,6 +26,12 @@
     carries the address of a direct path too, as
     [26-11-16-619](26-11-16-619-a-pool-on-a-driver-with-no-networks-fences-each-sandbox-at-the-providers-edge-and-starts-systemd-in-the-guest.md)
     §3 has it for an edge (§5).
+- **Narrows**, for every pool reached over a control-plane channel:
+  [26-10-30-875](26-10-30-875-a-remote-pool-reaches-its-control-plane-over-a-channel-the-server-opens.md)
+  §2's "a stream on the latest channel for each connection": the agent serves
+  its control-plane socket as HTTP and forwards each request on a stream of
+  its own (§4), so a drain can tell a connection between requests from one
+  in a request.
 - **Depends on**: [26-11-24-077](26-11-24-077-disco-vm-holds-a-pool-discobox-asks-for-its-host-and-members-and-the-driver-fences-them.md)
   (Proposed) giving a pool a successor host (§5).
 - **Preserves**: the Docker engine and every driver but disco-vm's remote
@@ -313,6 +321,17 @@ pool until its next start, whose bootstrap names the successor.
 - **Two builders side by side.** BuildKit's state is one directory.
 - **A successor host for every upgrade.** That costs a machine and cold
   caches each time, where the in-place apply already works.
+- **Roll a handover back by restarting the old slot.** Once the old slot
+  drains it accepts nothing, so restarting it was the only way back, and it
+  cut every stream it still carried, for a new agent that failed after
+  taking the lock. It also ran the binary the apply had just laid, so a
+  release that could not come up failed again. A drain is never cut instead:
+  a new agent that does not take over is stopped only while the old one has
+  not begun to drain, and otherwise left for systemd to restart.
+- **Splice each connection to the control plane and close the channel once
+  they have been quiet.** A quiet rule (500ms) cut a streamed or long-poll
+  answer whose gaps were longer; serving the socket as HTTP tells an idle
+  connection from one in a request without guessing.
 - **Identify each agent in its reports.** 294 and 602 rejected it. A
   draining agent sends no report, so the first-report rule still tells the
   new agent from the old.
