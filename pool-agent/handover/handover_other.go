@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"syscall"
 )
 
 // Where there are no open file description locks (fcntl(2) F_OFD_SETLK, Linux
@@ -39,11 +40,18 @@ func tryLock(file *os.File, exclusive bool) (bool, error) {
 // openPending reports whether a lock file's open failed only for now: on
 // Windows a file removed (Remove) while another handle still has it open is
 // pending deletion until that handle closes, and opening its path is refused
-// as permission denied meanwhile. A waiter's own probe in acquire is such a
-// handle, briefly.
+// meanwhile, as permission denied or as a sharing violation. A waiter's own
+// probe in acquire is such a handle, briefly.
 func openPending(err error) bool {
-	return runtime.GOOS == "windows" && errors.Is(err, fs.ErrPermission)
+	if runtime.GOOS != "windows" {
+		return false
+	}
+	var errno syscall.Errno
+	return errors.Is(err, fs.ErrPermission) || errors.As(err, &errno) && errno == windowsSharingViolation
 }
+
+// windowsSharingViolation is ERROR_SHARING_VIOLATION.
+const windowsSharingViolation = syscall.Errno(32)
 
 // settle closes a held lock's file: the lock is this process's own record,
 // which needs no open file, and Windows cannot remove a file held open, which
