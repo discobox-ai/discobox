@@ -1043,6 +1043,12 @@ tracked in #1699, not a pattern to copy.
 - **A wrapper around a forwarded connection keeps `CloseWrite`.** Why:
   `cpmux.Splice` half-closes through it, and a wrapper that hid it closed the
   pool's client's connection outright.
+- **A slot unit takes no mount-namespace option** (`PrivateTmp=`,
+  `ProtectSystem=`, `RuntimeDirectory=`, `TemporaryFileSystem=`, …). Why: the
+  two slots are units of one pool machine or container, and exclude each
+  other through the run directory's lock files (`layout.PoolLocks`) and
+  marks; a slot with a `/run` of its own would hold locks the other never
+  sees. `TestSlotUnitsShareTheRunDirectory` checks the units.
 - **Nothing but `units apply` signals a slot**, and only to drain once the
   new slot is up. Why: a drain lets go of the active lock, and a slot that
   drains with no standby beside it leaves the queue to wait for a start.
