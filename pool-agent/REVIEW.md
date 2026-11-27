@@ -983,9 +983,8 @@ tracked in #1699, not a pattern to copy.
   (`bootMarked`, `tryLockPower`): `SandboxBooting` reads it as booting,
   `awaitBoot` and a try-lock fail with it. Why: read as free, this process
   would act on a sandbox another process of the pool is booting or powering.
-  The cost: while a sandbox's mark stays unreadable, requests to it fail even
-  while it is up (each waits out a boot it cannot see end), and a pause is
-  refused.
+  The cost: while a sandbox's mark stays unreadable, requests to it fail at
+  once even while it is up, and a pause is refused.
 - **Every process of a pool that locks runs in the mount namespace that
   holds `layout.PoolLocks`** (the run directory). A process that ran in
   another (a unit with `PrivateTmp=` or a `/run` of its own, a container of
