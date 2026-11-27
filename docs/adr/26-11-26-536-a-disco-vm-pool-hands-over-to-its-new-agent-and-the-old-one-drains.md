@@ -194,9 +194,9 @@ so one that fails after taking the lock never says so. A slot that drains is
 never stopped or restarted: a new agent that does not say it is active within
 two minutes of step 3 is stopped only while the old one has not begun to
 drain, and otherwise left for systemd to restart while the old one finishes.
-The new slot is recorded before step 3. An agent or proxy that cannot mark
-itself draining keeps the active lock until it exits. Every exit but a drain's
-is restarted.)*
+The new slot is recorded before step 3. An agent or proxy takes a drain only
+once it holds its draining mark; one it cannot mark is refused, and it serves
+on. Every exit but a drain's is restarted.)*
 
 **Power across the two processes.** The per-sandbox power lock and the boot
 mark move from the agent's memory to a lock file in the pool's lock tree, held
