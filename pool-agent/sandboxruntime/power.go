@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
+	"github.com/discobox-ai/discobox/pool-agent/handover"
 )
 
 // Power operations are instructions (ADR 0017 §9). They act and return whether
@@ -35,22 +35,17 @@ import (
 // sandboxes down while it works (see clearcache.go). startLocked must only be
 // reached from inside the gate.
 
-// sandboxLock returns the mutex guarding power operations for one sandbox.
-func (r *sandboxCore) sandboxLock(sandboxID string) *sync.Mutex {
-	actual, _ := r.powerLocks.LoadOrStore(sandboxID, &sync.Mutex{})
-	lock, _ := actual.(*sync.Mutex)
-	return lock
-}
-
 func (r *DockerSandboxRuntime) StartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error {
 	leave, err := r.starts.enter(ctx)
 	if err != nil {
 		return err
 	}
 	defer leave()
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if err := r.authorizeExplicitStart(ctx, sandboxID, req); err != nil {
 		return err
 	}
@@ -58,9 +53,11 @@ func (r *DockerSandboxRuntime) StartSandbox(ctx context.Context, sandboxID strin
 }
 
 func (r *DockerSandboxRuntime) StopSandbox(ctx context.Context, sandboxID string, _ *workerapimodel.PoolSandboxOperationRequest) error {
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if err := r.finishSuspend(ctx, sandboxID); err != nil {
 		return err
 	}
@@ -73,9 +70,11 @@ func (r *DockerSandboxRuntime) RestartSandbox(ctx context.Context, sandboxID str
 		return err
 	}
 	defer leave()
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if err := r.finishSuspend(ctx, sandboxID); err != nil {
 		return err
 	}
@@ -92,9 +91,11 @@ func (r *DockerSandboxRuntime) RestartSandbox(ctx context.Context, sandboxID str
 // A sandbox still booting is refused like a stopped one: its boot waits for an
 // agent the freeze would keep from ever answering.
 func (r *DockerSandboxRuntime) SuspendSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error {
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if err := r.finishSuspend(ctx, sandboxID); err != nil {
 		return err
 	}
@@ -173,9 +174,11 @@ func (r *sandboxCore) afterThaw(ctx context.Context, sandboxID string) {
 // A sleep whose stop then fails leaves the sandbox up with its request
 // consumed; its idle stop puts it down in time.
 func (r *DockerSandboxRuntime) PowerDownSandbox(ctx context.Context, sandboxID string, reason PowerDownReason) (Wake, error) {
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return Wake{}, err
+	}
+	defer unlock()
 	if err := r.finishSuspend(ctx, sandboxID); err != nil {
 		return Wake{}, err
 	}
@@ -348,9 +351,11 @@ func (r *DockerSandboxRuntime) startUnlessRunning(ctx context.Context, sandboxID
 		return false, err
 	}
 	defer leave()
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
 	sb, err := r.powerTarget(ctx, sandboxID)
 	if err != nil {
 		return false, err
@@ -440,6 +445,10 @@ func (r *DockerSandboxRuntime) startLocked(ctx context.Context, sandboxID string
 type sandboxBoot struct {
 	done chan struct{}
 	err  error
+	// mark is this boot's hold of the sandbox's boot mark on disk, which the
+	// other agent of a handover sees (bootMarkPath); nil if it could not be
+	// taken, which leaves the mark this process's alone.
+	mark *handover.Lock
 }
 
 // beginBoot marks a sandbox as booting. It is called before ContainerStart, so
@@ -452,13 +461,19 @@ type sandboxBoot struct {
 // a restart or a replacing create can begin a new boot while the old one is
 // still waiting. The newer boot replaces the older in the map, and endBoot
 // removes only its own, so the mark lasts until the newest boot ends; a caller
-// waiting on the older one wakes when it ends and looks again.
+// waiting on the older one wakes when it ends and looks again. Each holds the
+// mark on disk as well, shared, so it is held until the last of them ends.
 //
 // A sandbox deleted or archived mid-boot reads as booting until the wait sees
 // its box gone, or at most until sandboxAgentReadyTimeout. Nothing routes on
 // the mark for a sandbox that is gone.
 func (r *sandboxCore) beginBoot(sandboxID string) *sandboxBoot {
 	boot := &sandboxBoot{done: make(chan struct{})}
+	mark, err := handover.Mark(context.Background(), r.bootMarkPath(sandboxID))
+	if err != nil {
+		slog.Warn("sandbox boot mark not held on disk", "sandboxID", sandboxID, "error", err)
+	}
+	boot.mark = mark
 	r.booting.Store(sandboxID, boot)
 	return boot
 }
@@ -466,6 +481,7 @@ func (r *sandboxCore) beginBoot(sandboxID string) *sandboxBoot {
 func (r *sandboxCore) endBoot(sandboxID string, boot *sandboxBoot, err error) {
 	boot.err = err
 	r.booting.CompareAndDelete(sandboxID, boot)
+	_ = boot.mark.Release()
 	close(boot.done)
 }
 
@@ -664,11 +680,16 @@ func (r *sandboxCore) finishBoot(ctx context.Context, sandboxID string, boot *sa
 
 // awaitBoot waits out a boot of the sandbox under way, and reports whether
 // there was one. How that boot ended is its starter's to report; a caller that
-// waited looks at the sandbox again.
+// waited looks at the sandbox again. A boot the other agent of a handover
+// began is waited out by its mark on disk.
 func (r *sandboxCore) awaitBoot(ctx context.Context, sandboxID string) (bool, error) {
 	value, ok := r.booting.Load(sandboxID)
 	if !ok {
-		return false, nil
+		held, err := handover.Held(r.bootMarkPath(sandboxID))
+		if err != nil || !held {
+			return false, nil //nolint:nilerr // a mark that cannot be read is no boot to wait on
+		}
+		return true, handover.AwaitFree(ctx, r.bootMarkPath(sandboxID))
 	}
 	boot, ok := value.(*sandboxBoot)
 	if !ok {
@@ -693,8 +714,11 @@ func (r *sandboxCore) AwaitSandboxBoot(ctx context.Context, sandboxID string) er
 // SandboxBooting reports whether the sandbox's container is up but its sandbox
 // agent has not answered yet.
 func (r *sandboxCore) SandboxBooting(sandboxID string) bool {
-	_, ok := r.booting.Load(sandboxID)
-	return ok
+	if _, ok := r.booting.Load(sandboxID); ok {
+		return true
+	}
+	held, err := handover.Held(r.bootMarkPath(sandboxID))
+	return err == nil && held
 }
 
 func (r *DockerSandboxRuntime) stopLocked(ctx context.Context, sandboxID string) error {

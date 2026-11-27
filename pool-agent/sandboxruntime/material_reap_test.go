@@ -94,10 +94,9 @@ func TestMaterialReaperSparesASandboxWhoseCreateHoldsItsLock(t *testing.T) {
 	stageAgedMaterial(t, r, "sbx_1")
 	logger := slog.New(slog.DiscardHandler)
 
-	lock := r.sandboxLock("sbx_1")
-	lock.Lock()
+	unlock := holdPower(t, r, "sbx_1")
 	r.reconcileSandboxMaterial(t.Context(), logger)
-	lock.Unlock()
+	unlock()
 	if !sentinelsRegistered(t, r, "sbx_1") {
 		t.Fatal("the reaper removed the sentinels a create holding the sandbox's lock had registered")
 	}

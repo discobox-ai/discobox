@@ -42,9 +42,11 @@ const (
 var machineStateReadTimeout = 30 * time.Second
 
 func (r *MachineSandboxRuntime) StartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error {
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if err := r.authorizeExplicitStart(ctx, sandboxID, req); err != nil {
 		return err
 	}
@@ -52,16 +54,20 @@ func (r *MachineSandboxRuntime) StartSandbox(ctx context.Context, sandboxID stri
 }
 
 func (r *MachineSandboxRuntime) StopSandbox(ctx context.Context, sandboxID string, _ *workerapimodel.PoolSandboxOperationRequest) error {
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	return r.stopLocked(ctx, sandboxID)
 }
 
 func (r *MachineSandboxRuntime) RestartSandbox(ctx context.Context, sandboxID string, _ *workerapimodel.PoolSandboxOperationRequest) error {
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if err := r.stopLocked(ctx, sandboxID); err != nil {
 		return err
 	}
@@ -77,9 +83,11 @@ func (r *MachineSandboxRuntime) RestartSandbox(ctx context.Context, sandboxID st
 // A sandbox still booting is refused like a stopped one: its boot waits for an
 // agent the freeze would keep from ever answering.
 func (r *MachineSandboxRuntime) SuspendSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error {
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if err := r.finishSuspend(ctx, sandboxID); err != nil {
 		return err
 	}
@@ -111,9 +119,11 @@ func (r *MachineSandboxRuntime) SuspendSandbox(ctx context.Context, sandboxID st
 // the agent asked to go down, and a stop is the power-down every runtime has.
 // An idle or an exit stops it.
 func (r *MachineSandboxRuntime) PowerDownSandbox(ctx context.Context, sandboxID string, reason PowerDownReason) (Wake, error) {
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return Wake{}, err
+	}
+	defer unlock()
 	if err := r.finishSuspend(ctx, sandboxID); err != nil {
 		return Wake{}, err
 	}
@@ -243,9 +253,11 @@ func (r *MachineSandboxRuntime) settleFrozenInBackground(ctx context.Context, lo
 // while the driver did not answer would make it its provider's pause, which
 // the state poll resumes.
 func (r *MachineSandboxRuntime) settleFrozen(ctx context.Context, sandboxID string) error {
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	record, ok, err := r.readMachineRecord(sandboxID)
 	if err != nil || !ok || !record.Frozen {
 		return err
@@ -315,9 +327,11 @@ func (r *MachineSandboxRuntime) answersRunning(ctx context.Context, sandboxID st
 // startUnlessRunning starts the sandbox unless it runs, under its power lock,
 // and reports a run on a boot still under way.
 func (r *MachineSandboxRuntime) startUnlessRunning(ctx context.Context, sandboxID string) (bool, error) {
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
 	sb, err := r.powerTarget(ctx, sandboxID)
 	if err != nil {
 		return false, err

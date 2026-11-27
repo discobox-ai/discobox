@@ -987,3 +987,13 @@ resource report's 30s deadline on every pass (#1686). `imagereap`'s
 `imageReclaimTimeout`, which `clearSnapshots` shares: it filters by its reclaim
 label alone because its images span several repositories. That is known debt
 tracked in #1699, not a pattern to copy.
+
+## Locks across processes
+
+- **A sandbox's power lock and boot mark are the lock tree's files**
+  (`lockPower`, `beginBoot`), never this process's memory alone. Why: the
+  other agent of a handover must see an operation or a boot in flight.
+- **A lock is asked about without taking it** (`handover.Held`,
+  `F_OFD_GETLK`). Why: a probe that took the lock for an instant had two
+  probes, or a probe and a boot's mark, see each other as held, on
+  `SandboxBooting`'s request path among others.

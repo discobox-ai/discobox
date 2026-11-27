@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/layout"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 )
 
@@ -28,20 +29,17 @@ func TestQueuedExplicitStartChecksAdmissionAtExecution(t *testing.T) {
 			req := &workerapimodel.PoolSandboxOperationRequest{}
 			req.StartEpoch.SetTo(1)
 			var start func() error
-			var lock interface {
-				Lock()
-				Unlock()
-			}
+			var unlock func()
+			root := layout.ContainerAt(t.TempDir())
 			if machine {
-				r := &MachineSandboxRuntime{sandboxCore: sandboxCore{authorizeStart: authorize}}
-				lock = r.sandboxLock("box")
+				r := &MachineSandboxRuntime{sandboxCore: sandboxCore{root: root, authorizeStart: authorize}}
+				unlock = holdPower(t, r, "box")
 				start = func() error { return r.StartSandbox(context.Background(), "box", req) }
 			} else {
-				r := &DockerSandboxRuntime{sandboxCore: sandboxCore{authorizeStart: authorize}}
-				lock = r.sandboxLock("box")
+				r := &DockerSandboxRuntime{sandboxCore: sandboxCore{root: root, authorizeStart: authorize}}
+				unlock = holdPower(t, r, "box")
 				start = func() error { return r.StartSandbox(context.Background(), "box", req) }
 			}
-			lock.Lock()
 			done := make(chan error, 1)
 			go func() { done <- start() }()
 
@@ -51,7 +49,7 @@ func TestQueuedExplicitStartChecksAdmissionAtExecution(t *testing.T) {
 			case <-time.After(20 * time.Millisecond):
 			}
 			epoch.Store(2) // A later stop admitted, even if its transport never answered.
-			lock.Unlock()
+			unlock()
 			if err := <-done; !errors.Is(err, ErrStartNotAuthorized) {
 				t.Fatalf("late start = %v", err)
 			}
@@ -179,9 +177,7 @@ func TestSharedStopDrainsPreparedFreezeBeforeChangingItsEvidence(t *testing.T) {
 		completed = true
 		return nil
 	}
-	lock := r.sandboxLock("sbx_1")
-	lock.Lock()
-	defer lock.Unlock()
+	defer holdPower(t, r, "sbx_1")()
 	if err := r.stopLocked(context.Background(), "sbx_1"); err != nil {
 		t.Fatal(err)
 	}

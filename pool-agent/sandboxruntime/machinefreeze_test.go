@@ -299,10 +299,9 @@ func TestAResumeRacingAResumeOutsideThePoolIsAResume(t *testing.T) {
 	if _, err := f.owner.Start(ctx, inst, machine.BootOptions{}); err != nil {
 		t.Fatalf("resume behind the pool's back: %v", err)
 	}
-	lock := r.sandboxLock("sbx_28")
-	lock.Lock()
+	unlock := holdPower(t, r, "sbx_28")
 	err = r.resumeLocked(ctx, "sbx_28", record)
-	lock.Unlock()
+	unlock()
 	if err != nil {
 		t.Fatalf("a resume of a machine resumed in between: %v", err)
 	}

@@ -1,0 +1,56 @@
+//go:build !linux
+
+package handover
+
+import (
+	"os"
+	"sync"
+)
+
+// Where there are no open file description locks (fcntl(2) F_OFD_SETLK, Linux
+// alone), only this process's own locks exclude each other: no other process
+// of a pool hands over there.
+var (
+	localMu    sync.Mutex
+	localLocks = map[string]int{} // path: -1 held alone, n > 0 held by n marks
+	localFiles = map[*os.File]string{}
+)
+
+func tryLock(file *os.File, exclusive bool) (bool, error) {
+	localMu.Lock()
+	defer localMu.Unlock()
+	path := file.Name()
+	held := localLocks[path]
+	switch {
+	case exclusive && held != 0, !exclusive && held < 0:
+		return false, nil
+	case exclusive:
+		localLocks[path] = -1
+	default:
+		localLocks[path] = held + 1
+	}
+	localFiles[file] = path
+	return true, nil
+}
+
+func unlock(file *os.File) {
+	localMu.Lock()
+	defer localMu.Unlock()
+	path, ok := localFiles[file]
+	if !ok {
+		return
+	}
+	delete(localFiles, file)
+	if localLocks[path] <= 1 {
+		delete(localLocks, path)
+		return
+	}
+	localLocks[path]--
+}
+
+// lockHeld reports whether this process holds file's path locked.
+func lockHeld(file *os.File) (bool, error) {
+	localMu.Lock()
+	defer localMu.Unlock()
+	return localLocks[file.Name()] != 0, nil
+}

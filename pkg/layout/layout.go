@@ -219,6 +219,16 @@ func (r Root) PoolMachines(projectID, poolID string) string {
 	return r.join(r.PoolData(projectID, poolID), "machines")
 }
 
+// PoolLocks holds the files a pool's processes lock to exclude each other
+// across a handover (ADR 26-11-26-536 §4): a sandbox's power lock and boot
+// mark, one file each, removed with the sandbox while its power lock is held
+// (a locker checks it holds the file the path still names). They are kept out
+// of the sandbox's tree, which its delete removes as a whole, a step that does
+// not know of them.
+func (r Root) PoolLocks(projectID, poolID string) string {
+	return r.join(r.PoolData(projectID, poolID), "locks")
+}
+
 // SourceData is one source's durable pool-local data directory. sourceKey is
 // an opaque key resolved before the pool boundary; layout does not interpret
 // source identity.
