@@ -743,7 +743,9 @@ func (r *sandboxCore) SandboxBooting(sandboxID string) bool {
 	}
 	held, err := r.bootMarked(sandboxID)
 	if err != nil {
-		slog.Warn("read a sandbox's boot mark; reading it as booting", "sandboxID", sandboxID, "error", err)
+		if r.warnBootMark(sandboxID) {
+			slog.Warn("read a sandbox's boot mark; reading it as booting", "sandboxID", sandboxID, "error", err)
+		}
 		return true
 	}
 	return held
@@ -751,6 +753,23 @@ func (r *sandboxCore) SandboxBooting(sandboxID string) bool {
 
 // bootMarkWait bounds beginBoot's wait to take a boot mark.
 const bootMarkWait = 5 * time.Second
+
+// bootMarkWarnEvery is how often an unreadable boot mark is logged, per
+// sandbox: SandboxBooting asks on the request path.
+const bootMarkWarnEvery = time.Minute
+
+// warnBootMark reports whether an unreadable boot mark of sandboxID is due a
+// warning, at most once per bootMarkWarnEvery.
+func (r *sandboxCore) warnBootMark(sandboxID string) bool {
+	now := time.Now()
+	if last, ok := r.bootMarkWarned.Load(sandboxID); ok {
+		if at, ok := last.(time.Time); ok && now.Sub(at) < bootMarkWarnEvery {
+			return false
+		}
+	}
+	r.bootMarkWarned.Store(sandboxID, now)
+	return true
+}
 
 // bootMarked reports whether a process of the pool holds the sandbox's boot
 // mark. A mark that cannot be read is an error, which its callers read as a

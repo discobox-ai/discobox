@@ -34,16 +34,15 @@ func lockChild() {
 	os.Exit(0)
 }
 
-// Two agents of a pool in processes of their own, as a handover's two slots
-// are (units of one pool machine or container, so one /run): the other's
-// power lock keeps this one's waiting, and its boot reads as under way here,
-// until that process lets go.
+// Two agents of a pool in processes of their own, on one run directory: the
+// other's power lock keeps this one's waiting, and its boot reads as under
+// way here, until that process lets go.
 func TestThePowerLockAndBootMarkHoldAcrossProcesses(t *testing.T) {
 	if os.Getenv(lockChildEnv) != "" {
 		lockChild()
 	}
 	dir := t.TempDir()
-	child := exec.Command(os.Args[0], "-test.run=^TestThePowerLockAndBootMarkHoldAcrossProcesses$") //nolint:gosec // G204: this test binary, re-run as the other agent
+	child := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestThePowerLockAndBootMarkHoldAcrossProcesses$") //nolint:gosec // G204: this test binary, re-run as the other agent
 	child.Env = append(os.Environ(), lockChildEnv+"="+dir)
 	stdin, err := child.StdinPipe()
 	if err != nil {
