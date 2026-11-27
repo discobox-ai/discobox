@@ -66,24 +66,26 @@ func (r *sandboxCore) forgetLocks(sandboxID string) {
 }
 
 // tryLockPower holds sandboxID's power lock if nothing holds it now, in this
-// process or another, and reports whether it does.
-func (r *sandboxCore) tryLockPower(sandboxID string) (func(), bool) {
+// process or another, and reports whether it does. A lock file it cannot make
+// or lock is an error, never "held elsewhere": its caller would otherwise
+// step aside from the sandbox for good.
+func (r *sandboxCore) tryLockPower(sandboxID string) (func(), bool, error) {
 	semaphore := r.powerSemaphore(sandboxID)
 	select {
 	case semaphore <- struct{}{}:
 	default:
-		return nil, false
+		return nil, false, nil
 	}
 	lock, held, err := handover.TryAcquire(r.powerLockPath(sandboxID))
 	if err != nil || !held {
-		if err != nil {
-			slog.Warn("sandbox power lock", "sandboxID", sandboxID, "error", err)
-		}
 		<-semaphore
-		return nil, false
+		if err != nil {
+			return nil, false, fmt.Errorf("sandbox %s's power lock: %w", sandboxID, err)
+		}
+		return nil, false, nil
 	}
 	return func() {
 		_ = lock.Release()
 		<-semaphore
-	}, true
+	}, true, nil
 }
