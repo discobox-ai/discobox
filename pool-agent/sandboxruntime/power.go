@@ -466,43 +466,65 @@ type sandboxBoot struct {
 // waiting on the older one wakes when it ends and looks again. The mark on
 // disk follows the map: the newer boot takes it over, and it is let go of
 // when the newest boot ends, so another process sees what this one does.
+// bootMu orders only the map and the marks handed between boots: the mark's
+// file is taken and let go of with it not held (giveBootMark), so one
+// sandbox's slow lock tree never holds up another's boots. beginBoot returns
+// once the mark is held, so it is on disk before the box starts.
 //
 // A sandbox deleted or archived mid-boot reads as booting until the wait sees
 // its box gone, or at most until sandboxAgentReadyTimeout. Nothing routes on
 // the mark for a sandbox that is gone.
 func (r *sandboxCore) beginBoot(sandboxID string) *sandboxBoot {
-	r.bootMu.Lock()
-	defer r.bootMu.Unlock()
 	boot := &sandboxBoot{done: make(chan struct{})}
+	r.bootMu.Lock()
 	if value, ok := r.booting.Load(sandboxID); ok {
 		if older, ok := value.(*sandboxBoot); ok {
 			boot.mark, older.mark = older.mark, nil
 		}
 	}
-	if boot.mark == nil {
-		// A mark waits only behind the file locked alone, which nothing
-		// does to a boot mark; the wait is bounded all the same, since every
-		// sandbox's boots begin under bootMu.
-		ctx, cancel := context.WithTimeout(context.Background(), bootMarkWait)
-		mark, err := handover.Mark(ctx, r.bootMarkPath(sandboxID))
-		cancel()
-		if err != nil {
-			slog.Warn("sandbox boot mark not held on disk", "sandboxID", sandboxID, "error", err)
-		}
-		boot.mark = mark
-	}
 	r.booting.Store(sandboxID, boot)
+	r.bootMu.Unlock()
+	if boot.mark != nil {
+		return boot
+	}
+	// Taken with bootMu not held, so a slow lock tree holds up this boot
+	// alone. A mark waits only behind the file locked alone, which nothing
+	// does to a boot mark; the wait is bounded all the same.
+	ctx, cancel := context.WithTimeout(context.Background(), bootMarkWait)
+	mark, err := handover.Mark(ctx, r.bootMarkPath(sandboxID))
+	cancel()
+	if err != nil {
+		slog.Warn("sandbox boot mark not held on disk", "sandboxID", sandboxID, "error", err)
+		return boot
+	}
+	r.giveBootMark(sandboxID, mark)
 	return boot
 }
 
+// giveBootMark hands a mark taken on disk to the sandbox's newest boot, if
+// it has none: a newer boot that began meanwhile, or an older one that
+// handed it a mark, leaves this one spare, as does a boot that ended first;
+// a spare mark is let go.
+func (r *sandboxCore) giveBootMark(sandboxID string, mark *handover.Lock) {
+	r.bootMu.Lock()
+	if value, ok := r.booting.Load(sandboxID); ok {
+		if current, ok := value.(*sandboxBoot); ok && current.mark == nil {
+			current.mark, mark = mark, nil
+		}
+	}
+	r.bootMu.Unlock()
+	_ = mark.Release()
+}
+
 func (r *sandboxCore) endBoot(sandboxID string, boot *sandboxBoot, err error) {
+	var mark *handover.Lock
 	r.bootMu.Lock()
 	boot.err = err
 	if r.booting.CompareAndDelete(sandboxID, boot) {
-		_ = boot.mark.Release()
-		boot.mark = nil
+		mark, boot.mark = boot.mark, nil
 	}
 	r.bootMu.Unlock()
+	_ = mark.Release()
 	close(boot.done)
 }
 
