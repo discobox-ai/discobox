@@ -357,7 +357,7 @@ func get(ctx context.Context, client *http.Client, path string) (string, error) 
 
 // openChannel opens a channel to the pool behind agentAPI, as the server
 // does, and waits for the pool to install it.
-func openChannel(t *testing.T, ctx context.Context, channel *Channel, agentAPI string, serverKey, poolKey ed25519.PrivateKey) *cpmux.Session {
+func openChannel(ctx context.Context, t *testing.T, channel *Channel, agentAPI string, serverKey, poolKey ed25519.PrivateKey) *cpmux.Session {
 	t.Helper()
 	conn, err := Dial(ctx, http.DefaultTransport, agentAPI, "proj", "pool", "token", serverKey, public(poolKey))
 	if err != nil {
@@ -381,7 +381,7 @@ func TestAPoolsRequestReachesTheServerOverTheChannel(t *testing.T) {
 	channel, agentAPI, socket := agent(t, poolKey, public(serverKey))
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	session := openChannel(t, ctx, channel, agentAPI.URL, serverKey, poolKey)
+	session := openChannel(ctx, t, channel, agentAPI.URL, serverKey, poolKey)
 	targets := serveControlPlane(t, session, pong())
 	got, err := get(ctx, socketClient(socket), "/ping")
 	if err != nil || got != "pong /ping" {
@@ -408,7 +408,7 @@ func TestALocalRequestWaitsForAChannel(t *testing.T) {
 		done <- result{body, err}
 	}()
 	time.Sleep(100 * time.Millisecond)
-	session := openChannel(t, ctx, channel, agentAPI.URL, serverKey, poolKey)
+	session := openChannel(ctx, t, channel, agentAPI.URL, serverKey, poolKey)
 	serveControlPlane(t, session, pong())
 	if got := <-done; got.err != nil || got.body != "pong /ping" {
 		t.Fatalf("GET = %q, %v", got.body, got.err)
@@ -424,7 +424,7 @@ func TestADrainCarriesAStreamedAnswerToItsEnd(t *testing.T) {
 	channel, agentAPI, socket := agent(t, poolKey, public(serverKey))
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	session := openChannel(t, ctx, channel, agentAPI.URL, serverKey, poolKey)
+	session := openChannel(ctx, t, channel, agentAPI.URL, serverKey, poolKey)
 	serveControlPlane(t, session, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		flusher, _ := w.(http.Flusher)
 		for i := range 3 {
@@ -475,7 +475,7 @@ func TestAnIdleConnectionDoesNotHoldADrain(t *testing.T) {
 	channel, agentAPI, socket := agent(t, poolKey, public(serverKey))
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	session := openChannel(t, ctx, channel, agentAPI.URL, serverKey, poolKey)
+	session := openChannel(ctx, t, channel, agentAPI.URL, serverKey, poolKey)
 	serveControlPlane(t, session, pong())
 	client := socketClient(socket)
 	if got, err := get(ctx, client, "/ping"); err != nil || got != "pong /ping" {
@@ -498,7 +498,7 @@ func TestADrainEndsAtItsBound(t *testing.T) {
 	channel, agentAPI, socket := agent(t, poolKey, public(serverKey))
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	session := openChannel(t, ctx, channel, agentAPI.URL, serverKey, poolKey)
+	session := openChannel(ctx, t, channel, agentAPI.URL, serverKey, poolKey)
 	release := make(chan struct{})
 	defer close(release)
 	arrived := make(chan struct{}, 1)
