@@ -64,6 +64,9 @@ type sandboxCore struct {
 	// orders its changes with the boot marks they hand over.
 	booting sync.Map
 	bootMu  sync.Mutex
+	// bootMarkWarned is when each sandbox's unreadable boot mark was last
+	// logged (warnBootMark).
+	bootMarkWarned sync.Map
 	// agentReadyTimeout bounds a boot's wait for its sandbox agent; zero is
 	// sandboxAgentReadyTimeout. Only a test sets it.
 	agentReadyTimeout time.Duration

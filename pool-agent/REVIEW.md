@@ -1000,10 +1000,12 @@ tracked in #1699, not a pattern to copy.
   `SandboxBooting`'s request path among others.
 - **A lock or mark that cannot be read is held, never free**
   (`bootMarked`, `tryLockPower`): `SandboxBooting` reads it as booting,
-  `awaitBoot` and a try-lock fail with it. Why: read as free, the agent would
-  act on a sandbox the other agent of a handover is booting or powering.
-- **Every process of a pool that locks shares one run directory**:
-  `layout.PoolLocks` is under `/run`, and a handover's two slots are units of
-  one pool machine or container. A process of the pool that ran in another
-  mount namespace (a unit with `PrivateTmp=` or its own `/run`, a container
-  of its own) would hold locks nobody else sees.
+  `awaitBoot` and a try-lock fail with it. Why: read as free, this process
+  would act on a sandbox another process of the pool is booting or powering.
+  The cost: while a sandbox's mark stays unreadable, requests that wait out
+  its boot fail and a pause is refused, as every power operation already
+  fails while its lock file cannot be locked.
+- **Every process of a pool that locks runs in the mount namespace that
+  holds `layout.PoolLocks`** (the run directory). A process that ran in
+  another (a unit with `PrivateTmp=` or a `/run` of its own, a container of
+  its own) would hold locks nobody else sees.
