@@ -678,3 +678,27 @@ func TestAnExitedSlotIsNoDrain(t *testing.T) {
 		t.Fatalf("slot recorded = %q, want b: a slot whose units exited was taken for one draining", got)
 	}
 }
+
+// A standby of the old slot, an old process restarted mid-drain, is stopped
+// by the next apply rather than told to drain: it serves nothing, and a
+// drain would leave it waiting on the serving slot's lock.
+func TestAnApplyStopsAStandbyOfTheOldSlot(t *testing.T) {
+	b := newBox(t, true)
+	b.apply(t)
+	b.systemd.reset()
+	b.write(t, b.cfg.Binary, "agent v2")
+	b.apply(t)
+	if got := b.slot(t); got != "b" {
+		t.Fatalf("slot recorded = %q, want b", got)
+	}
+	// The old agent restarted as a standby.
+	b.systemd.active[bundle.AgentUnit("a")], b.systemd.status[bundle.AgentUnit("a")] = true, handover.StatusStandby
+	b.systemd.reset()
+	b.apply(t)
+	if b.systemd.ran("kill", "--kill-who=main", "--signal=SIGUSR2", bundle.AgentUnit("a")) {
+		t.Fatalf("a standby of the old slot was told to drain: %q", b.systemd.commands)
+	}
+	if !b.systemd.ran("stop", bundle.AgentUnit("a")) {
+		t.Fatalf("a standby of the old slot was not stopped: %q", b.systemd.commands)
+	}
+}

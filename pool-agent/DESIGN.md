@@ -2058,7 +2058,8 @@ restarts its units as it did then (`poolruntime.unitsCommand`).
   a fetch or a stream spool the draining one still writes.
 - **`units apply`** is idempotent. It fingerprints what the slot starts
   with (the binary, the slot units and drop-ins, the bootstrap, environment
-  and outbound routing) and moves nothing when that has not moved. Otherwise
+  and outbound routing) and moves nothing when that has not moved, but
+  for what a handover left (below). Otherwise
   it restarts the running slot, or hands over. It never stops or restarts a
   slot that drains: what that carries ends on its own, within the drain
   bound.
@@ -2084,6 +2085,11 @@ restarts its units as it did then (`poolruntime.unitsCommand`).
     of every slot together, which cuts what they served. Every pool takes
     that once, at the upgrade that first brings slots, since its old units
     bound their own ports and have nothing to hand over.
+  - With nothing moved, a pool that hands over still finishes what a
+    handover left of the old slot (`finishHandOver`): a unit of it that
+    says it is active (a signal that reached only some of its units, or a
+    drain it refused) is told to drain again, and a standby of it (an old
+    process restarted mid-drain) is stopped.
   - The bundle's `units` step runs it, and the pool's maker runs it after
     every apply (`poolruntime.ProvisionBox`).
 - **Power across the two agents.** A sandbox's power lock and boot mark are

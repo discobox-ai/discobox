@@ -129,4 +129,10 @@ func TestADrainIsTakenOnlyWithItsMarkHeld(t *testing.T) {
 	if held, err := Held(markPath); err != nil || !held {
 		t.Fatalf("the drain's mark held = %v, %v; want held", held, err)
 	}
+	// A later signal is ignored: left to its default action, it would end
+	// this process, and the drain with it.
+	if err := syscall.Kill(os.Getpid(), syscall.SIGUSR2); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
 }
