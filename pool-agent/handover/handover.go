@@ -69,8 +69,16 @@ func acquire(ctx context.Context, path string, exclusive bool) (*Lock, error) {
 	defer ticker.Stop()
 	for {
 		file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) //nolint:gosec // G304: a lock path of the pool's own
-		if err != nil {
+		if err != nil && !openPending(err) {
 			return nil, err
+		}
+		if err != nil {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-ticker.C:
+			}
+			continue
 		}
 		held, err := tryLock(file, exclusive)
 		if err != nil {

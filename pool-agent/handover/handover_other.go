@@ -3,7 +3,10 @@
 package handover
 
 import (
+	"errors"
+	"io/fs"
 	"os"
+	"runtime"
 	"sync"
 )
 
@@ -31,6 +34,15 @@ func tryLock(file *os.File, exclusive bool) (bool, error) {
 	}
 	localFiles[file] = path
 	return true, nil
+}
+
+// openPending reports whether a lock file's open failed only for now: on
+// Windows a file removed (Remove) while another handle still has it open is
+// pending deletion until that handle closes, and opening its path is refused
+// as permission denied meanwhile. A waiter's own probe in acquire is such a
+// handle, briefly.
+func openPending(err error) bool {
+	return runtime.GOOS == "windows" && errors.Is(err, fs.ErrPermission)
 }
 
 // settle closes a held lock's file: the lock is this process's own record,
