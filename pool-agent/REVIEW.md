@@ -1065,6 +1065,17 @@ tracked in #1699, not a pattern to copy.
   is served as HTTP, so a connection between requests is idle and one in a
   request is not. Why: a quiet rule (500ms) cut streamed and long-poll
   answers whose gaps were longer.
+- **A draining process ends what it holds open between requests at once**
+  (the proxy's DNS connections, `dnsforward.Server.Drain`; idle keep-alives
+  on the proxy's HTTP and the control-plane channel). Why: a sandbox keeps
+  its DNS connections open, so a drain that waited on them ran to its 30-
+  minute bound on every pool, and refused the next upgrade until then.
+- **A refusal because a slot drains is "try later", end to end**: `units
+  apply` exits `bundle.UnitsDrainingExitCode`, the maker's units step
+  reports it (`report-draining`), and the server reconciles again without
+  recording a failure (`sandbox.ErrPoolSlotDraining`). Why: read as a
+  failed provision, it marked a pool that serves as it was as one whose
+  box did not apply.
 - **A slot unit sets nothing that gives it its own `/run` or removes part
   of it** (`PrivateTmp=`, `ProtectSystem=`, `TemporaryFileSystem=`, … make a
   mount namespace of its own; `RuntimeDirectory=` deletes its directory as

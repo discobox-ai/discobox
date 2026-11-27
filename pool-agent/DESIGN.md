@@ -2030,6 +2030,10 @@ restarts its units as it did then (`poolruntime.unitsCommand`).
 - **Probes take nothing.** A lock or mark is asked about with `F_OFD_GETLK`
   (`handover.Held`), never by taking it: two probes, or a probe and a mark
   being taken, never see each other as held.
+- **The proxy's DNS on a drain** closes every connection with no query in
+  flight at once, and each other one once it has answered its query
+  (`dnsforward.Server.Drain`): a sandbox's stub keeps its DNS connections
+  open between queries, which would otherwise hold the drain to its bound.
 - **A drain** (`SIGUSR2`, which only `units apply` sends) is taken only once
   the process holds its kind's draining mark (`handover.DrainRequested`); one
   it cannot mark is refused, and it serves on, holding its lock, so `units
@@ -2067,8 +2071,12 @@ restarts its units as it did then (`poolruntime.unitsCommand`).
   slot that drains: what that carries ends on its own, within the drain
   bound.
   - The idle slot still draining from the last handover is left to finish,
-    and the apply fails without changing anything; the next one, after it
-    has exited, hands over.
+    and the apply changes nothing and exits `bundle.UnitsDrainingExitCode`
+    (75); the next one, after it has exited, hands over. The pool's maker
+    reads that as "try later" (`sandbox.ErrPoolSlotDraining`): no failure is
+    recorded, and the pool reconciler asks again 30s later. Run by the
+    bundle's own apply, the units step reads it as done, since the maker
+    runs it again after every apply.
   - Otherwise it starts the idle slot (a standby), records it with the new
     fingerprint and enables it in place of the old, then tells the running
     slot to drain and waits for the new agent and proxy to say `active`.

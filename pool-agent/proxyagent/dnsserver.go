@@ -37,8 +37,9 @@ const (
 var SandboxDNSAddress = netip.MustParseAddr(sandboxconfig.SandboxDNSAddress)
 
 // serveDNS answers sandboxes' DNS on tcp until ctx is done, or tcp is closed,
-// which a drain does: then it answers the connections it accepted until they
-// end. The upstream is this container's own resolver, which reaches the
+// which a drain does: then it closes the connections it accepted that have
+// no query in flight, and answers the rest's queries before closing them
+// (dnsforward.Server.Drain). The upstream is this container's own resolver, which reaches the
 // outside; every query is audited into server's trail, beside the sandbox's
 // HTTP.
 func serveDNS(ctx context.Context, logger *slog.Logger, bundle *proxy.CertificateBundle, server *proxy.Server, tcp net.Listener) error {
@@ -51,6 +52,7 @@ func serveDNS(ctx context.Context, logger *slog.Logger, bundle *proxy.Certificat
 	dns := dnsforward.New(logger, upstream, server.RecordDNS)
 	dns.ExemptSource(TunnelSource)
 	dns.Serve(ctx, tls.NewListener(tcp, sandboxTLSConfig(bundle)))
+	dns.Drain()
 	return dns.Wait(ctx)
 }
 

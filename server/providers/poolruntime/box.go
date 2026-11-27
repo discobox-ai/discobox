@@ -177,8 +177,11 @@ type BoxPlacement struct {
 // once at start, are restarted when the placement moved ($1 is "moved"), as
 // they were then. What ran in their place is not an agent's subcommand it
 // knows.
+//
+// The step is run with bundle.UnitsReportDraining, so a refusal because a
+// slot still drains exits bundle.UnitsDrainingExitCode (ErrPoolSlotDraining).
 const unitsCommand = `step="$(dirname "$(readlink -f ` + bundle.AgentBinary + `)")/` + bundle.UnitsStep + `"
-if [ -x "$step" ]; then exec "$step"; fi
+if [ -x "$step" ]; then exec "$step" ` + bundle.UnitsReportDraining + `; fi
 if [ "$1" = moved ]; then systemctl try-restart discobox-pool-agent.service discobox-proxy.service; fi`
 
 // Environment is what apply and the units step run with: the outbound
@@ -318,7 +321,7 @@ func ProvisionBox(ctx context.Context, guest machine.Guest, maker PoolMaker, pla
 	}
 	units, err := provisioner.Run(ctx, guest, machine.ExecRequest{Argv: []string{"sh", "-ec", unitsCommand, "units", moved}, Env: placement.Environment()}, nil)
 	if err != nil {
-		return BoxRecord{}, provisionError("start the pool's agent", units, err)
+		return BoxRecord{}, unitsError(units, err)
 	}
 	if _, err := sandbox.ReportBootstrap(ctx, model.BootstrapEvidence{Operation: "provision_pool_box", Complete: true, Registration: true}); err != nil {
 		return BoxRecord{}, err
@@ -335,6 +338,17 @@ func PlaceBoxFiles(ctx context.Context, guest machine.Guest, files ...BoxFile) e
 		return err
 	}
 	return guest.CopyTo(ctx, "/", tree)
+}
+
+// unitsError is the units step's failure: ErrPoolSlotDraining for a refusal
+// because a slot still drains (bundle.UnitsDrainingExitCode), which failed
+// nothing.
+func unitsError(result provisioner.Result, err error) error {
+	err = provisionError("start the pool's agent", result, err)
+	if exit := (*provisioner.ExitError)(nil); errors.As(err, &exit) && exit.ExitCode == bundle.UnitsDrainingExitCode {
+		return fmt.Errorf("%w: %w", sandbox.ErrPoolSlotDraining, err)
+	}
+	return err
 }
 
 // provisionError names what failed with what the command wrote last, which

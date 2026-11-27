@@ -79,6 +79,10 @@ type Server struct {
 	total   int
 	sources map[netip.Addr]int
 	clients map[string]int
+	// open is every connection being served, and whether a query is in
+	// flight on it (Drain).
+	open     map[*tls.Conn]bool
+	draining bool
 }
 
 // New returns a server that answers from upstream, a host:port, and hands
@@ -87,7 +91,7 @@ func New(logger *slog.Logger, upstream string, audit func(proxy.DNSAuditEvent)) 
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Server{logger: logger, upstream: upstream, audit: audit, sources: map[netip.Addr]int{}, clients: map[string]int{}}
+	return &Server{logger: logger, upstream: upstream, audit: audit, sources: map[netip.Addr]int{}, clients: map[string]int{}, open: map[*tls.Conn]bool{}}
 }
 
 // ExemptSource stops counting connections from source toward
@@ -142,10 +146,48 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) {
 	}
 }
 
+// Drain closes every connection with no query in flight, and has each one
+// with a query close once it has answered it: what a draining pool proxy does
+// once it has closed the listener (ADR 26-11-26-536 §3). A sandbox's stub
+// keeps its connections open between queries, and redials one that closes,
+// which reaches the proxy taking over, so the drain is bounded by the queries
+// in flight rather than by how long the stubs keep their connections.
+func (s *Server) Drain() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.draining = true
+	for conn, busy := range s.open {
+		if !busy {
+			_ = conn.SetReadDeadline(time.Now())
+		}
+	}
+}
+
+// track records conn as served, with no query in flight, and answers what
+// to call once it ends.
+func (s *Server) track(conn *tls.Conn) func() {
+	s.mu.Lock()
+	s.open[conn] = false
+	s.mu.Unlock()
+	return func() {
+		s.mu.Lock()
+		delete(s.open, conn)
+		s.mu.Unlock()
+	}
+}
+
+// busy records whether conn has a query in flight, and reports whether the
+// server drains: a connection that has answered its query then closes.
+func (s *Server) busy(conn *tls.Conn, inFlight bool) (draining bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.open[conn] = inFlight
+	return s.draining
+}
+
 // Wait returns once every connection Serve accepted has ended, or when ctx
 // ends: what a draining pool proxy waits out once it has closed the listener
-// (ADR 26-11-26-536 §3). A sandbox's stub keeps its connection while it
-// queries, and redials once it closes.
+// and drained (Drain).
 func (s *Server) Wait(ctx context.Context) error {
 	return s.conns.Wait(ctx)
 }
@@ -179,12 +221,17 @@ func (s *Server) serveConn(ctx context.Context, conn net.Conn) {
 		return
 	}
 	defer s.releaseClient(client)
+	defer s.track(tlsConn)()
 	for {
+		if s.busy(tlsConn, false) {
+			return
+		}
 		_ = tlsConn.SetReadDeadline(time.Now().Add(idleTimeout))
 		query, err := readMessage(tlsConn)
 		if err != nil {
 			return
 		}
+		s.busy(tlsConn, true)
 		start := time.Now()
 		answer, err := s.exchange(ctx, query)
 		event := auditEvent(query, answer, err)

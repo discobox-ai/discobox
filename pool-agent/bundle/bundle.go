@@ -92,3 +92,14 @@ func AgentUnits() []string {
 func UnitsInstance(name string) string {
 	return "discobox-pool-units@" + name + ".service"
 }
+
+// UnitsDrainingExitCode is what `units apply` exits with when it refuses to
+// move a slot that still drains from the last handover (poolunits): nothing
+// moved, and an apply after that slot has exited moves it. EX_TEMPFAIL.
+const UnitsDrainingExitCode = 75
+
+// UnitsReportDraining is the argument the pool's maker runs the units step
+// with, to have it exit UnitsDrainingExitCode on such a refusal; the
+// bundle's own apply runs it without, and the refusal is none of its
+// failures, since the maker runs the step again after every apply.
+const UnitsReportDraining = "report-draining"

@@ -160,3 +160,9 @@ func (e *ImageUnavailableError) Is(target error) bool { return target == ErrImag
 
 // ErrPoolConfigApply is a retryable configuration failure that must not replace a running pool.
 var ErrPoolConfigApply = errors.New("pool configuration apply failed")
+
+// ErrPoolSlotDraining is a pool's box that moved nothing because a slot of
+// its agent and proxy still drains from the last handover (poolunits): no
+// failure, and nothing to repair. The pool serves as it was, and a reconcile
+// once that slot has exited moves it.
+var ErrPoolSlotDraining = errors.New("the pool's last handover still drains")

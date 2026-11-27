@@ -225,6 +225,11 @@ func Start(ctx context.Context, cfg Config) error {
 	return err
 }
 
+// ErrSlotDraining is what an apply that would stop or move a slot still
+// draining from the last handover refuses with: it moves nothing, and an
+// apply once that slot has exited does.
+var ErrSlotDraining = errors.New("a slot still drains from the last handover")
+
 // startWait bounds how long Start waits out an apply.
 const startWait = 15 * time.Minute
 
@@ -339,7 +344,7 @@ func (a *applier) apply(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			return errors.New("the pool's sockets moved while a slot still drains from the last handover; they are bound once it has exited")
+			return fmt.Errorf("%w: the pool's sockets moved, and are bound once it has exited", ErrSlotDraining)
 		}
 		slotSockets = a.ofRole(RoleAgent, RoleProxy)
 	}
@@ -618,7 +623,7 @@ func (a *applier) handOver(ctx context.Context, slot, next string, prev, now sta
 			return "", err
 		}
 		if draining {
-			return "", fmt.Errorf("%s still drains from the last handover; the pool hands over to slot %s once it has exited", unit, next)
+			return "", fmt.Errorf("%w: %s still drains, and the pool hands over to slot %s once it has exited", ErrSlotDraining, unit, next)
 		}
 	}
 	// What is left of next is no drain (above): stopped, so it starts anew.
