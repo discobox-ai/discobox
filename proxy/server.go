@@ -545,11 +545,16 @@ func (s *Server) ClientHTTPAudit(ctx context.Context, clientID string, query Aud
 	return s.audit.ListHTTP(ctx, query)
 }
 
-// StopAccepting closes the proxy's listener, and nothing else: the
-// connections it accepted are still served, and Serve returns nil. Under a
-// handover the listener is a socket systemd holds, which the proxy taking
-// over accepts from (ADR 26-11-26-536 §4).
+// StopAccepting closes the proxy's listener: the connections it accepted are
+// still served, and Serve returns nil. Under a handover the listener is a
+// socket systemd holds, which the proxy taking over accepts from (ADR
+// 26-11-26-536 §4). Before it closes, a plain connection stops being kept
+// alive and an idle one is closed, so by the time Serve returns, a client's
+// next request opens a connection the proxy taking over accepts.
 func (s *Server) StopAccepting() {
+	if s.http != nil {
+		s.http.drain()
+	}
 	s.connMu.Lock()
 	defer s.connMu.Unlock()
 	select {
@@ -572,9 +577,6 @@ func (s *Server) StopAccepting() {
 func (s *Server) Drain(ctx context.Context) error {
 	s.StopAccepting()
 	s.sweepOnce.Do(func() { close(s.sweepStop) })
-	if s.http != nil {
-		s.http.drain()
-	}
 	served := make(chan struct{})
 	go func() {
 		s.wg.Wait()
