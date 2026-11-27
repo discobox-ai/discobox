@@ -349,6 +349,18 @@ Global review expectations:
   shape, so the suite passed a step no live run could (#1595). Power alone
   is no better: it reads `running` while the box's required setup still runs
   or has failed.
+- A live-run probe that says "through the proxy" requires both what shows the
+  request went through it: a proxy in the guest's environment and the
+  proxy's CONNECT 200, not only an answer. A check shared between two paths
+  keeps every condition either caller relied on: folding the on-demand
+  egress check into the warm path's dropped those two, which the warm path
+  covered with its probes around the proxy and the on-demand path did not,
+  so an answer from around the proxy passed as one through it.
+- A function local in `scripts/live-run.sh` never takes the name of a global
+  its exit trap reads (`started`, the ids it cleans up): a run stopped while
+  that function runs has the trap read the local. The on-demand step's
+  timers were named `started` and turned the report's start date into a
+  count of seconds.
 
 - A watcher build deadline stops the whole process tree before cleanup and
   retry. Docker starts buildx as a child, and builder setup is go → task →

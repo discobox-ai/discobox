@@ -5,6 +5,13 @@
 # closed default proxy too), keep the evidence, delete everything it made,
 # check that nothing is left, and report.
 #
+# Before that warm-pool check, the on-demand step starts a discobox on a
+# second pool of the provider the moment the pool is made, as a person who
+# asks for a box on a pool that is not up yet does, and times each stage
+# from the request: the pool coming up, the discobox provisioning, its
+# harness answering, and its egress through the pool's proxy. The warm pool
+# comes up meanwhile.
+#
 # Usage: scripts/live-run.sh --driver DRIVER [flags] [discobox flags...]
 #
 #   --driver DRIVER     boxd or archil (required)
@@ -22,13 +29,15 @@
 #   --unlisted HOST     a host no level allows, which must not answer
 #                       (default: example.net)
 #   --pool-timeout DUR  how long the pool may take to come up, the discobox to
-#                       finish provisioning, and anything deleted to go
-#                       (default: 20m)
+#                       finish provisioning, and anything deleted to go; on
+#                       demand, how long any one stage but the harness's may
+#                       take (default: 20m)
 #   --harness-timeout DUR
 #                       how long the harness may take to answer (default: 15m)
 #   --egress-timeout DUR
 #                       how long the discobox's narrowed egress may take to
 #                       reach its proxy before it is judged (default: 5m)
+#   --on-demand yes|no  run the on-demand step (default: yes)
 #   --attach-for DUR    how long to stay attached to the discobox's terminal
 #                       (default: 10s)
 #   --evidence DIR      where what the run saw is kept, the report among it
@@ -57,8 +66,8 @@
 # say) is CHECK, for a person to read in the evidence, and never PASS.
 #
 # Whatever happens, the evidence is kept and the cleanup runs, in the plan's
-# order: the discobox, then the pool (which withdraws its grant of the key),
-# then the provider. disco-vm then lists the pool's scope and the provider's
+# order: the discoboxes, then the pools (deleting one withdraws its grant of
+# the key), then the provider. disco-vm then lists the pool's scope and the provider's
 # (machines, committed machines, caches, and keys issued for the pool);
 # anything still there is reported, then removed. The exit status is 0 only
 # when every check passed and nothing was left.
@@ -79,6 +88,7 @@ pool_timeout=20m
 harness_timeout=15m
 egress_timeout=5m
 attach_for=10s
+on_demand=yes
 evidence=
 dry=0
 discobox=${DISCOBOX:-discobox}
@@ -107,6 +117,8 @@ while [ "$#" -gt 0 ]; do
 	--harness-timeout=*) harness_timeout=${1#*=}; shift ;;
 	--egress-timeout) need "$@"; egress_timeout=$2; shift 2 ;;
 	--egress-timeout=*) egress_timeout=${1#*=}; shift ;;
+	--on-demand) need "$@"; on_demand=$2; shift 2 ;;
+	--on-demand=*) on_demand=${1#*=}; shift ;;
 	--attach-for) need "$@"; attach_for=$2; shift 2 ;;
 	--attach-for=*) attach_for=${1#*=}; shift ;;
 	--evidence) need "$@"; evidence=$2; shift 2 ;;
@@ -148,6 +160,7 @@ yes|no) ;;
 '') [ "$dry" = 1 ] || { echo "--egress-narrowed yes|no is required: the report says which" >&2; exit 2; }; narrowed="not stated (dry run)" ;;
 *) echo "--egress-narrowed takes yes or no" >&2; exit 2 ;;
 esac
+case $on_demand in yes|no) ;; *) echo "--on-demand takes yes or no" >&2; exit 2 ;; esac
 case $allow_host in "$unlisted_host") echo "--allow and --unlisted name the same host" >&2; exit 2 ;; esac
 
 # seconds turns 90s, 20m or 1h into seconds.
@@ -284,6 +297,10 @@ provider_id=
 pool_id=
 box_id=
 second_box_id=
+od_pool_id=
+od_box_id=
+# od_timings is the on-demand stages' times, from the discobox's request.
+od_timings=
 test_secret_id=
 out=
 screen=
@@ -306,6 +323,14 @@ collect() {
 	fi
 	if [ -n "$second_box_id" ]; then
 		keep second-discobox.json -o json admin box get "$second_box_id"
+	fi
+	if [ -n "$od_box_id" ]; then
+		keep on-demand-discobox.json -o json admin box get "$od_box_id"
+		keep on-demand-screen.txt capture --scrollback 5000 "$od_box_id"
+	fi
+	if [ -n "$od_pool_id" ]; then
+		keep on-demand-pool.json -o json admin pool get "$od_pool_id"
+		keep on-demand-pool.log admin pool logs "$od_pool_id"
 	fi
 	if [ -n "$pool_id" ]; then
 		keep pool.json -o json admin pool get "$pool_id"
@@ -334,14 +359,16 @@ gone() {
 	done
 }
 
-# issued PREFIX reads disco-vm's key ls --json: the IDs of keys named PREFIX….
-issued() { printf '%s' "$1" | jq -r --arg p "$2" '.[]? | select(.name | startswith($p)) | .id' 2>/dev/null || true; }
+# issued JSON PREFIXES reads disco-vm's key ls --json: the IDs of keys named
+# for any of PREFIXES (space-separated), each PREFIX….
+issued() { printf '%s' "$1" | jq -r --arg p "$2" '($p | split(" ") | map(select(. != ""))) as $ps | .[]? | select(.name as $n | any($ps[]; . as $q | $n | startswith($q))) | .id' 2>/dev/null || true; }
 # names reads disco-vm's ls table: the second column, past the header.
 names() { printf '%s\n' "$1" | awk 'NR > 1 && $2 != "" { print $2 }'; }
 
-# leftovers STEP SCOPE PREFIX lists what disco-vm still holds in SCOPE:
-# machines, committed machines, caches, and keys issued for the pool (named
-# PREFIX…, poolkey.go keyPrefix), then removes it. Anything there is a failure
+# leftovers STEP SCOPE PREFIXES lists what disco-vm still holds in SCOPE:
+# machines, committed machines, caches, and keys issued for a pool (named
+# PREFIX…, poolkey.go keyPrefix; PREFIXES is one per pool, space-separated),
+# then removes it. Anything there is a failure
 # of the cleanup above, so it is reported.
 leftovers() {
 	local step=$1 scope=$2 prefix=$3 out machines='' caches='' keys='' unlisted=''
@@ -413,6 +440,13 @@ cleanup() {
 			fail cleanup-test-secret "could not remove the run's test secret"
 		fi
 	fi
+	if [ -n "$od_box_id" ]; then
+		if dc 0 '' admin box purge "$od_box_id" >&2; then
+			pass cleanup-on-demand-discobox "purged $od_box_id"
+		else
+			fail cleanup-on-demand-discobox "could not purge $od_box_id"
+		fi
+	fi
 	if [ -n "$second_box_id" ]; then
 		if dc 0 '' admin box purge "$second_box_id" >&2; then
 			pass cleanup-second-discobox "purged $second_box_id"
@@ -427,8 +461,15 @@ cleanup() {
 			fail cleanup-discobox "could not purge $box_id"
 		fi
 	fi
-	# The pool first: deleting it withdraws its grant of the key (ADR
+	# The pools first: deleting one withdraws its grant of the key (ADR
 	# 26-11-11-080 §9), and removes its machine and its sandboxes'.
+	if [ -n "$od_pool_id" ]; then
+		if dc 0 '' admin pool rm "$od_pool_id" >&2; then
+			gone cleanup-on-demand-pool pool "$od_pool_id"
+		else
+			fail cleanup-on-demand-pool "could not delete pool $od_pool_id"
+		fi
+	fi
 	if [ -n "$pool_id" ]; then
 		if dc 0 '' admin pool rm "$pool_id" >&2; then
 			gone cleanup-pool pool "$pool_id"
@@ -447,11 +488,17 @@ cleanup() {
 	# the server that has just said it is gone. The pool's keys are issued in
 	# the provider's scope, named for the pool's.
 	if [ -n "$pool_id" ]; then leftovers left-pool-scope "$(scope "$pool_id")" "$(scope "$pool_id")-"; fi
-	if [ -n "$provider_id" ]; then leftovers left-provider-scope "$(scope "$provider_id")" "${pool_id:+$(scope "$pool_id")-}"; fi
+	if [ -n "$od_pool_id" ]; then leftovers left-on-demand-pool-scope "$(scope "$od_pool_id")" "$(scope "$od_pool_id")-"; fi
+	# The keys either pool was issued, by their prefixes; none when neither
+	# pool was made.
+	local prefixes=${pool_id:+$(scope "$pool_id")-}
+	[ -z "$od_pool_id" ] || prefixes="${prefixes:+$prefixes }$(scope "$od_pool_id")-"
+	if [ -n "$provider_id" ]; then leftovers left-provider-scope "$(scope "$provider_id")" "$prefixes"; fi
 	# Each region is its own endpoint, so a machine made in the wrong one is
 	# found only there, on a driver whose key reaches another region.
 	if [ -n "$other_region" ]; then
 		if [ -n "$pool_id" ]; then region=$other_region leftovers "left-pool-scope-$other_region" "$(scope "$pool_id")" ""; fi
+		if [ -n "$od_pool_id" ]; then region=$other_region leftovers "left-on-demand-pool-scope-$other_region" "$(scope "$od_pool_id")" ""; fi
 		if [ -n "$provider_id" ]; then region=$other_region leftovers "left-provider-scope-$other_region" "$(scope "$provider_id")" ""; fi
 	fi
 }
@@ -469,6 +516,9 @@ finish() {
 		echo "- This box's egress narrowed before the key came in: $narrowed"
 		echo "- Started: $started; ended: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 		echo "- Provider: \`${provider_id:-none}\`, pool: \`${pool_id:-none}\`, discobox: \`${box_id:-none}\` (named \`$name\`)"
+		if [ "$on_demand" = yes ]; then
+			echo "- On demand: pool \`${od_pool_id:-none}\`, discobox \`${od_box_id:-none}\`; seconds from the discobox's request: ${od_timings:-none reached}"
+		fi
 		echo "- Egress: the discobox allows \`$allow_host\` alone; \`$unlisted_host\` and \`1.1.1.1\` are unlisted"
 		echo "- Evidence: \`$evidence\`"
 		echo
@@ -483,10 +533,10 @@ finish() {
 		else
 			echo "**$failed step(s) did not pass** (FAIL, or CHECK for a person to judge)."
 		fi
-		if grep -qE '^FAIL	left-[a-z]+-scope(-[a-z]+)?	left in scope ' "$results"; then
+		if grep -qE '^FAIL	left-[a-z-]+-scope(-[a-z0-9-]+)?	left in scope ' "$results"; then
 			echo "Something was left under the run's scopes; see the left- rows."
 		fi
-		if grep -qE '^FAIL	left-[a-z]+-scope(-[a-z]+)?-listed	' "$results"; then
+		if grep -qE '^FAIL	left-[a-z-]+-scope(-[a-z0-9-]+)?-listed	' "$results"; then
 			echo "disco-vm could not list all of the run's scopes, so what is left there is not known; see the -listed rows."
 		fi
 	} | tee "$evidence/report.md"
@@ -555,6 +605,250 @@ if [ "$harness" = claude-code ]; then
 	pass preflight "the run's server has a host-scoped Claude Code credential binding"
 fi
 
+# The prompt asks for something its own text does not hold, so finding the
+# answer on the screen shows the harness reached its model.
+want=$(printf '%s' "$nonce" | awk '{ s = ""; for (i = length($0); i > 0; i--) s = s substr($0, i, 1); print s }')
+prompt="Reply with the string $nonce written backwards, and nothing else. Do not run any tool."
+# run_on POOL sets run_args to start a discobox on POOL running the harness:
+# Claude Code is asked once it is up (ask_harness), any other with the prompt.
+run_args=()
+run_on() {
+	run_args=(run --no-source --pool "$1" -d)
+	[ "$harness" = claude-code ] || run_args+=(-p "$prompt")
+	[ -z "$harness" ] || run_args+=(-H "$harness")
+}
+# ask_harness STEP BOX passes STEP when BOX's harness gives the answer, and
+# sets harness_answered to yes when it did. It waits --harness-timeout.
+harness_answered=
+ask_harness() {
+	local step=$1 id=$2 asked=$SECONDS rc=0 answer
+	harness_answered=
+	if [ "$harness" = claude-code ]; then
+		answer=$(ext 0 "$want" timeout -k 5s "$harness_timeout" "$discobox" ${dc_flags[@]+"${dc_flags[@]}"} exec "$id" -- claude -p "$prompt" </dev/null 2>"$work/$step.err") || rc=$?
+		if [ "$rc" = 0 ] && printf '%s\n' "$answer" | grep -Fxq "$want"; then
+			harness_answered=yes
+			pass "$step" "Claude Code returned the expected answer after $((SECONDS - asked))s"
+		elif [ "$rc" = 124 ]; then
+			fail "$step" "Claude Code did not answer within $harness_timeout"
+		else
+			fail "$step" "Claude Code exited $rc after $((SECONDS - asked))s without the expected answer; it printed: $(printf '%s' "$answer" | tail -c 200) $(tail -c 300 "$work/$step.err")"
+		fi
+		return
+	fi
+	if ! dcout out 0 'finished' wait "$id" --until finished --until blocked --for "$harness_timeout"; then
+		fail "$step" "did not finish within $harness_timeout: $out $err"
+		return
+	fi
+	dcout screen 0 "$want" capture "$id" || true
+	case $out in
+	*blocked*) fail "$step" "blocked instead of answering: $out" ;;
+	*)
+		if printf '%s' "$screen" | grep -qF "$want"; then
+			harness_answered=yes
+			pass "$step" "answered $want"
+		else
+			fail "$step" "finished, but its screen does not show $want: $(printf '%s' "$screen" | tail -5)"
+		fi ;;
+	esac
+}
+
+# One exec runs every probe from inside the discobox, as its user, with its
+# login environment (the proxy's variables). Each prints
+# NAME HTTP_CODE CONNECT_CODE CURL_EXIT TIME_CONNECT FIRST_LINE_OF_BODY.
+# Its arguments are the allowed host, the unlisted one, and "allowed" to stop
+# once the allowed host has been asked for through the proxy.
+# Through the proxy a refused host is asked for over plain HTTP, where the
+# proxy answers 403 "blocked by proxy"; a refused CONNECT is only a closed
+# connection (proxy/DESIGN.md), which a network failure looks like too.
+# Around it, a fence that drops the connection leaves time_connect 0. boxd's
+# fence accepts it and then refuses: TLS closes at the ClientHello (curl 35),
+# whatever the host. So 192.0.2.1 (TEST-NET-1, where no server answers) is
+# probed around the proxy too: a connection there is the fence's own, and its
+# refusal is what the fence's refusal of a real host looks like.
+probe=$(cat <<'EOF'
+command -v curl >/dev/null 2>&1 || { echo "no-curl"; exit 0; }
+probe() {
+	name=$1; shift
+	body=$(mktemp)
+	codes=$(curl -sS -o "$body" -w '%{http_code} %{http_connect} %{time_connect}' --max-time 20 "$@" 2>/dev/null)
+	exit=$?
+	set -- ${codes:-000 000 0}
+	printf '%s %s %s %s %s %s\n' "$name" "$1" "$2" "$exit" "$3" "$(head -c 200 "$body" | head -n 1 | tr -cd '[:print:]')"
+	rm -f "$body"
+}
+printf 'proxy-env %s\n' "${HTTPS_PROXY:-${https_proxy:-none}}"
+probe allowed-proxy "https://$1/"
+# allowed: the allowed host through the proxy is all that is asked.
+[ "${3:-}" != allowed ] || exit 0
+probe unlisted-proxy "http://$2/"
+probe ip-proxy "http://1.1.1.1/"
+probe fence-direct --noproxy '*' "https://192.0.2.1/"
+probe allowed-direct --noproxy '*' "https://$1/"
+probe unlisted-direct --noproxy '*' "https://$2/"
+probe ip-direct --noproxy '*' "https://1.1.1.1/"
+EOF
+)
+canned="proxy-env http://discobox-pool-proxy:3128
+allowed-proxy 200 200 0 0.012 <!doctype html>
+unlisted-proxy 403 000 0 0.001 blocked by proxy
+ip-proxy 403 000 0 0.001 blocked by proxy
+fence-direct 000 000 28 0.000000
+allowed-direct 000 000 6 0.000000
+unlisted-direct 000 000 6 0.000000
+ip-direct 000 000 28 0.000000"
+# line NAME is the probe NAME's line of $answers.
+line() { printf '%s\n' "$answers" | awk -v n="$1" '$1 == n'; }
+answers=
+# allowed_proxy judges the allowed-proxy line of $answers, the allowed host
+# through the pool's proxy: it returns 0 when the discobox names a proxy, the
+# proxy answered its CONNECT 200, and the origin's response came back through
+# it, and says what it saw in $allowed_detail either way. An answer with no
+# proxy, or no CONNECT, came around the proxy, not through it.
+allowed_detail=
+allowed_proxy() {
+	local code connect status body proxy_env
+	proxy_env=$(line proxy-env | awk '{ print $2 }')
+	read -r _ code connect status _ body <<<"$(line allowed-proxy)"
+	# Each field on its own: a pattern over them joined would read a part of
+	# the body as a status.
+	if [ "${proxy_env:-none}" = none ] || [ "${connect:-}" != 200 ] || [ "${code:-000}" = 000 ] ||
+		case $body in "blocked by proxy"*) true ;; *) false ;; esac; then
+		allowed_detail="$allow_host did not answer through the proxy (${proxy_env:-none}): HTTP ${code:-none}, CONNECT ${connect:-none}, curl ${status:-none}: $body"
+		return 1
+	fi
+	allowed_detail="$allow_host answered $code through the proxy ($proxy_env)"
+}
+
+# on_demand_step is the path a person takes when they ask for a discobox on
+# a pool that is not up yet: the request brings the pool up, and the box
+# provisions on it once it is (store.SchedulablePoolForSandbox places it
+# then). Its own pool, made just now, is not waited for: the discobox is
+# requested at once, and each stage is timed from that request. A stage that
+# does not end within --pool-timeout of the one before (the harness's,
+# --harness-timeout, as the warm discobox's) fails with what was last seen,
+# and the stages after it are not run.
+on_demand_step() {
+	local od_name=$name-od requested state box_state provisioned since pool_up="" provisioned_at="" pool_seen="" box_seen="" why setup
+	echo "--- on-demand" >&2
+	if ! dcout out 0 '{"id":"pool_dryrun_od"}' -o json admin pool create "$od_name" --provider "$provider_id"; then
+		fail on-demand-pool "could not create: $err"
+		return
+	fi
+	od_pool_id=$(field "$out" '.id // empty')
+	[ -n "$od_pool_id" ] || { fail on-demand-pool "create printed no id: $out $err"; return; }
+	# What the pool was when the discobox was asked for: up already, the box
+	# would be the warm path's, and this step would not have run its own.
+	if ! dcout out 0 '{"state":"pending","ready":false,"schedulable":false}' -o json admin pool get "$od_pool_id"; then
+		fail on-demand-pool "could not read the pool: $err"
+		return
+	fi
+	state=$(field "$out" '"\(.state // "unknown") ready=\(.ready // false) schedulable=\(.schedulable // false)"')
+	case $state in
+	"active ready=true schedulable=true") check on-demand-pool "created $od_pool_id, but it was already up when the discobox was asked for: this is not the on-demand path" ;;
+	*) pass on-demand-pool "created $od_pool_id; the discobox is asked for while it is $state" ;;
+	esac
+	run_on "$od_pool_id"
+	requested=$SECONDS
+	if ! dcout out 0 '{"id":"sbx_dryrun_od"}' -o json "${run_args[@]}"; then
+		fail on-demand-discobox "could not create on a pool that is not up: $err"
+		return
+	fi
+	od_box_id=$(field "$out" '.id // empty')
+	[ -n "$od_box_id" ] || { fail on-demand-discobox "run printed no id: $out $err"; return; }
+	pass on-demand-discobox "created $od_box_id on $od_pool_id before it was up"
+
+	# One loop reads both: the pool until it is up, then the discobox until
+	# every feature is ready. A box's provisioning cannot end before its pool
+	# is up, so the stages are in order.
+	while :; do
+		if [ -z "$pool_up" ]; then
+			if ! dcout out 0 '{"state":"active","ready":true,"schedulable":true}' -o json admin pool get "$od_pool_id"; then
+				fail on-demand-pool-up "could not read the pool: $err"
+				return
+			fi
+			pool_seen="$(field "$out" '"\(.state // "unknown") ready=\(.ready // false) schedulable=\(.schedulable // false)"') $(field "$out" '.errorMessage // ""')"
+			pool_seen=${pool_seen% }
+			case $pool_seen in
+			"active ready=true schedulable=true"*)
+				pool_up=$((SECONDS - requested))
+				od_timings="pool up ${pool_up}s"
+				pass on-demand-pool-up "$od_pool_id came up ${pool_up}s after the discobox was asked for" ;;
+			failed*)
+				fail on-demand-pool-up "$od_pool_id failed $((SECONDS - requested))s after the discobox was asked for: $pool_seen"
+				return ;;
+			esac
+		fi
+		if ! dcout out 0 '{"runtime":{"state":"ready","runtimeState":"running","displayState":"running","agentStatus":{"provision":{"state":"ready"}}}}' -o json admin box get "$od_box_id"; then
+			fail on-demand-provision "could not read the discobox: $err"
+			return
+		fi
+		# displayState is the server's one composition of the box's existence
+		# and power; error once either failed.
+		box_state=$(field "$out" '.runtime.displayState // "unknown"')
+		provisioned=$(field "$out" '.runtime.agentStatus.provision.state // "unknown"')
+		box_seen="discobox $box_state, provisioning $provisioned"
+		if [ -n "$pool_up" ]; then
+			case $provisioned in
+			ready)
+				provisioned_at=$((SECONDS - requested))
+				od_timings="$od_timings, provisioned ${provisioned_at}s"
+				pass on-demand-provision "every feature of $od_box_id is ready ${provisioned_at}s after it was asked for ($((provisioned_at - pool_up))s after its pool came up)"
+				break ;;
+			failed)
+				why=$(provision_failure "$out")
+				fail on-demand-provision "failed: ${why:-no error given}"
+				return ;;
+			esac
+		fi
+		if [ "$box_state" = error ]; then
+			why=$(field "$out" '.runtime.errorMessage // empty')
+			setup=$(provision_failure "$out")
+			[ -z "$setup" ] || why=${why:+$why; }$setup
+			fail on-demand-provision "$od_box_id failed $((SECONDS - requested))s after it was asked for: ${why:-no error given}; $box_seen; its pool: $pool_seen"
+			return
+		fi
+		if [ -z "$pool_up" ]; then since=$((SECONDS - requested)); else since=$((SECONDS - requested - pool_up)); fi
+		if [ "$since" -ge "$pool_wait" ]; then
+			if [ -z "$pool_up" ]; then
+				fail on-demand-pool-up "$od_pool_id is not up $pool_timeout after the discobox was asked for: pool $pool_seen; $box_seen"
+			else
+				fail on-demand-provision "$od_box_id has not provisioned $pool_timeout after its pool came up: $box_seen"
+			fi
+			return
+		fi
+		pause 10
+	done
+
+	ask_harness on-demand-harness "$od_box_id"
+	# A harness that did not answer is failed already, and the egress after it
+	# would time nothing it could be measured against.
+	if [ -z "$harness_answered" ]; then return 0; fi
+	od_timings="$od_timings, harness answered $((SECONDS - requested))s"
+
+	# Its egress, open, goes through the pool's proxy: the allowed host, asked
+	# for and judged as the warm discobox's is (allowed_proxy). It is asked
+	# again until it answers, for at most --pool-timeout.
+	local probed=$SECONDS reached
+	while :; do
+		dcout answers 0 "$canned" exec "$od_box_id" -- sh -lc "$probe" probe "$allow_host" "$unlisted_host" allowed || answers=
+		if [ "$answers" = no-curl ]; then
+			fail on-demand-egress "$od_box_id has no curl to probe with"
+			return
+		fi
+		if allowed_proxy; then
+			reached=$((SECONDS - requested))
+			od_timings="$od_timings, egress through the proxy ${reached}s"
+			pass on-demand-egress "$allowed_detail, ${reached}s after the discobox was asked for"
+			return
+		fi
+		if [ $((SECONDS - probed)) -ge "$pool_wait" ]; then
+			fail on-demand-egress "not within $pool_timeout: $allowed_detail ${err:+($err)}"
+			return
+		fi
+		pause 10
+	done
+}
+
 echo "--- provider" >&2
 # The provider's config, on the driver's own provider type (ADR
 # 26-11-11-080 §§1–2): its sealed key as driver.apiKey, with no
@@ -602,7 +896,14 @@ pool_id=$(field "$out" '.id // empty')
 # the allowed host could provision nothing. The discobox's own level is
 # narrowed instead, once it has provisioned (--- egress).
 pass pool "created $pool_id"
+pool_made=$SECONDS
 
+# The on-demand step runs while the warm pool comes up, so the run is no
+# longer for it. What it finds is recorded; the warm-pool check goes on
+# whatever it found.
+if [ "$on_demand" = yes ]; then on_demand_step; fi
+
+echo "--- pool ready" >&2
 waited=0
 while :; do
 	if ! dcout out 0 '{"state":"active","ready":true,"schedulable":true}' -o json admin pool get "$pool_id"; then
@@ -621,7 +922,7 @@ while :; do
 	pause 15
 	waited=$((waited + 15))
 done
-pass pool-ready "active after ${waited}s"
+pass pool-ready "active $((SECONDS - pool_made))s after it was made"
 
 echo "--- test secret" >&2
 # Bind a harmless unique value with no exchange routes. Its sentinel has
@@ -694,13 +995,7 @@ if [ "$driver" = boxd ]; then
 fi
 
 echo "--- discobox" >&2
-# The prompt asks for something its own text does not hold, so finding the
-# answer on the screen shows the harness reached its model.
-want=$(printf '%s' "$nonce" | awk '{ s = ""; for (i = length($0); i > 0; i--) s = s substr($0, i, 1); print s }')
-prompt="Reply with the string $nonce written backwards, and nothing else. Do not run any tool."
-run_args=(run --no-source --pool "$pool_id" -d)
-[ "$harness" = claude-code ] || run_args+=(-p "$prompt")
-[ -z "$harness" ] || run_args+=(-H "$harness")
+run_on "$pool_id"
 # Its progress goes to stderr, apart from the JSON on stdout.
 if ! dcout out 0 '{"id":"sbx_dryrun"}' -o json "${run_args[@]}"; then
 	fail discobox "could not create: $err"
@@ -752,33 +1047,7 @@ else
 	fail attach "attach streamed nothing: $(tail -c 300 "$work/attach.err")"
 fi
 
-if [ "$harness" = claude-code ]; then
-	harness_started=$SECONDS
-	rc=0
-	answer=$(ext 0 "$want" timeout -k 5s "$harness_timeout" "$discobox" ${dc_flags[@]+"${dc_flags[@]}"} exec "$box_id" -- claude -p "$prompt" </dev/null 2>"$work/harness.err") || rc=$?
-	if [ "$rc" = 0 ] && printf '%s\n' "$answer" | grep -Fxq "$want"; then
-		pass harness "Claude Code returned the expected answer after $((SECONDS - harness_started))s"
-	elif [ "$rc" = 124 ]; then
-		fail harness "Claude Code did not answer within $harness_timeout"
-	else
-		fail harness "Claude Code exited $rc after $((SECONDS - harness_started))s without the expected answer; it printed: $(printf '%s' "$answer" | tail -c 200) $(tail -c 300 "$work/harness.err")"
-	fi
-else
-	if ! dcout out 0 'finished' wait "$box_id" --until finished --until blocked --for "$harness_timeout"; then
-		fail harness "did not finish within $harness_timeout: $out $err"
-	else
-		dcout screen 0 "$want" capture "$box_id" || true
-		case $out in
-		*blocked*) fail harness "blocked instead of answering: $out" ;;
-		*)
-			if printf '%s' "$screen" | grep -qF "$want"; then
-				pass harness "answered $want"
-			else
-				fail harness "finished, but its screen does not show $want: $(printf '%s' "$screen" | tail -5)"
-			fi ;;
-		esac
-	fi
-fi
+ask_harness harness "$box_id"
 
 probe_sentinel "$box_id" sentinels
 probe_pool_sentinel "$box_id"
@@ -796,48 +1065,6 @@ if dcout out 0 '' admin box update "$box_id" --egress-deny-by-default --egress-a
 else
 	fail egress-level "could not restrict the discobox's egress to $allow_host, so nothing is probed: $err"
 fi
-# One exec runs every probe from inside the discobox, as its user, with its
-# login environment (the proxy's variables). Each prints
-# NAME HTTP_CODE CONNECT_CODE CURL_EXIT TIME_CONNECT FIRST_LINE_OF_BODY.
-# Through the proxy a refused host is asked for over plain HTTP, where the
-# proxy answers 403 "blocked by proxy"; a refused CONNECT is only a closed
-# connection (proxy/DESIGN.md), which a network failure looks like too.
-# Around it, a fence that drops the connection leaves time_connect 0. boxd's
-# fence accepts it and then refuses: TLS closes at the ClientHello (curl 35),
-# whatever the host. So 192.0.2.1 (TEST-NET-1, where no server answers) is
-# probed around the proxy too: a connection there is the fence's own, and its
-# refusal is what the fence's refusal of a real host looks like.
-probe=$(cat <<'EOF'
-command -v curl >/dev/null 2>&1 || { echo "no-curl"; exit 0; }
-probe() {
-	name=$1; shift
-	body=$(mktemp)
-	codes=$(curl -sS -o "$body" -w '%{http_code} %{http_connect} %{time_connect}' --max-time 20 "$@" 2>/dev/null)
-	exit=$?
-	set -- ${codes:-000 000 0}
-	printf '%s %s %s %s %s %s\n' "$name" "$1" "$2" "$exit" "$3" "$(head -c 200 "$body" | head -n 1 | tr -cd '[:print:]')"
-	rm -f "$body"
-}
-printf 'proxy-env %s\n' "${HTTPS_PROXY:-${https_proxy:-none}}"
-probe allowed-proxy "https://$1/"
-probe unlisted-proxy "http://$2/"
-probe ip-proxy "http://1.1.1.1/"
-probe fence-direct --noproxy '*' "https://192.0.2.1/"
-probe allowed-direct --noproxy '*' "https://$1/"
-probe unlisted-direct --noproxy '*' "https://$2/"
-probe ip-direct --noproxy '*' "https://1.1.1.1/"
-EOF
-)
-canned="proxy-env http://discobox-pool-proxy:3128
-allowed-proxy 200 200 0 0.012 <!doctype html>
-unlisted-proxy 403 000 0 0.001 blocked by proxy
-ip-proxy 403 000 0 0.001 blocked by proxy
-fence-direct 000 000 28 0.000000
-allowed-direct 000 000 6 0.000000
-unlisted-direct 000 000 6 0.000000
-ip-direct 000 000 28 0.000000"
-# line NAME is the probe NAME's line of $answers.
-line() { printf '%s\n' "$answers" | awk -v n="$1" '$1 == n'; }
 # The discobox converges onto its level while running, so the probes run
 # again until its proxy refuses the unlisted host, for at most
 # --egress-timeout; the last answers are the ones judged.
@@ -870,11 +1097,7 @@ else
 	proxy_env=$(line proxy-env | awk '{ print $2 }')
 	case $proxy_env in ''|none) note "the discobox has no HTTPS_PROXY; the proxy probes below fail" ;; esac
 	# An allowed host: the pool's proxy answers with the origin's response.
-	read -r _ code connect status _ body <<<"$(line allowed-proxy)"
-	case ${code:-000}:$body in
-	000:*|*:"blocked by proxy"*) fail egress-allowed "$allow_host did not answer through the proxy: HTTP ${code:-none}, CONNECT $connect, curl $status: $body" ;;
-	*) pass egress-allowed "$allow_host answered $code through the proxy ($proxy_env)" ;;
-	esac
+	if allowed_proxy; then pass egress-allowed "$allowed_detail"; else fail egress-allowed "$allowed_detail"; fi
 	# Through the proxy, a host no level lists is refused there.
 	for p in unlisted-proxy:"$unlisted_host" ip-proxy:1.1.1.1; do
 		read -r _ code connect status _ body <<<"$(line "${p%%:*}")"

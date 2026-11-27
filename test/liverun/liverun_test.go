@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -34,8 +35,11 @@ case "$1 ${2:-} ${3:-}" in
 "secret bind sec_T1"|"secret rm sec_T1") ;;
 "admin provider list") echo '[]' ;;
 "admin box get")
-	# $STUB/provision, when there, is the discobox's provisioning state.
-	if [ "$4" = sbx_T2 ]; then
+	# $STUB/provision, when there, is the discobox's provisioning state;
+	# $STUB/od-box the on-demand discobox's.
+	if [ "$4" = sbx_T3 ]; then
+		cat "$STUB/od-box" 2>/dev/null || echo '{"id":"sbx_T3","runtime":{"state":"ready","runtimeState":"running","displayState":"running","agentStatus":{"provision":{"state":"ready"}}}}'
+	elif [ "$4" = sbx_T2 ]; then
 		cat "$STUB/second-box" 2>/dev/null || echo '{"runtime":{"state":"ready","runtimeState":"running","displayState":"running","startedFrom":{"from":"snapshot","snapshot":"snapshot-1"}}}'
 	else
 		cat "$STUB/provision" 2>/dev/null || echo '{"id":"sbx_T1","runtime":{"agentStatus":{"provision":{"state":"ready"}}}}'
@@ -52,15 +56,28 @@ case "$1 ${2:-} ${3:-}" in
 		echo 'Error: provider prov_T1 check: unreachable' >&2; exit 1
 	fi
 	echo '{"outcome":"ok","checkedAt":"2026-11-15T10:00:00Z"}' ;;
-"admin pool create") echo '{"id":"pool_T1"}' ;;
+"admin pool create")
+	[ ! -e "$STUB/pool-create-fails" ] || { echo 'request failed: 400 Bad Request' >&2; exit 1; }
+	# The on-demand step's pool is named for the run's, with -od.
+	case $4 in *-od) echo '{"id":"pool_T2"}' ;; *) echo '{"id":"pool_T1"}' ;; esac ;;
 "admin pool update") ;;
 "admin pool get")
+	if [ "$4" = pool_T2 ]; then
+		[ ! -e "$STUB/od-pool.deleted" ] || { echo 'request failed: 404 Not Found' >&2; exit 1; }
+		# Each read takes the next line of $STUB/od-pool.states, the last one
+		# kept: by default it is not up when first read, and up after.
+		[ -e "$STUB/od-pool.states" ] || printf '%s\n' '{"state":"pending","ready":false,"schedulable":false}' '{"state":"active","ready":true,"schedulable":true}' >"$STUB/od-pool.states"
+		head -n 1 "$STUB/od-pool.states"
+		[ "$(wc -l <"$STUB/od-pool.states")" -le 1 ] || sed -i 1d "$STUB/od-pool.states"
+		exit 0
+	fi
 	if [ -e "$STUB/provider-unreachable" ] && [ ! -e "$STUB/pool.deleted" ]; then
 		echo '{"state":"failed","errorMessage":"pool pool_T1 bootstrap provision: bootstrap stopped making progress"}'; exit 0
 	fi
 	[ ! -e "$STUB/pool.deleted" ] || { echo 'request failed: 404 Not Found' >&2; exit 1; }
 	cat "$STUB/pool.state" 2>/dev/null || echo '{"state":"active","ready":true,"schedulable":true,"resources":{"snapshots":{"held":[{"key":"snapshot-1"}]}}}' ;;
-"admin pool rm") touch "$STUB/pool.deleted" ;;
+"admin pool rm")
+	if [ "$4" = pool_T2 ]; then touch "$STUB/od-pool.deleted"; else touch "$STUB/pool.deleted"; fi ;;
 "admin provider get")
 	if [ -e "$STUB/provider.deleted" ]; then cat "$STUB/provider.gone" >&2 2>/dev/null || echo 'request failed: 404 Not Found' >&2; exit 1; fi
 	echo '{}' ;;
@@ -69,6 +86,10 @@ case "$1 ${2:-} ${3:-}" in
 "admin box update")
 	[ ! -e "$STUB/box-update-refused" ] || { echo 'request failed: 403 Forbidden' >&2; exit 1; } ;;
 run*)
+	if printf '%s\n' "$@" | grep -qx pool_T2; then
+		echo '{"id":"sbx_T3"}'
+		exit 0
+	fi
 	if [ -e "$STUB/created-first" ]; then
 		echo '{"id":"sbx_T2"}'
 		exit 0
@@ -97,6 +118,8 @@ exec*)
 		prompt=$(printf '%s\n' "$@" | grep -o 'string [0-9a-f]* written' | awk '{print $2}')
 		printf '%s' "$prompt" | awk '{for (i = length($0); i > 0; i--) printf "%s", substr($0, i, 1); print ""}' ;;
 	*/run/discobox/secrets/secrets.json*) echo true ;;
+	# The on-demand discobox asks for the allowed host alone.
+	*" allowed") cat "$STUB/od-egress" 2>/dev/null || cat "$STUB/probes" ;;
 	*discobox-live-run-listener*) cat "$STUB/listener" 2>/dev/null || printf 'busy \nlistening 8080 8000 3000 5000 5173\n' ;;
 	*)
 		# $STUB/probes-before, while it is there, is what the probes see
@@ -135,6 +158,9 @@ case "$1 ${2:-}" in
 	if [ "$driver" = boxd ] && [ "$BOXD_REGION" != "$(cat "$STUB/provider-region")" ]; then exit 0; fi
 	if [ "$scope" = pool-t1 ] && [ ! -e "$STUB/pool.deleted" ]; then
 		echo "abc sbx-t1 - linux running 1m"
+	fi
+	if [ "$scope" = pool-t2 ] && [ ! -e "$STUB/od-pool.deleted" ]; then
+		echo "abc sbx-t3 - linux running 1m"
 	fi
 	if [ -e "$STUB/left-$scope" ]; then
 		while read -r n; do echo "abc  $n  -  linux  running  1m"; done <"$STUB/left-$scope"
@@ -290,7 +316,9 @@ func TestLiveRunPassesAndLeavesNothing(t *testing.T) {
 	}
 	for _, step := range []string{"provider", "pool", "pool-ready", "discobox", "harness", "attach", "provision",
 		"egress-level", "egress-allowed", "egress-unlisted-proxy", "egress-ip-proxy", "egress-allowed-direct", "egress-unlisted-direct", "egress-ip-direct",
-		"ingress-url", "closed-proxy", "region", "sentinels", "pool-credential", "snapshot", "snapshot-start", "snapshot-sentinels", "channel", "cleanup-second-discobox", "cleanup-discobox", "cleanup-pool", "cleanup-provider", "left-pool-scope", "left-provider-scope"} {
+		"ingress-url", "closed-proxy", "region", "sentinels", "pool-credential", "snapshot", "snapshot-start", "snapshot-sentinels", "channel", "cleanup-second-discobox", "cleanup-discobox", "cleanup-pool", "cleanup-provider", "left-pool-scope", "left-provider-scope",
+		"on-demand-pool", "on-demand-discobox", "on-demand-pool-up", "on-demand-provision", "on-demand-harness", "on-demand-egress",
+		"cleanup-on-demand-discobox", "cleanup-on-demand-pool", "left-on-demand-pool-scope"} {
 		if !strings.Contains(r.report, "| PASS | "+step+" |") {
 			t.Errorf("report has no passing %s row:\n%s", step, r.report)
 		}
@@ -305,8 +333,8 @@ func TestLiveRunPassesAndLeavesNothing(t *testing.T) {
 	}
 	// The cleanup's order: the discobox, the pool (its grant of the key goes
 	// with it), the provider, then what the provider holds, in each scope.
-	order := []string{"admin box purge sbx_T2", "admin box purge sbx_T1", "admin pool rm pool_T1", "admin provider rm prov_T1",
-		"--pool pool-t1 ls -a", "--pool prov-t1 ls -a"}
+	order := []string{"admin box purge sbx_T3", "admin box purge sbx_T2", "admin box purge sbx_T1", "admin pool rm pool_T2", "admin pool rm pool_T1", "admin provider rm prov_T1",
+		"--pool pool-t1 ls -a", "--pool pool-t2 ls -a", "--pool prov-t1 ls -a"}
 	last := -1
 	for _, want := range order {
 		i := indexOf(r.calls[last+1:], want)
@@ -314,6 +342,130 @@ func TestLiveRunPassesAndLeavesNothing(t *testing.T) {
 			t.Fatalf("%q is not called in order %v:\n%s", want, order, strings.Join(r.calls, "\n"))
 		}
 		last += i + 1
+	}
+}
+
+// The on-demand step asks for its discobox on a pool it has just made, before
+// the pool is up, and follows it through every stage, timing each from the
+// request; the warm pool's discobox comes after.
+func TestLiveRunOnDemand(t *testing.T) {
+	r := liveRun(t, nil)
+	if r.exit != 0 {
+		t.Fatalf("exit %d, want 0:\n%s", r.exit, r.out)
+	}
+	order := []string{"admin pool create live-boxd-", "admin pool create live-boxd-", "admin pool get pool_T2", "run --no-source --pool pool_T2 -d -H claude-code",
+		"admin pool get pool_T2", "admin box get sbx_T3", "exec sbx_T3 -- claude -p", "exec sbx_T3 -- sh -lc", "run --no-source --pool pool_T1"}
+	last := -1
+	for _, want := range order {
+		i := indexOf(r.calls[last+1:], want)
+		if i < 0 {
+			t.Fatalf("%q is not called in order %v:\n%s", want, order, strings.Join(r.calls, "\n"))
+		}
+		last += i + 1
+	}
+	for _, want := range []string{
+		"| PASS | on-demand-pool | created pool_T2; the discobox is asked for while it is pending ready=false schedulable=false |",
+		"| PASS | on-demand-pool-up | pool_T2 came up 0s after the discobox was asked for |",
+		"| PASS | on-demand-egress | example.com answered 200 through the proxy (http://discobox-pool-proxy:3128), 0s after the discobox was asked for |",
+		"- On demand: pool `pool_T2`, discobox `sbx_T3`; seconds from the discobox's request: pool up 0s, provisioned 0s, harness answered 0s, egress through the proxy 0s",
+	} {
+		if !strings.Contains(seconds(r.report), seconds(want)) {
+			t.Errorf("report has no %q:\n%s", want, r.report)
+		}
+	}
+	for _, f := range []string{"on-demand-discobox.json", "on-demand-screen.txt", "on-demand-pool.json", "on-demand-pool.log"} {
+		if _, err := os.Stat(filepath.Join(r.stub, "evidence", f)); err != nil {
+			t.Errorf("no evidence %s: %v", f, err)
+		}
+	}
+}
+
+// seconds reads every count of seconds in s as any: a stage's timing is
+// measured, and a busy machine can tick one over while the stub answers.
+func seconds(s string) string { return secondsRE.ReplaceAllString(s, "Ns") }
+
+var secondsRE = regexp.MustCompile(`\b[0-9]+s\b`)
+
+// A stage that stalls past --pool-timeout fails with what was last seen, and
+// the warm-pool check still runs.
+func TestLiveRunOnDemandStalls(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, stub string)
+		want  string
+	}{
+		{"pool", func(t *testing.T, stub string) {
+			write(t, filepath.Join(stub, "od-pool.states"), `{"state":"registering","ready":false,"schedulable":false}`+"\n", 0o644)
+			write(t, filepath.Join(stub, "od-box"), `{"runtime":{"state":"pending","displayState":"starting"}}`, 0o644)
+		}, "| FAIL | on-demand-pool-up | pool_T2 is not up 0s after the discobox was asked for: pool registering ready=false schedulable=false; discobox starting, provisioning unknown |"},
+		{"pool failed", func(t *testing.T, stub string) {
+			write(t, filepath.Join(stub, "od-pool.states"), `{"state":"pending","ready":false}`+"\n"+`{"state":"failed","errorMessage":"archil: quota"}`+"\n", 0o644)
+		}, "| FAIL | on-demand-pool-up | pool_T2 failed 0s after the discobox was asked for: failed ready=false schedulable=false archil: quota |"},
+		{"provision", func(t *testing.T, stub string) {
+			write(t, filepath.Join(stub, "od-box"), `{"runtime":{"state":"ready","runtimeState":"running","displayState":"starting","agentStatus":{"provision":{"state":"applying"}}}}`, 0o644)
+		}, "| FAIL | on-demand-provision | sbx_T3 has not provisioned 0s after its pool came up: discobox starting, provisioning applying |"},
+		// A box that displays error failed; the server's error says why.
+		{"discobox error", func(t *testing.T, stub string) {
+			write(t, filepath.Join(stub, "od-box"), `{"runtime":{"state":"failed","displayState":"error","errorMessage":"archil: no capacity"}}`, 0o644)
+		}, "| FAIL | on-demand-provision | sbx_T3 failed 0s after it was asked for: archil: no capacity; discobox error, provisioning unknown; its pool: active ready=true schedulable=true |"},
+		{"egress", func(t *testing.T, stub string) {
+			write(t, filepath.Join(stub, "od-egress"), "proxy-env none\nallowed-proxy 000 000 7 0.000000\n", 0o644)
+		}, "| FAIL | on-demand-egress | not within 0s: example.com did not answer through the proxy (none): HTTP 000, CONNECT 000, curl 7"},
+		// An answer with no proxy in the discobox's environment, and no
+		// CONNECT, came around the proxy.
+		{"egress around the proxy", func(t *testing.T, stub string) {
+			write(t, filepath.Join(stub, "od-egress"), "proxy-env none\nallowed-proxy 200 000 0 0.012 <!doctype html>\n", 0o644)
+		}, "| FAIL | on-demand-egress | not within 0s: example.com did not answer through the proxy (none): HTTP 200, CONNECT 000, curl 0: <!doctype html>"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := liveRun(t, func(stub string) {
+				write(t, filepath.Join(stub, "args"), "--pool-timeout 0s", 0o644)
+				tc.setup(t, stub)
+			})
+			if r.exit == 0 || !strings.Contains(seconds(r.report), seconds(tc.want)) {
+				t.Fatalf("exit %d, want %q:\n%s", r.exit, tc.want, r.report)
+			}
+			for _, step := range []string{"pool-ready", "harness", "snapshot-start", "cleanup-on-demand-discobox", "cleanup-on-demand-pool"} {
+				if !strings.Contains(r.report, "| PASS | "+step+" |") {
+					t.Errorf("report has no passing %s row after the on-demand step failed:\n%s", step, r.report)
+				}
+			}
+		})
+	}
+}
+
+// Through the proxy, any answer of the origin's passes, whatever its status,
+// its body, or the proxy's port: only the proxy in the environment and its
+// CONNECT 200 say the request went through it.
+func TestLiveRunOnDemandEgressAnyOriginAnswer(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "od-egress"), "proxy-env http://proxy:312\nallowed-proxy 301 200 0 0.012 moved:abc:here\n", 0o644)
+	})
+	if want := "| PASS | on-demand-egress | example.com answered 301 through the proxy (http://proxy:312)"; r.exit != 0 || !strings.Contains(r.report, want) {
+		t.Fatalf("exit %d, want %q:\n%s", r.exit, want, r.report)
+	}
+}
+
+// A pool already up when the discobox is asked for is not the on-demand
+// path, which a person reads.
+func TestLiveRunOnDemandPoolAlreadyUp(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "od-pool.states"), `{"state":"active","ready":true,"schedulable":true}`+"\n", 0o644)
+	})
+	if r.exit == 0 || !strings.Contains(r.report, "| CHECK | on-demand-pool | created pool_T2, but it was already up") {
+		t.Fatalf("exit %d, want the on-demand path unexercised:\n%s", r.exit, r.report)
+	}
+}
+
+func TestLiveRunOnDemandOff(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "args"), "--on-demand no", 0o644)
+	})
+	if r.exit != 0 || strings.Contains(r.report, "on-demand") || strings.Contains(r.report, "On demand") {
+		t.Fatalf("exit %d, want a run without the on-demand step:\n%s", r.exit, r.report)
+	}
+	if indexOf(r.calls, "pool_T2") >= 0 {
+		t.Fatalf("the on-demand pool was used:\n%s", strings.Join(r.calls, "\n"))
 	}
 }
 
@@ -615,8 +767,28 @@ func TestLiveRunCleansUpAfterAFailedPool(t *testing.T) {
 	for _, want := range []string{"admin pool rm pool_T1", "admin provider rm prov_T1", "--pool pool-t1 ls -a", "--pool prov-t1 ls -a"} {
 		assertCall(t, r, want)
 	}
-	if indexOf(r.calls, " run ") >= 0 {
+	if indexOf(r.calls, " run --no-source --pool pool_T1 ") >= 0 {
 		t.Fatalf("a discobox was made on a failed pool:\n%s", strings.Join(r.calls, "\n"))
+	}
+}
+
+// With no pool made, no key can be told as the run's, so the provider's
+// scope is not asked for its keys: a failed listing would add a row that
+// says nothing about the run.
+func TestLiveRunNoPoolListsNoKeys(t *testing.T) {
+	r := liveRun(t, func(stub string) {
+		write(t, filepath.Join(stub, "pool-create-fails"), "", 0o644)
+		write(t, filepath.Join(stub, "args"), "--on-demand no", 0o644)
+	})
+	if r.exit == 0 {
+		t.Fatalf("exit 0 with no pool:\n%s", r.out)
+	}
+	assertCall(t, r, "--pool prov-t1 ls -a")
+	if indexOf(r.calls, "key ls") >= 0 {
+		t.Fatalf("keys were listed with no pool made:\n%s", strings.Join(r.calls, "\n"))
+	}
+	if strings.Contains(r.report, "-listed |") {
+		t.Fatalf("a listing failed:\n%s", r.report)
 	}
 }
 
@@ -1000,10 +1172,22 @@ func TestDryRun(t *testing.T) {
 		`config: {"driver":{"apiKey":"<$BOXD_API_KEY>","region":"fra"}}`,
 		"+ disco-vm --driver boxd --pool pool-dryrun ls -a",
 		"| DRY | left-provider-scope |",
+		"| DRY | on-demand-egress |",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("dry run output has no %q", want)
 		}
+	}
+	// The dry run shows the on-demand discobox asked for before its pool is
+	// waited for, and before the warm pool's discobox.
+	last := -1
+	for _, want := range []string{"admin pool create live-boxd-", "-od --provider prov_dryrun", "admin pool get pool_dryrun_od", "run --no-source --pool pool_dryrun_od -d",
+		"DRY   on-demand-discobox: created sbx_dryrun_od on pool_dryrun_od before it was up", "admin pool get pool_dryrun_od", "run --no-source --pool pool_dryrun -d"} {
+		i := strings.Index(s[last+1:], want)
+		if i < 0 {
+			t.Fatalf("dry run output has no %q after offset %d:\n%s", want, last, s)
+		}
+		last += i + 1
 	}
 }
 

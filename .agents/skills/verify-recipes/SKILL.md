@@ -1571,7 +1571,12 @@ a small fake on loopback and watch what the server asks of it.
   in a manager-launched validation box with a pinned commit, dedicated test
   keys and a local server. The script takes the provider key from
   the raw binding's variable (`BOXD_API_KEY`) through jq's environment,
-  never on a command line. In a box, verify a change to it with
+  never on a command line. Before its warm-pool check it runs the on-demand
+  step: a discobox asked for on a second pool of the provider before that
+  pool is up, each stage (pool up, provisioned, harness, egress through the
+  pool's proxy) timed from the request and bounded by `--pool-timeout`
+  (the harness by `--harness-timeout`);
+  `--on-demand no` leaves it out. In a box, verify a change to it with
   `go tool task live-run DRIVER=boxd DRY_RUN=1`, which calls nothing and
   reads no key, and `go test ./test/liverun`, which runs it against
   stand-in `discobox`, `disco-vm` and `curl` commands. A stand-in's answer
