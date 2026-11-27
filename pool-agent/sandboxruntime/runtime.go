@@ -2237,6 +2237,7 @@ func (r *sandboxCore) reconcileSandboxMaterial(ctx context.Context, logger *slog
 		}
 		r.reapSandboxMaterial(ctx, logger, sandboxID)
 	}
+	r.reapLockFiles(logger, live)
 }
 
 // reapSandboxMaterial removes one orphan candidate's proxy material and policy

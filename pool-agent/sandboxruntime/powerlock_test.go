@@ -2,12 +2,14 @@ package sandboxruntime
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/layout"
+	"github.com/discobox-ai/discobox/pool-agent/handover"
 )
 
 // holdPower holds sandboxID's power lock for the test, and returns what lets
@@ -226,5 +228,63 @@ func TestARemovalKeepsABootMarkStillHeld(t *testing.T) {
 	removing.forgetLocks("sbx_1")
 	if _, err := os.Stat(removing.bootMarkPath("sbx_1")); !os.IsNotExist(err) {
 		t.Fatalf("a removal after the boot ended left its mark: %v", err)
+	}
+}
+
+// One sandbox's boot mark that is slow to take holds up its own boot alone:
+// another sandbox's boot begins at once, its mark taken with no lock shared
+// by every sandbox held around the wait.
+func TestASlowBootMarkHoldsUpNoOtherBoot(t *testing.T) {
+	root := layout.ContainerAt(t.TempDir())
+	core := &sandboxCore{root: root, projectID: "prj", poolID: "pool"}
+	// The slow sandbox's mark file locked alone: its mark waits out
+	// bootMarkWait.
+	held, err := handover.Acquire(context.Background(), core.bootMarkPath("sbx_slow"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = held.Release() }()
+	slow := make(chan *sandboxBoot, 1)
+	go func() { slow <- core.beginBoot("sbx_slow") }()
+	time.Sleep(100 * time.Millisecond)
+
+	began := time.Now()
+	fast := core.beginBoot("sbx_fast")
+	if took := time.Since(began); took > time.Second {
+		t.Fatalf("a boot began %s after another sandbox's slow mark, want at once", took)
+	}
+	other := &sandboxCore{root: root, projectID: "prj", poolID: "pool"}
+	if !other.SandboxBooting("sbx_fast") {
+		t.Fatal("the fast boot's mark is not on disk once beginBoot returned")
+	}
+	core.endBoot("sbx_fast", fast, nil)
+	core.endBoot("sbx_slow", <-slow, nil)
+}
+
+// The lock files of a sandbox the pool no longer has, no box and no tree,
+// are reaped; those of a sandbox with a tree, or whose lock is held, stay.
+func TestLockFilesOfARemovedSandboxAreReaped(t *testing.T) {
+	root := layout.ContainerAt(t.TempDir())
+	core := &sandboxCore{root: root, projectID: "prj", poolID: "pool"}
+	for _, id := range []string{"sbx_gone", "sbx_kept", "sbx_held", "sbx_live"} {
+		unlock, err := core.lockPower(context.Background(), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		unlock()
+	}
+	if err := os.MkdirAll(root.Sandbox("prj", "pool", "sbx_kept"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	other := &sandboxCore{root: root, projectID: "prj", poolID: "pool"}
+	release := holdPower(t, other, "sbx_held")
+	defer release()
+
+	core.reapLockFiles(slog.New(slog.DiscardHandler), []string{"sbx_live"})
+	for id, want := range map[string]bool{"sbx_gone": false, "sbx_kept": true, "sbx_held": true, "sbx_live": true} {
+		_, err := os.Stat(core.powerLockPath(id))
+		if got := err == nil; got != want {
+			t.Errorf("%s's power lock file there = %v, want %v", id, got, want)
+		}
 	}
 }
