@@ -22,7 +22,7 @@ steps:
   - name: unit-proxy
     file: {path: /etc/systemd/system/discobox-proxy@.service, source: systemd/discobox-proxy@.service}
   - name: unit-units
-    file: {path: /etc/systemd/system/discobox-pool-units.service, source: systemd/discobox-pool-units.service}
+    file: {path: /etc/systemd/system/discobox-pool-units@.service, source: systemd/discobox-pool-units@.service}
 
   # Starts the agent and its proxy, in a slot, and enables that slot: what
   # restarts them, or hands over, is this command's, not the unit steps'.

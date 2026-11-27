@@ -113,7 +113,7 @@ func TestSlotUnitsAreTheFeaturesTemplates(t *testing.T) {
 			}
 		}
 	}
-	for _, unit := range []string{AgentTemplate, ProxyTemplate, UnitsService} {
+	for _, unit := range []string{AgentTemplate, ProxyTemplate, UnitsTemplate} {
 		data, err := os.ReadFile(filepath.Join("features", "pool-agent", "systemd", unit))
 		if err != nil {
 			t.Fatalf("%s is not the pool-agent feature's: %v", unit, err)
