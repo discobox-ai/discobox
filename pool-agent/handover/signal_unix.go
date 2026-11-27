@@ -27,12 +27,19 @@ func DrainRequested(ctx context.Context, markPath string, refused func(error)) *
 	signal.Notify(signals, syscall.SIGUSR2)
 	drain := &Drain{requested: make(chan struct{})}
 	go func() {
+		// The signal stays caught for as long as the process runs: a later
+		// one (a retried signal, an apply finishing a handover) is ignored,
+		// never left to its default action, which would end the drain.
 		defer signal.Stop(signals)
+		taken := false
 		for {
 			select {
 			case <-signals:
 			case <-ctx.Done():
 				return
+			}
+			if taken {
+				continue
 			}
 			wait, cancel := context.WithTimeout(ctx, drainMarkWait)
 			mark, err := Mark(wait, markPath)
@@ -42,8 +49,8 @@ func DrainRequested(ctx context.Context, markPath string, refused func(error)) *
 				continue
 			}
 			drain.mark = mark
+			taken = true
 			close(drain.requested)
-			return
 		}
 	}()
 	return drain

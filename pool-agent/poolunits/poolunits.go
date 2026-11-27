@@ -643,31 +643,38 @@ func (a *applier) tellToDrain(ctx context.Context, unit string) error {
 	return fmt.Errorf("tell %s to drain: %w", unit, err)
 }
 
-// finishHandOver tells each unit of the slot other than serving that still
-// runs and does not drain to drain: what a handover whose signal reached only
-// some of the old slot's units left. The unit taking over from one never
-// told waits on its lock, and no apply moves anything while the fingerprint
-// stands, so this is what ends it.
+// finishHandOver ends what a handover left of the slot other than serving:
+// a unit of it that still says it is active (a signal that reached only some
+// of its units) is told to drain, and one that is a standby (an old process
+// restarted mid-drain) is stopped, since it serves nothing and would only
+// wait on the serving slot's lock. The unit taking over from one never told
+// waits on its lock, and no apply moves anything while the fingerprint
+// stands, so this is what ends it. A unit that drains is left to finish.
 func (a *applier) finishHandOver(ctx context.Context, serving string) error {
 	old := other(serving)
 	for _, unit := range []string{bundle.AgentUnit(old), bundle.ProxyUnit(old)} {
 		running, err := a.active(ctx, unit)
-		if err != nil || !running {
-			if err != nil {
-				return err
-			}
-			continue
-		}
-		draining, err := a.draining(ctx, unit)
 		if err != nil {
 			return err
 		}
-		if draining {
+		if !running {
 			continue
 		}
-		a.log.Info("telling the pool's old slot to drain, as its handover left it", "unit", unit)
-		if err := a.tellToDrain(ctx, unit); err != nil {
+		status, err := a.status(ctx, unit)
+		if err != nil {
 			return err
+		}
+		switch status {
+		case handover.StatusActive:
+			a.log.Info("telling the pool's old slot to drain, as its handover left it", "unit", unit)
+			if err := a.tellToDrain(ctx, unit); err != nil {
+				return err
+			}
+		case handover.StatusStandby:
+			a.log.Info("stopping a standby of the pool's old slot", "unit", unit)
+			if _, err := a.cfg.Systemctl(ctx, "stop", unit); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
