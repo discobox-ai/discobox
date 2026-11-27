@@ -1,10 +1,12 @@
 package poolruntime
 
 import (
+	"bufio"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -15,8 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"bufio"
-	"fmt"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/pool-agent/cpchannel"
 	"github.com/discobox-ai/discobox/server/internal/model"
