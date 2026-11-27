@@ -177,7 +177,7 @@ func TestEnsureSandboxRunningWaitsForABootFoundUnderTheLock(t *testing.T) {
 		t.Fatalf("EnsureSandboxRunning returned %v while the boot was still under way", err)
 	case <-time.After(200 * time.Millisecond):
 	}
-	unlock, locked := runtime.tryLockPower("sbx_1")
+	unlock, locked, _ := runtime.tryLockPower("sbx_1")
 	if !locked {
 		t.Fatal("the power lock is held while a boot is waited out")
 	}

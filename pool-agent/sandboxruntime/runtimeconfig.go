@@ -298,9 +298,9 @@ func (r *sandboxCore) deliverRuntimeConfig(ctx context.Context, sandboxID string
 func (r *sandboxCore) ConvergeRuntimeConfig(ctx context.Context, sandboxID string, applied int64, advertised Advertised) error {
 	r.powerHandover.Store(sandboxID, advertised.ControlPlanePower)
 	r.rawSecretsTaken.Store(sandboxID, advertised.RawSecrets)
-	unlock, locked := r.tryLockPower(sandboxID)
-	if !locked {
-		return nil
+	unlock, locked, err := r.tryLockPower(sandboxID)
+	if err != nil || !locked {
+		return err
 	}
 	defer unlock()
 	takes, err := r.boxes.takesRuntimeConfig(ctx, sandboxID)

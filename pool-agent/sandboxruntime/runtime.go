@@ -2242,7 +2242,11 @@ func (r *sandboxCore) reconcileSandboxMaterial(ctx context.Context, logger *slog
 // reapSandboxMaterial removes one orphan candidate's proxy material and policy
 // when nothing holds its lock and it still has no container.
 func (r *sandboxCore) reapSandboxMaterial(ctx context.Context, logger *slog.Logger, sandboxID string) {
-	unlock, locked := r.tryLockPower(sandboxID)
+	unlock, locked, err := r.tryLockPower(sandboxID)
+	if err != nil {
+		logger.Warn("lock a sandbox before reaping its proxy material", "sandboxID", sandboxID, "error", err)
+		return
+	}
 	if !locked {
 		return
 	}

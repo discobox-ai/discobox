@@ -3,6 +3,7 @@ package sandboxruntime
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -31,7 +32,7 @@ func TestThePowerLockHoldsAcrossTwoAgentsOfAPool(t *testing.T) {
 	next := &sandboxCore{root: root, projectID: "prj", poolID: "pool"}
 
 	release := holdPower(t, old, "sbx_1")
-	if _, locked := next.tryLockPower("sbx_1"); locked {
+	if _, locked, _ := next.tryLockPower("sbx_1"); locked {
 		t.Fatal("the new agent took a power lock the old one holds")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -42,7 +43,7 @@ func TestThePowerLockHoldsAcrossTwoAgentsOfAPool(t *testing.T) {
 	release()
 	unlock := holdPower(t, next, "sbx_1")
 	defer unlock()
-	if _, locked := old.tryLockPower("sbx_1"); locked {
+	if _, locked, _ := old.tryLockPower("sbx_1"); locked {
 		t.Fatal("the old agent took the lock back from the new one")
 	}
 }
@@ -149,7 +150,7 @@ func TestARemovedSandboxsLocksAreReclaimedWithoutSplittingTheLock(t *testing.T) 
 	old.forgetLocks("sbx_1")
 	release()
 	unlock := <-waited
-	if _, locked := old.tryLockPower("sbx_1"); locked {
+	if _, locked, _ := old.tryLockPower("sbx_1"); locked {
 		t.Fatal("the lock split in two over a removed file")
 	}
 	unlock()
@@ -161,4 +162,32 @@ func TestARemovedSandboxsLocksAreReclaimedWithoutSplittingTheLock(t *testing.T) 
 	if len(entries) != 0 {
 		t.Fatalf("a removed sandbox left %v in the lock tree", entries)
 	}
+}
+
+// A power lock whose file cannot be made is an error, never "held elsewhere":
+// a caller that steps aside from a held lock would step aside for good.
+func TestALockTreeThatCannotBeMadeIsAnError(t *testing.T) {
+	root := layout.ContainerAt(t.TempDir())
+	core := &sandboxCore{root: root, projectID: "prj", poolID: "pool"}
+	dir := root.PoolLocks("prj", "pool")
+	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// A file where the lock tree's directory goes.
+	if err := os.WriteFile(dir, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unlock, locked, err := core.tryLockPower("sbx_1")
+	if err == nil || locked || unlock != nil {
+		t.Fatalf("tryLockPower = %v, %v; want an error", locked, err)
+	}
+	// The semaphore was given back: a lock that can be made again is taken.
+	if err := os.Remove(dir); err != nil {
+		t.Fatal(err)
+	}
+	unlock, locked, err = core.tryLockPower("sbx_1")
+	if err != nil || !locked {
+		t.Fatalf("tryLockPower once the tree can be made = %v, %v", locked, err)
+	}
+	unlock()
 }
