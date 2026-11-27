@@ -33,6 +33,11 @@ func tryLock(file *os.File, exclusive bool) (bool, error) {
 	return true, nil
 }
 
+// settle closes a held lock's file: the lock is this process's own record,
+// which needs no open file, and Windows cannot remove a file held open, which
+// a removal under its lock does (Remove).
+func settle(file *os.File) { _ = file.Close() }
+
 func unlock(file *os.File) {
 	localMu.Lock()
 	defer localMu.Unlock()
