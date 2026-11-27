@@ -214,8 +214,9 @@ func TestSlotUnitsRestartButForADrain(t *testing.T) {
 }
 
 // The two slots exclude each other through the run directory's lock files,
-// so neither unit takes a mount-namespace option that would give it a /run
-// of its own.
+// so neither unit sets an option that gives it a /run of its own (a mount
+// namespace) or removes part of the shared one as it stops
+// (RuntimeDirectory=).
 func TestSlotUnitsShareTheRunDirectory(t *testing.T) {
 	isolating := []string{"PrivateTmp=", "PrivateMounts=", "ProtectSystem=", "RuntimeDirectory=", "TemporaryFileSystem=", "RootDirectory=", "RootImage=", "BindPaths=", "InaccessiblePaths=", "ReadOnlyPaths="}
 	for _, unit := range []string{AgentTemplate, ProxyTemplate} {
@@ -225,7 +226,7 @@ func TestSlotUnitsShareTheRunDirectory(t *testing.T) {
 		}
 		for _, option := range isolating {
 			if strings.Contains(string(data), "\n"+option) {
-				t.Errorf("%s sets %s, giving the slot a mount namespace of its own", unit, option)
+				t.Errorf("%s sets %s: the slot would not share the run directory its locks are in", unit, option)
 			}
 		}
 	}
