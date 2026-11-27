@@ -3,6 +3,8 @@ package handover
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
@@ -99,5 +101,39 @@ func TestMarksShareALockUntilTheLastLetsGo(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("AwaitFree did not return once the last mark let go")
+	}
+}
+
+// InFlight counts a handler for as long as it runs, an upgraded stream's
+// included, and Wait returns once none is.
+func TestInFlightCountsAHandlerUntilItReturns(t *testing.T) {
+	var inFlight InFlight
+	release := make(chan struct{})
+	entered := make(chan struct{})
+	server := httptest.NewServer(inFlight.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(entered)
+		<-release
+		w.WriteHeader(http.StatusNoContent)
+	})))
+	defer server.Close()
+	go func() {
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
+		if err != nil {
+			return
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	<-entered
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if err := inFlight.Wait(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Wait with a handler running = %v, want the deadline", err)
+	}
+	close(release)
+	if err := inFlight.Wait(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }

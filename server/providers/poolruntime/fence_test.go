@@ -163,7 +163,7 @@ func TestProvisionBoxPlacesNothingWhenTheFenceDoesNotReadBack(t *testing.T) {
 					return nil, 0, errors.New("unreachable")
 				},
 			}
-			_, err := ProvisionBox(context.Background(), guest, nil, BoxPlacement{Box: box, Fence: true})
+			_, err := ProvisionBox(context.Background(), guest, nil, BoxPlacement{Box: box, Fence: true}, BoxRecord{})
 			if err == nil {
 				t.Fatal("a box whose fence does not hold was provisioned")
 			}
@@ -191,7 +191,7 @@ func TestProvisionBoxFencesBeforeAnythingElse(t *testing.T) {
 			return nil, 0, errors.New("stop here")
 		},
 	}
-	if _, err := ProvisionBox(context.Background(), guest, nil, BoxPlacement{Box: box, Fence: true}); err == nil || !read {
+	if _, err := ProvisionBox(context.Background(), guest, nil, BoxPlacement{Box: box, Fence: true}, BoxRecord{}); err == nil || !read {
 		t.Fatalf("provision went on past the agent bundle, or never read it: %v", err)
 	}
 }

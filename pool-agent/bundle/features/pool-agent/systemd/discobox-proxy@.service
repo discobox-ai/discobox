@@ -1,17 +1,20 @@
 [Unit]
-Description=Discobox Pool Proxy
+Description=Discobox Pool Proxy (slot %i)
 Documentation=https://github.com/discobox-ai/discobox
 # The agent's start is the proxy's environment, CA and control key written
 # (Type=notify there); a proxy started before them has nothing to run with.
-Requires=discobox-pool-agent.service
-After=network-online.target discobox-pool-agent.service
+# Ordered, not required: an agent of this slot that drains and exits must not
+# stop a proxy still draining its own streams.
+After=network-online.target discobox-pool-agent@%i.service
 Wants=network-online.target
 # Retried for as long as the box is a pool's, as the agent is: a load that
 # fails at boot (no default route yet) must not leave it down for good.
 StartLimitIntervalSec=0
 
 [Service]
-Type=simple
+# Ready as a standby, as the agent: it serves once the proxy before it, if
+# any, has stopped accepting.
+Type=notify
 EnvironmentFile=/etc/discobox/proxy.env
 # Not without the rule set that keeps an in-machine credential's endpoint
 # from it, on a pool whose driver declares one (ADR 26-11-11-080 §9), read
@@ -20,7 +23,11 @@ Environment=DISCOBOX_POOL_BOOTSTRAP_FILE=/etc/discobox/pool-agent/bootstrap.json
 ExecStartPre=/usr/local/bin/discobox-pool-agent in-machine-fence
 ExecStartPre=/usr/bin/install -d -m 0700 /var/lib/discobox/proxy
 ExecStart=/usr/local/bin/discobox-pool-agent proxy
-Restart=on-failure
+# As the agent: started again whatever it exits with, but for a drain
+# (handover.DrainedExitCode), after which the proxy that took over serves.
+Restart=always
+RestartPreventExitStatus=75
+SuccessExitStatus=75
 RestartSec=2s
 KillMode=mixed
 

@@ -15,7 +15,7 @@ const (
 	// agent's (ADR 26-11-15-294 §1).
 	AgentStartBox AgentStartKind = iota + 1
 	// AgentStartInPlace is a running box whose agent the provider may now
-	// restart (the moved bundles' apply, RestartPoolUnits). at is just
+	// restart or hand over from (the apply and the box's units after it). at is just
 	// before the first step that can restart it, so the old agent may still
 	// report after it; only the new agent's marked first report counts from
 	// it (ADR 26-11-15-602 §§1, 3).

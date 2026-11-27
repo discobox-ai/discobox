@@ -31,6 +31,8 @@ import (
 	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
 	poolbundle "github.com/discobox-ai/discobox/pool-agent/bundle"
 	"github.com/discobox-ai/discobox/pool-agent/childproc"
+	"github.com/discobox-ai/discobox/pool-agent/handover"
+	"github.com/discobox-ai/discobox/pool-agent/poolunits"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	poolserver "github.com/discobox-ai/discobox/pool-agent/server"
@@ -57,6 +59,16 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	// agent cannot compose must not leave a proxy configured for a pool that
 	// never comes up.
 	if err := bootstrap.Validate(); err != nil {
+		return err
+	}
+	// Asked for before anything slow: a drain asked of this agent before is
+	// lost, since Go ignores the signal it is until it is asked for.
+	drainRequested := handover.DrainRequested(ctx)
+	// The sockets systemd holds for the pool, when it runs this agent in a
+	// slot (poolunits): the agent serves them rather than binding its own, so
+	// a new agent beside it can serve them too (ADR 26-11-26-536 §4).
+	sockets, err := handover.Listeners()
+	if err != nil {
 		return err
 	}
 	runtimeKind := bootstrap.EffectiveRuntime()
@@ -153,9 +165,6 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	// this is the start systemd waits for: the proxy's environment, CA and
 	// control key are all written (ADR 26-10-23-551 §1). Anywhere else nothing
 	// is listening, and it does nothing.
-	if err := agentsystemd.NotifyReady(); err != nil {
-		return fmt.Errorf("tell systemd the agent has started: %w", err)
-	}
 
 	// The control plane URL's scheme selects the transport; nothing here knows
 	// whether that is IP, VSOCK, or a Unix socket served by a guest helper.
@@ -180,25 +189,79 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	}
 	logger.Info("pool identity ready", "poolID", bootstrap.PoolID, "runtime", runtimeKind)
 
-	// The agent's own listener is served from here on, before the first
-	// report: a pool reached over a control-plane channel cannot report until
-	// the server has opened one to it (ADR 26-10-30-875 §2). The listen URL's
-	// scheme selects the transport, so a VSOCK-only or socket-only pool needs
-	// no special case here.
-	listener, err := wire.Listen(bootstrap.AgentListenURL)
-	if err != nil {
-		return fmt.Errorf("listen on pool-agent endpoint %q: %w", bootstrap.AgentListenURL, err)
+	// The agent's own listener, served once this agent is active, before the
+	// first report: a pool reached over a control-plane channel cannot report
+	// until the server has opened one to it (ADR 26-10-30-875 §2). The listen
+	// URL's scheme selects the transport, so a VSOCK-only or socket-only pool
+	// needs no special case here. It, the channel and the front are made
+	// before the agent says it is ready: a standby that is ready has nothing
+	// left that can fail before it serves, so the agent before it is told to
+	// drain only once this one can take over (ADR 26-11-26-536 §4).
+	listener, ok := sockets[poolunits.IngressSocket]
+	if !ok {
+		if listener, err = wire.Listen(bootstrap.AgentListenURL); err != nil {
+			return fmt.Errorf("listen on pool-agent endpoint %q: %w", bootstrap.AgentListenURL, err)
+		}
 	}
 	defer func() { _ = listener.Close() }()
-	channel, err := openControlPlaneChannel(ctx, logger, bootstrap, identity)
+	channel, channelListener, err := prepareControlPlaneChannel(logger, bootstrap, identity, sockets[poolunits.ControlPlaneSocket])
 	if err != nil {
 		return err
 	}
-	front, err := poolserver.StartFront(logger, listener, poolserver.Identity{ProjectID: bootstrap.ProjectID, PoolID: bootstrap.PoolID}, bootstrap.ControlPlaneKey, channelHandler(channel))
+	front, err := poolserver.NewFront(logger, listener, poolserver.Identity{ProjectID: bootstrap.ProjectID, PoolID: bootstrap.PoolID}, bootstrap.ControlPlaneKey, channelHandler(channel))
 	if err != nil {
 		return err
 	}
+	if err := agentsystemd.NotifyReady(); err != nil {
+		return fmt.Errorf("tell systemd the agent has started: %w", err)
+	}
+	_ = agentsystemd.NotifyStatus(handover.StatusStandby)
+	// One agent of a pool accepts at a time (ADR 26-11-26-536 §3). This one
+	// is prepared; it waits here, accepting nothing, for the agent before it,
+	// if one is draining, to stop accepting.
+	active, tookOver, err := becomeActive(ctx, logger, root)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = active.Release() }()
+
 	if channel != nil {
+		serveControlPlaneSocket(ctx, logger, channel, channelListener)
+	}
+	front.Start()
+	_ = agentsystemd.NotifyStatus(handover.StatusActive)
+	// What runs once per pool runs in the active agent alone: a drain ends it
+	// while what was accepted is still served.
+	loops := untilDrained(ctx, drainRequested)
+	var draining *handover.Lock
+	defer func() { _ = draining.Release() }()
+	lifecycle := Lifecycle{
+		Drain:   drainRequested,
+		Sockets: sockets,
+		StoppedAccepting: func() {
+			if channelListener != nil {
+				_ = channelListener.Close()
+			}
+			// Held until this process exits, from before the agent taking
+			// over can accept: it sweeps nothing this one still holds until
+			// then (sweepsAfterDrain).
+			var markErr error
+			if draining, markErr = handover.Mark(ctx, root.System(handover.AgentDraining)); markErr != nil {
+				logger.Warn("pool agent draining unmarked", "error", markErr)
+			}
+			_ = active.Release()
+			_ = agentsystemd.NotifyStatus(handover.StatusDraining)
+			logger.Info("pool agent stopped accepting; the agent that took over serves what arrives")
+			if channel != nil {
+				go func() {
+					wait, cancel := context.WithTimeout(ctx, channelHandOver)
+					defer cancel()
+					channel.Drain(wait)
+				}()
+			}
+		},
+	}
+	if channel != nil && !tookOver {
 		if err := awaitControlPlaneChannel(ctx, logger, channel); err != nil {
 			return err
 		}
@@ -231,11 +294,27 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	// not hold — a restored database, a recreated pool row — which the
 	// pool's maker mends by enrolling the box again, as a repair does; this
 	// agent fails its start and systemd tries it again.
-	if err := startStatusReporter(ctx, logger, root, bootstrap, identity, client, status, statusReportInterval); err != nil {
-		return err
+	//
+	// An agent that took over from one draining makes it once the server has
+	// dialed it a channel, which it does once the draining agent closes its
+	// own; meanwhile it serves (serveTakingOver).
+	firstReport := func() error {
+		if channel != nil && tookOver {
+			if err := awaitControlPlaneChannel(ctx, logger, channel); err != nil {
+				return err
+			}
+		}
+		if err := startStatusReporter(loops, logger, root, bootstrap, identity, client, status, statusReportInterval); err != nil {
+			return err
+		}
+		startResolveTokenRefresher(loops, logger, root, bootstrap, identity)
+		return nil
 	}
-
-	startResolveTokenRefresher(ctx, logger, root, bootstrap, identity)
+	if !tookOver {
+		if err := firstReport(); err != nil {
+			return err
+		}
+	}
 
 	// The bundles its sandboxes are pinned to, fetched from the control plane
 	// as this pool and over the transport its URL names (ADR 26-10-16-423 §13).
@@ -262,21 +341,27 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("proxy audit client: %w", err)
 	}
+	var runtime sandboxruntime.Runtime
 	if machines != nil {
-		runtime, err := newMachineSandboxRuntime(root, bootstrap, hop, machines, identity.PrivateKey, assets, client, audit)
+		if runtime, err = newMachineSandboxRuntime(root, bootstrap, hop, machines, identity.PrivateKey, assets, client, audit); err != nil {
+			return err
+		}
+	} else {
+		docker, err := newDockerSandboxRuntime(root, bootstrap, hop, identity.PrivateKey, assets, client, audit)
 		if err != nil {
 			return err
 		}
-		return Serve(ctx, logger, root, bootstrap, identity, runtime, client, assets, front, audit)
+		// Image reclamation is the Docker pool's alone: the images are its
+		// daemon's, and a runtime that boots no OCI image has none to reclaim
+		// (ADR 0040).
+		go sweepsAfterDrain(loops, logger, root, func() { docker.WatchImages(loops, logger) })
+		runtime = docker
 	}
-	runtime, err := newDockerSandboxRuntime(root, bootstrap, hop, identity.PrivateKey, assets, client, audit)
-	if err != nil {
-		return err
-	}
-	// Image reclamation is the Docker pool's alone: the images are its daemon's,
-	// and a runtime that boots no OCI image has none to reclaim (ADR 0040).
-	go runtime.WatchImages(ctx, logger)
-	return Serve(ctx, logger, root, bootstrap, identity, runtime, client, assets, front, audit)
+	// One call for either runtime: the first report is made once, here or
+	// before (firstReport).
+	return serveTakingOver(ctx, tookOver, firstReport, func(ctx context.Context) error {
+		return Serve(ctx, logger, root, bootstrap, identity, runtime, client, assets, front, audit, lifecycle)
+	})
 }
 
 // newDockerSandboxRuntime is this pool's runtime: sandboxes as containers on
@@ -534,7 +619,11 @@ func ExecSystemdChildIfRequested() error {
 // A nil reporter runs no loop that reports to the control plane: no state
 // channel, tree reaper, status poll or resource report. A nil assets serves
 // no assets.discobox.internal.
-func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, identity *Identity, runtime sandboxruntime.Runtime, reporter SandboxStateClient, assets *assetcache.Cache, front *poolserver.Front, audit poolserver.AuditReader) error {
+func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, identity *Identity, runtime sandboxruntime.Runtime, reporter SandboxStateClient, assets *assetcache.Cache, front *poolserver.Front, audit poolserver.AuditReader, lifecycle Lifecycle) error {
+	// The loops are this pool's alone, so they end once it drains; what the
+	// listeners accepted is still served, on ctx.
+	serving := ctx
+	ctx = untilDrained(ctx, lifecycle.Drain)
 	if reporter != nil {
 		if identity == nil {
 			return errors.New("the pool's identity is required for sandbox state reporting")
@@ -625,12 +714,14 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 		// The control plane, not this pool, decides which sandboxes exist, so the
 		// tree reaper runs only where it can be asked (ADR 26-10-01-876). An agent
 		// with no channel to it reaps no sandbox tree.
-		go runtime.WatchSandboxVolumes(ctx, logger, func(listCtx context.Context) ([]string, error) {
-			return reporter.ListHeldSandboxes(listCtx, HeldSandboxesRequest{
-				ControlPlaneURL: bootstrap.ControlPlaneURL,
-				ProjectID:       bootstrap.ProjectID,
-				PoolID:          bootstrap.PoolID,
-				PrivateKey:      identity.PrivateKey,
+		go sweepsAfterDrain(ctx, logger, root, func() {
+			runtime.WatchSandboxVolumes(ctx, logger, func(listCtx context.Context) ([]string, error) {
+				return reporter.ListHeldSandboxes(listCtx, HeldSandboxesRequest{
+					ControlPlaneURL: bootstrap.ControlPlaneURL,
+					ProjectID:       bootstrap.ProjectID,
+					PoolID:          bootstrap.PoolID,
+					PrivateKey:      identity.PrivateKey,
+				})
 			})
 		})
 		if poller != nil {
@@ -642,7 +733,7 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 			}
 		}
 	}
-	go runtime.WatchProxyMaterial(ctx, logger)
+	go sweepsAfterDrain(ctx, logger, root, func() { runtime.WatchProxyMaterial(ctx, logger) })
 	// The git-origins route verifies the tokens this pool issues its sandboxes
 	// against its own identity key (ADR 0126 §4).
 	var sandboxTokenKey ed25519.PublicKey
@@ -656,10 +747,12 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 	var originListener net.Listener
 	var err error
 	if sandboxTokenKey != nil {
-		var listenConfig net.ListenConfig
-		originListener, err = listenConfig.Listen(ctx, "tcp", proxyagent.OriginsListenAddress)
-		if err != nil {
-			return fmt.Errorf("listen for sandbox origins on %s: %w", proxyagent.OriginsListenAddress, err)
+		var ok bool
+		if originListener, ok = lifecycle.Sockets[poolunits.OriginsSocket]; !ok {
+			var listenConfig net.ListenConfig
+			if originListener, err = listenConfig.Listen(ctx, "tcp", proxyagent.OriginsListenAddress); err != nil {
+				return fmt.Errorf("listen for sandbox origins on %s: %w", proxyagent.OriginsListenAddress, err)
+			}
 		}
 		defer func() { _ = originListener.Close() }()
 	}
@@ -670,12 +763,15 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 	var assetHandler http.Handler
 	if assets != nil {
 		socket := root.ProxyAssetsSocket(bootstrap.ProjectID, bootstrap.PoolID)
-		if assetListener, err = listenProxySocket(socket); err != nil {
-			return fmt.Errorf("listen for sandbox assets on %s: %w", socket, err)
+		var ok bool
+		if assetListener, ok = lifecycle.Sockets[poolunits.AssetsSocket]; !ok {
+			if assetListener, err = listenProxySocket(socket); err != nil {
+				return fmt.Errorf("listen for sandbox assets on %s: %w", socket, err)
+			}
 		}
 		defer func() { _ = assetListener.Close() }()
 		assetHandler = assets.Handler()
-		assets.StartSweeping(ctx, logger)
+		go sweepsAfterDrain(ctx, logger, root, func() { assets.StartSweeping(ctx, logger) })
 	}
 	// A machine pool reached only through an edge is reached at this
 	// listener alone, so its sandboxes' tunnels arrive here too (ADR
@@ -684,7 +780,7 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 	if bootstrap.reachedThroughEdge() {
 		tunnels = proxyagent.TunnelForwarder()
 	}
-	return poolserver.Serve(ctx, logger, poolserver.Config{
+	return poolserver.Serve(serving, logger, poolserver.Config{
 		Identity: poolserver.Identity{
 			ProjectID: bootstrap.ProjectID,
 			PoolID:    bootstrap.PoolID,
@@ -699,6 +795,8 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 		AssetListener:         assetListener,
 		Assets:                assetHandler,
 		Tunnels:               tunnels,
+		Drain:                 lifecycle.Drain,
+		StoppedAccepting:      lifecycle.StoppedAccepting,
 	})
 }
 
@@ -805,16 +903,27 @@ func RunBuildkitMediator(ctx context.Context, logger *slog.Logger) error {
 	}
 	defer mediator.Close()
 
-	var listenConfig net.ListenConfig
-	listener, err := listenConfig.Listen(ctx, "tcp", buildkitagent.MediatorListen)
+	// The sockets systemd holds for the mediator queue a build that arrives
+	// while it restarts, rather than refusing it (ADR 26-11-26-536 §2); one
+	// not passed is bound here.
+	sockets, err := handover.Listeners()
 	if err != nil {
-		return fmt.Errorf("listen on %s: %w", buildkitagent.MediatorListen, err)
+		return err
+	}
+	listener, ok := sockets[poolunits.MediatorSocket]
+	if !ok {
+		var listenConfig net.ListenConfig
+		if listener, err = listenConfig.Listen(ctx, "tcp", buildkitagent.MediatorListen); err != nil {
+			return fmt.Errorf("listen on %s: %w", buildkitagent.MediatorListen, err)
+		}
 	}
 	socket := layout.Container().ProxyRegistrySocket(projectID, poolID)
-	frontListener, err := listenProxySocket(socket)
-	if err != nil {
-		_ = listener.Close()
-		return fmt.Errorf("listen for the registry front on %s: %w", socket, err)
+	frontListener, ok := sockets[poolunits.RegistryFrontSocket]
+	if !ok {
+		if frontListener, err = listenProxySocket(socket); err != nil {
+			_ = listener.Close()
+			return fmt.Errorf("listen for the registry front on %s: %w", socket, err)
+		}
 	}
 	registryTLS, err := buildkitagent.RegistryClientTLS(layout.Container(), projectID, poolID)
 	if err != nil {

@@ -855,8 +855,8 @@ const startedContainerLookTimeout = 5 * time.Second
 // retries, so that a box with a healthcheck is judged by it.
 const agentStartTimeout = time.Minute
 
-// waitPoolAgentActive waits, until ctx ends, for the box's agent unit to be
-// active. The unit is Type=notify, so active is the agent having written what
+// waitPoolAgentActive waits, until ctx ends, for the box's agent unit, in
+// either slot (bundle.AgentUnits), to be active. The unit is Type=notify, so active is the agent having written what
 // its proxy and builder read and said it is ready. An agent that fails is
 // restarted by its unit for ever and reads activating, so only ctx, or the
 // container stopping, ends a wait for one that never comes up.
@@ -865,10 +865,10 @@ func (e *Engine) waitPoolAgentActive(ctx context.Context, cli *client.Client, id
 	// that ends on the deadline says nothing about the agent.
 	last := "not asked yet"
 	notActive := func() error {
-		return fmt.Errorf("%s is not active (%s): %w", bundle.AgentUnit, last, ctx.Err())
+		return fmt.Errorf("the pool agent is not active (%s): %w", last, ctx.Err())
 	}
 	for {
-		code, err := ExecExitCode(ctx, cli, id, client.ExecCreateOptions{Cmd: []string{"systemctl", "is-active", "--quiet", bundle.AgentUnit}})
+		code, err := ExecExitCode(ctx, cli, id, client.ExecCreateOptions{Cmd: append([]string{"systemctl", "is-active", "--quiet"}, bundle.AgentUnits()...)})
 		if ctx.Err() != nil {
 			return notActive()
 		}
@@ -1000,12 +1000,11 @@ func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, 
 	if err := begin(ctx); err != nil {
 		return recorded, err
 	}
-	// Recorded before the apply, which with a moved placement's restart may
-	// restart the running agent: the new agent's first report lands before
-	// either returns (ADR 26-11-15-602 §1).
+	// Recorded before the apply, whose units restart the running agent when
+	// its bundles or placement moved (ADR 26-11-15-602 §1).
 	sandbox.ReportAgentStarted(ctx, time.Now(), sandbox.AgentStartInPlace)
 	guest := provisioner.ContainerGuest{Client: cli, Container: containerID, Env: pool.RuntimeOutbound.Environment()}
-	record, err := poolruntime.ProvisionBox(ctx, guest, maker, placement)
+	record, err := poolruntime.ProvisionBox(ctx, guest, maker, placement, recorded)
 	if err != nil {
 		slog.WarnContext(ctx, "keeping the pool's box as it is: its moved bundles did not apply", "pool", pool.ID, "error", err)
 		sandbox.ReportBoxKept(ctx, fmt.Errorf("its moved bundles did not apply: %w", err))
@@ -1015,16 +1014,16 @@ func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, 
 		return recorded, nil
 	}
 	steps.Step(ctx, "provisioned the pool's box in place")
-	if recorded.Placement != record.Placement {
-		if err := poolruntime.RestartPoolUnits(ctx, guest, recorded.OutboundRevision != record.OutboundRevision); err != nil {
-			slog.WarnContext(ctx, "the pool's agent did not restart on its new placement; the next reconcile places it again", "pool", pool.ID, "error", err)
-			sandbox.ReportBoxKept(ctx, fmt.Errorf("its agent did not restart on its new placement: %w", err))
+	if recorded.OutboundRevision != record.OutboundRevision {
+		if err := poolruntime.RestartPoolBuilder(ctx, guest); err != nil {
+			slog.WarnContext(ctx, "the pool's builder did not restart on its new outbound routing; the next reconcile places it again", "pool", pool.ID, "error", err)
+			sandbox.ReportBoxKept(ctx, fmt.Errorf("its builder did not restart on its new outbound routing: %w", err))
 			if pool.OutboundStatus != nil && pool.OutboundAppliedRevision != pool.Outbound.Revision() {
 				return recorded, fmt.Errorf("%w: %w", sandbox.ErrPoolConfigApply, err)
 			}
 			return recorded, nil
 		}
-		steps.Step(ctx, "restarted the pool's agent on its new placement")
+		steps.Step(ctx, "restarted the pool's builder on its new outbound routing")
 	}
 	if !pool.OutboundRestartRequired {
 		pool.OutboundAppliedRevision = pool.Outbound.Revision()
@@ -1218,7 +1217,7 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 		return nil, poolruntime.BoxRecord{}, err
 	}
 	steps.Step(ctx, "started the pool's container", "container", shortContainerID(created.ID))
-	record, err := poolruntime.ProvisionBox(startCtx, provisioner.ContainerGuest{Client: cli, Container: created.ID, Env: pool.RuntimeOutbound.Environment()}, maker, poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: e.poolPolicyEnv(), Outbound: pool.RuntimeOutbound})
+	record, err := poolruntime.ProvisionBox(startCtx, provisioner.ContainerGuest{Client: cli, Container: created.ID, Env: pool.RuntimeOutbound.Environment()}, maker, poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: e.poolPolicyEnv(), Outbound: pool.RuntimeOutbound}, poolruntime.BoxRecord{})
 	if err != nil {
 		return nil, poolruntime.BoxRecord{}, err
 	}

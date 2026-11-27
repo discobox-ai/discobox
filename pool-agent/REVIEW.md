@@ -490,12 +490,13 @@ replaced container starts with none.
 
 The pool bundle's units (`bundle/features/*/systemd`) run what its features
 link from the bundle's stable tree. A unit that reads a file the agent renders
-is `After=` the agent's Type=notify unit: systemd starts it no sooner than
-its configuration is written. Builder units use `Wants=`, never `Requires=`,
-`BindsTo=` or `PartOf=` on the agent: an agent-only restart must leave the
-whole builder graph running, or the mediator's ten-minute drain can hold the
-agent and egress proxy down. Explicit builder upgrades still restart the
-builder units and drain the mediator.
+is `After=` the agent's Type=notify unit in both slots: systemd starts it no
+sooner than its configuration is written. Builder units never `Requires=`,
+`BindsTo=`, `PartOf=` or `Wants=` an agent's unit: an agent that restarts or
+drains must leave the whole builder graph running, or the mediator's
+ten-minute drain can hold the agent and egress proxy down, and a want would
+start a slot the pool does not run. Explicit builder upgrades still restart
+the builder units and drain the mediator.
 
 Install and reload `pool-builder-units` before `pool-agent` runs: an existing
 pool still has the old Requires graph until that reload. Unit upgrades drain
@@ -503,9 +504,10 @@ before the agent restart while egress remains available. Only `pool-builder`
 enables the units, after configuration and binaries exist.
 
 A feature's binary moves under its stable link without any step's definition
-moving, so nothing would restart what runs it: each feature's `restart` step
-names its binaries as `inputs`, and a new bundle restarts exactly what it
-changed. A step added that lays a binary needs it there too.
+moving, so nothing would restart what runs it: the builder's `restart` step
+and the agent's `units` step name their binaries as `inputs`, and a new
+bundle restarts, or hands over, exactly what it changed. A step added that
+lays a binary needs it there too.
 
 - Bound incomplete Git stderr lines as well as completed error messages. A
   forge controls sideband text; a line without a newline must not grow the
@@ -987,6 +989,54 @@ resource report's 30s deadline on every pass (#1686). `imagereap`'s
 `imageReclaimTimeout`, which `clearSnapshots` shares: it filters by its reclaim
 label alone because its images span several repositories. That is known debt
 tracked in #1699, not a pattern to copy.
+
+## A handover
+
+- **A listener the agent, proxy or mediator serves is a socket systemd
+  holds.** Add it to `poolSockets` (`units.go`) under a name of `poolunits`,
+  take it from `handover.Listeners` by that name, and bind only when it was
+  not passed. Why: a listener a process binds itself is one a new process
+  beside it cannot serve, so a handover cuts it, and a restart refuses what
+  arrives while it is down (ADR 26-11-26-536 §4).
+- **What runs once per pool runs on the loops context** (`untilDrained`):
+  a reporter, a poll, a reaper, a sweep. Why: a draining agent runs none of
+  them, or two agents report and reap at once.
+- **A loop that removes what its process does not hold starts through
+  `sweepsAfterDrain`** (a proxy's, behind `SweepGate`). Why: the first
+  handover on a live pool had the new agent's image sweep remove the
+  draining agent's snapshot build container mid-build, which then recorded
+  the build as failed.
+- **A draining serve treats its listener closing as a drain**, not a
+  failure: it waits out what it accepted and returns nil. Close its
+  listener, never cancel its context, to stop it accepting: the context is
+  the quick stop's (`SIGTERM`).
+- **`units apply` never stops the mediator while the slots are down.** Its
+  stop drains builds for up to ten minutes (`buildkitagent.BuildDrain`). The
+  slots' sockets are bound again first, and the mediator's only once the slot
+  serves. Why: the first draft stopped both in one call, which on a pool's
+  first apply with slots held its egress and agent down for a build's drain.
+- **Every slot socket is stopped before the slots, when any of them moves,
+  and `units start` does nothing while an apply holds the units' lock.** Why:
+  traffic on a socket nothing serves starts `units start`, which would start
+  the slot on a socket about to move, or wait on the apply while systemd
+  refuses to start the sockets beside it.
+- **The pool's maker reaches a bundle from before slots too.** It runs the
+  feature's units step only where the bundle has one (`unitsCommand`), and
+  says whether the box hands over in the environment, never the bootstrap
+  ("Bootstrap fields reach older agents").
+- **A slot's process exits with `handover.DrainedExitCode` after a drain, and
+  only then.** The units restart every other exit, a clean one included
+  (`Restart=always`, `RestartPreventExitStatus=`). Why: `Restart=on-failure`
+  left an agent that exited 0 for any other reason down, and nothing started
+  one whose listener systemd does not hold.
+- **A standby says it is ready only once nothing before serving can fail.**
+  Build its listener, channel and front before `NotifyReady`; after the lock,
+  only start serving them. Why: the old slot is told to drain on that
+  readiness, and a standby that then fails leaves only `units apply`'s
+  rollback, which cuts what the old one carried.
+- **Nothing but `units apply` signals a slot**, and only to drain once the
+  new slot is up. Why: a drain lets go of the active lock, and a slot that
+  drains with no standby beside it leaves the queue to wait for a start.
 
 ## Locks across processes
 

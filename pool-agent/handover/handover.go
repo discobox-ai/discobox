@@ -1,11 +1,18 @@
-// Package handover holds what processes of a pool share to exclude each
-// other (ADR 26-11-26-536 §4): locks, across processes and within one, and
-// marks one holds that another can see.
+// Package handover is how a pool's agent and its proxy give way to new
+// processes beside them without cutting what they serve (ADR 26-11-26-536
+// §§3–4).
 //
-// A lock is an open file description lock (fcntl(2) F_OFD_SETLK) on a file of
-// the pool's own: each open of the file is its own holder, in one process or
-// several. A lock is asked about without taking it (Held), so probes never
-// see each other.
+// systemd holds every listening socket (the pool bundle's socket units), and
+// passes the same sockets to each process that serves them (Listeners). Of
+// the processes holding them, exactly one is active (Active): it accepts, and
+// runs everything that must run once per pool. A new process starts as a
+// standby, and becomes active once the old one has stopped accepting and let
+// go of the active lock. The old one drains (DrainRequested): it finishes what
+// it holds, up to DrainBound, and exits.
+//
+// Nothing here decides whether a pool hands over or restarts. That is the
+// pool's units' (poolunits), which start the idle slot beside the running one
+// and signal the old one to drain, or restart the running one as before.
 package handover
 
 import (
@@ -14,6 +21,46 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+)
+
+// DrainBound is how long a draining process carries what it holds before it
+// cuts what is left and exits (ADR 26-11-26-536 §3). It is fixed, not a
+// provider's setting.
+const DrainBound = 30 * time.Minute
+
+// ErrDrained is what a process that drained returns, which its main exits
+// with DrainedExitCode for: the one exit its unit does not restart
+// (RestartPreventExitStatus=), since the process that took over serves. Any
+// other exit, a clean one included, is restarted.
+var ErrDrained = errors.New("drained: the process that took over serves")
+
+// DrainedExitCode is the exit status of a process that drained, which the
+// slots' units name (RestartPreventExitStatus=, SuccessExitStatus=).
+const DrainedExitCode = 75
+
+// The STATUS= a process tells systemd it is in, which poolunits reads to know
+// a new process has taken over (systemctl show -P StatusText).
+const (
+	StatusStandby  = "standby"
+	StatusActive   = "active"
+	StatusDraining = "draining"
+)
+
+// The active locks under /run/discobox: one for the agent, one for the proxy.
+// Each is held by the one process of its kind that accepts.
+const (
+	AgentLock = "/run/discobox/handover/pool-agent.active"
+	ProxyLock = "/run/discobox/handover/pool-proxy.active"
+)
+
+// The draining marks: a process that drains holds its kind's (Mark) from
+// before it lets go of the active lock until it exits. The process that took
+// over starts nothing that sweeps the pool's shared state until it is free
+// (AwaitFree): a sweep judges what to remove by what its own process is doing,
+// and would remove what the draining one still is.
+const (
+	AgentDraining = "/run/discobox/handover/pool-agent.draining"
+	ProxyDraining = "/run/discobox/handover/pool-proxy.draining"
 )
 
 // lockPoll is how often a wait for a lock held elsewhere looks again. A

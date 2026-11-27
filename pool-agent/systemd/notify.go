@@ -15,6 +15,17 @@ const notifySocketEnv = "NOTIFY_SOCKET"
 // process systemd does not supervise that way is given no socket, and this
 // does nothing.
 func NotifyReady() error {
+	return notify("READY=1")
+}
+
+// NotifyStatus tells systemd the status this process is in, which `systemctl
+// show -P StatusText` reads back: how a pool's units see a new agent or proxy
+// take over (handover.StatusActive). Without a socket it does nothing.
+func NotifyStatus(status string) error {
+	return notify("STATUS=" + status)
+}
+
+func notify(message string) error {
 	socket := os.Getenv(notifySocketEnv)
 	if socket == "" {
 		return nil
@@ -29,7 +40,7 @@ func NotifyReady() error {
 		return fmt.Errorf("dial %s: %w", notifySocketEnv, err)
 	}
 	defer func() { _ = conn.Close() }()
-	if _, err := conn.Write([]byte("READY=1")); err != nil {
+	if _, err := conn.Write([]byte(message)); err != nil {
 		return fmt.Errorf("write %s: %w", notifySocketEnv, err)
 	}
 	return nil

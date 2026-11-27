@@ -3,8 +3,10 @@ Description=Discobox Pool Build Registry
 Documentation=https://github.com/discobox-ai/discobox
 # Its configuration is rendered by the pool agent before it reports itself
 # started (Type=notify there).
-Wants=discobox-pool-agent.service
-After=network-online.target discobox-pool-agent.service
+# Ordered after the agent of either slot, which renders this unit's
+# configuration; never wanting one, which would start a slot the pool does
+# not run (bundle.Slots).
+After=network-online.target discobox-pool-agent@a.service discobox-pool-agent@b.service
 Wants=network-online.target
 # Retried for as long as the box is a pool's, as the agent is: a load that
 # fails at boot (no default route yet) must not leave it down for good.

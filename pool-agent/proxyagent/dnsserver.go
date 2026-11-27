@@ -36,24 +36,22 @@ const (
 // only to hand it to the container runtime (ADR 26-10-08-127 §4).
 var SandboxDNSAddress = netip.MustParseAddr(sandboxconfig.SandboxDNSAddress)
 
-// serveDNS answers sandboxes' DNS until ctx is done. The upstream is this
-// container's own resolver, which reaches the outside; every query is audited
-// into server's trail, beside the sandbox's HTTP.
-func serveDNS(ctx context.Context, logger *slog.Logger, bundle *proxy.CertificateBundle, server *proxy.Server) error {
+// serveDNS answers sandboxes' DNS on tcp until ctx is done, or tcp is closed,
+// which a drain does: then it answers the connections it accepted until they
+// end. The upstream is this container's own resolver, which reaches the
+// outside; every query is audited into server's trail, beside the sandbox's
+// HTTP.
+func serveDNS(ctx context.Context, logger *slog.Logger, bundle *proxy.CertificateBundle, server *proxy.Server, tcp net.Listener) error {
 	upstream, err := dnsforward.SystemUpstream("/etc/resolv.conf")
 	if err != nil {
+		_ = tcp.Close()
 		return fmt.Errorf("find the pool's resolver: %w", err)
-	}
-	var listenConfig net.ListenConfig
-	tcp, err := listenConfig.Listen(ctx, "tcp", DNSListenAddress)
-	if err != nil {
-		return err
 	}
 	logger.Info("pool sandbox dns serving", "addr", tcp.Addr(), "upstream", upstream)
 	dns := dnsforward.New(logger, upstream, server.RecordDNS)
 	dns.ExemptSource(TunnelSource)
 	dns.Serve(ctx, tls.NewListener(tcp, sandboxTLSConfig(bundle)))
-	return nil
+	return dns.Wait(ctx)
 }
 
 // sandboxTLSConfig is the server side of every mTLS endpoint the pool offers

@@ -34,6 +34,7 @@ import (
 
 	"golang.org/x/net/dns/dnsmessage"
 
+	"github.com/discobox-ai/discobox/pool-agent/handover"
 	"github.com/discobox-ai/discobox/proxy"
 )
 
@@ -71,6 +72,8 @@ type Server struct {
 	// uncapped is a source whose connections do not count toward
 	// maxConnsPerSource (ExemptSource); the zero Addr is none.
 	uncapped netip.Addr
+	// conns counts the connections being served (Wait).
+	conns handover.InFlight
 
 	mu      sync.Mutex
 	total   int
@@ -130,11 +133,21 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) {
 			_ = conn.Close()
 			continue
 		}
+		served := s.conns.Begin()
 		go func() {
+			defer served()
 			defer s.releaseSource(source)
 			s.serveConn(ctx, conn)
 		}()
 	}
+}
+
+// Wait returns once every connection Serve accepted has ended, or when ctx
+// ends: what a draining pool proxy waits out once it has closed the listener
+// (ADR 26-11-26-536 §3). A sandbox's stub keeps its connection while it
+// queries, and redials once it closes.
+func (s *Server) Wait(ctx context.Context) error {
+	return s.conns.Wait(ctx)
 }
 
 func remoteAddr(conn net.Conn) netip.Addr {

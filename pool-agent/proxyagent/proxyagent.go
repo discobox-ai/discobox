@@ -13,11 +13,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/pooloutbound"
@@ -25,6 +27,9 @@ import (
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/wire"
+	"github.com/discobox-ai/discobox/pool-agent/handover"
+	"github.com/discobox-ai/discobox/pool-agent/poolunits"
+	agentsystemd "github.com/discobox-ai/discobox/pool-agent/systemd"
 	"github.com/discobox-ai/discobox/proxy"
 )
 
@@ -247,6 +252,16 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 	if projectID == "" || poolID == "" {
 		return fmt.Errorf("proxy unit environment names no pool (%s/%s)", envProjectID, envPoolID)
 	}
+	// Asked for before anything slow, as the agent does: a drain asked of
+	// this proxy before is lost.
+	drainRequested := handover.DrainRequested(ctx)
+	// The sockets systemd holds for the pool, which a proxy taking over from
+	// this one serves too (ADR 26-11-26-536 §4); each one not passed is bound
+	// here.
+	sockets, err := handover.Listeners()
+	if err != nil {
+		return err
+	}
 	bundle, err := PrepareBundle(root, projectID, poolID)
 	if err != nil {
 		return fmt.Errorf("prepare proxy certificates: %w", err)
@@ -302,6 +317,17 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 	if err := ConfigureAuditSpoolBudget(&cfg.Recording); err != nil {
 		return err
 	}
+	// A proxy that is active as this one starts is one this one takes over
+	// from, which drains while it writes the same database and trees, its
+	// open streams its own to know of; so is one draining already, from a
+	// handover this proxy restarted in the middle of. Nothing of them is
+	// swept, and no column its schema names is dropped, until it has exited
+	// (ADR 26-11-26-536 §3). Alone, this proxy does both from the start.
+	if anotherProxyWrites(root) {
+		cfg.Recording.SweepGate = func(ctx context.Context) error {
+			return handover.AwaitFree(ctx, root.System(handover.ProxyDraining))
+		}
+	}
 	// The control API the pool agent relays audit reads through (ADR 0130
 	// §4) and purges a deleted sandbox's audit through (ADR 26-11-14-896 §5). The agent prepared its key before systemd started this
 	// unit; this only reads it.
@@ -345,53 +371,173 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 		logger.Warn("host trusts", "error", err)
 	})
 	go trusts.run(ctx)
-	errCh := make(chan error, 3)
-	go func() {
-		logger.Info("pool proxy serving", "addr", ListenAddress)
-		errCh <- server.ListenAndServe()
-	}()
-	if cfg.Control.ListenAddress != "" {
-		go func() {
-			logger.Info("pool proxy control API serving", "addr", cfg.Control.ListenAddress)
-			// Logged, not sent to errCh: the control API only serves audit
-			// reads, and its failing must not stop the proxy every sandbox's
-			// egress goes through.
-			if err := server.ListenAndServeControl(ctx); err != nil {
-				logger.Warn("pool proxy control API stopped", "error", err)
-			}
-		}()
-	}
-	go func() {
-		errCh <- serveCredentials(ctx, logger, bundle, controlPlane, root.ProxySecretsFile(projectID, poolID), trusts, server)
-	}()
-	go func() {
-		// Logged, not sent to errCh, for the control API's reason: a sandbox
-		// that cannot resolve names can still reach everything through the
-		// proxy, which must not stop with it.
-		if err := serveDNS(ctx, logger, bundle, server); err != nil {
-			logger.Warn("pool sandbox dns stopped", "error", err)
-		}
-	}()
-	// A pool behind an edge is reached only through the tunnels, so their
-	// listener stops the unit with it, as the proxy's does.
 	tunnelURL, err := ConfiguredTunnelURL()
 	if err != nil {
 		_ = server.Close()
 		return err
 	}
-	if tunnelURL != "" {
-		go func() {
-			errCh <- serveTunnels(ctx, logger)
-		}()
+	listeners, err := proxyListeners(ctx, sockets, cfg.Control.ListenAddress != "", tunnelURL != "")
+	if err != nil {
+		_ = server.Close()
+		return err
+	}
+
+	// Ready as a standby: prepared, and accepting nothing until the proxy
+	// before this one, if one is draining, has stopped accepting (ADR
+	// 26-11-26-536 §3).
+	if err := agentsystemd.NotifyReady(); err != nil {
+		_ = server.Close()
+		return fmt.Errorf("tell systemd the proxy has started: %w", err)
+	}
+	_ = agentsystemd.NotifyStatus(handover.StatusStandby)
+	active, err := handover.Acquire(ctx, root.System(handover.ProxyLock))
+	if err != nil {
+		_ = server.Close()
+		return err
+	}
+	defer func() { _ = active.Release() }()
+	_ = agentsystemd.NotifyStatus(handover.StatusActive)
+
+	// Each service serves until ctx ends, or a drain closes its listener and
+	// it has served what that listener accepted. One whose failure stops the
+	// unit says so on failed: every sandbox's egress, its credentials and an
+	// edge's tunnels go through those. The control API serves audit reads
+	// and DNS can be done without, so their failure is only logged.
+	var services sync.WaitGroup
+	failed := make(chan error, 3)
+	critical := func(serve func() error) {
+		services.Go(func() {
+			if err := serve(); err != nil && ctx.Err() == nil {
+				failed <- err
+			}
+		})
+	}
+	logged := func(what string, serve func() error) {
+		services.Go(func() {
+			if err := serve(); err != nil && ctx.Err() == nil {
+				logger.Warn(what+" stopped", "error", err)
+			}
+		})
+	}
+	critical(func() error {
+		logger.Info("pool proxy serving", "addr", ListenAddress)
+		return server.Serve(listeners.proxy)
+	})
+	if listeners.control != nil {
+		logged("pool proxy control API", func() error {
+			logger.Info("pool proxy control API serving", "addr", cfg.Control.ListenAddress)
+			return server.ServeControl(ctx, listeners.control)
+		})
+	}
+	critical(func() error {
+		return serveCredentialsOn(ctx, logger, listeners.credentials, bundle, controlPlane, root.ProxySecretsFile(projectID, poolID), trusts, server)
+	})
+	// A sandbox that cannot resolve names can still reach everything through
+	// the proxy, which must not stop with it.
+	logged("pool sandbox dns", func() error {
+		return serveDNS(ctx, logger, bundle, server, listeners.dns)
+	})
+	// A pool behind an edge is reached only through the tunnels, so their
+	// listener stops the unit with it, as the proxy's does.
+	if listeners.tunnels != nil {
+		critical(func() error { return serveTunnels(ctx, logger, listeners.tunnels) })
 	}
 	select {
 	case <-ctx.Done():
 		_ = server.Close()
 		return ctx.Err()
-	case err := <-errCh:
+	case err := <-failed:
 		_ = server.Close()
 		return err
+	case <-drainRequested:
 	}
+
+	// A drain: stop accepting everywhere, let the proxy that took over
+	// accept, and serve what was accepted to its end, up to the bound.
+	server.StopAccepting()
+	listeners.close()
+	// Held until this process exits, from before the proxy taking over can
+	// accept: it sweeps nothing this one still writes until then.
+	draining, err := handover.Mark(ctx, root.System(handover.ProxyDraining))
+	if err != nil {
+		logger.Warn("pool proxy draining unmarked", "error", err)
+	}
+	defer func() { _ = draining.Release() }()
+	_ = active.Release()
+	_ = agentsystemd.NotifyStatus(handover.StatusDraining)
+	logger.Info("pool proxy draining", "bound", handover.DrainBound)
+	bounded, cancel := context.WithTimeout(ctx, handover.DrainBound)
+	defer cancel()
+	if err := server.Drain(bounded); err != nil {
+		logger.Warn("pool proxy drain cut what was left", "error", err)
+	}
+	servicesDone := make(chan struct{})
+	go func() {
+		services.Wait()
+		close(servicesDone)
+	}()
+	select {
+	case <-servicesDone:
+	case <-bounded.Done():
+	}
+	logger.Info("pool proxy drained")
+	if err := server.Close(); err != nil {
+		return errors.Join(handover.ErrDrained, err)
+	}
+	return handover.ErrDrained
+}
+
+// proxyUnitListeners are the listeners the proxy unit serves.
+type proxyUnitListeners struct {
+	proxy, credentials, dns net.Listener
+	// control is nil without a control API, and tunnels without an edge.
+	control, tunnels net.Listener
+}
+
+// close closes every listener, which is how a drain stops each service
+// accepting: the sockets behind them are systemd's, and stay open for the
+// proxy taking over.
+func (l proxyUnitListeners) close() {
+	for _, listener := range []net.Listener{l.proxy, l.credentials, l.dns, l.control, l.tunnels} {
+		if listener != nil {
+			_ = listener.Close()
+		}
+	}
+}
+
+// proxyListeners are the proxy unit's listeners: each socket systemd passed
+// (handover.Listeners), or else one bound here.
+func proxyListeners(ctx context.Context, sockets map[string]net.Listener, control, tunnels bool) (proxyUnitListeners, error) {
+	var listeners proxyUnitListeners
+	listen := func(name, address string) (net.Listener, error) {
+		if listener, ok := sockets[name]; ok {
+			return listener, nil
+		}
+		var listenConfig net.ListenConfig
+		return listenConfig.Listen(ctx, "tcp", address)
+	}
+	for _, want := range []struct {
+		name, address string
+		into          *net.Listener
+		wanted        bool
+	}{
+		{poolunits.ProxySocket, ListenAddress, &listeners.proxy, true},
+		{poolunits.CredentialsSocket, CredentialsListenAddress, &listeners.credentials, true},
+		{poolunits.DNSSocket, DNSListenAddress, &listeners.dns, true},
+		{poolunits.ProxyControlSocket, ControlListenAddress, &listeners.control, control},
+		{poolunits.TunnelsSocket, TunnelListenAddress, &listeners.tunnels, tunnels},
+	} {
+		if !want.wanted {
+			continue
+		}
+		listener, err := listen(want.name, want.address)
+		if err != nil {
+			listeners.close()
+			return proxyUnitListeners{}, fmt.Errorf("listen on %s: %w", want.address, err)
+		}
+		*want.into = listener
+	}
+	return listeners, nil
 }
 
 // SandboxMaterial is what wires a sandbox to the pool proxy: the credential and
@@ -712,4 +858,16 @@ func SandboxAgentTLSConfig(root layout.Root, projectID, poolID, sandboxID string
 		return nil, fmt.Errorf("the pool's mTLS CA at %s holds no certificate", path)
 	}
 	return &tls.Config{RootCAs: roots, ServerName: sandboxconfig.AgentServerName(sandboxID), MinVersion: tls.VersionTLS12}, nil
+}
+
+// anotherProxyWrites reports whether a proxy other than this one, starting,
+// writes the pool's audit: one active, or one draining. One that cannot be
+// told counts as one that does.
+func anotherProxyWrites(root layout.Root) bool {
+	for _, path := range []string{handover.ProxyLock, handover.ProxyDraining} {
+		if held, err := handover.Held(root.System(path)); err != nil || held {
+			return true
+		}
+	}
+	return false
 }

@@ -9,9 +9,11 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/discobox-ai/discobox/pool-agent/cpmux"
+	"github.com/discobox-ai/discobox/pool-agent/handover"
 )
 
 // streamWait is how long a local connection waits for a channel when there is
@@ -33,6 +35,10 @@ type Channel struct {
 	// arrived is closed when a session is installed, and replaced by a fresh
 	// one, so a waiter wakes for each new session.
 	arrived chan struct{}
+	// forwarding counts the connections being spliced onto a session, and
+	// lastTraffic is when a byte last crossed one of them (unix nanoseconds).
+	forwarding  handover.InFlight
+	lastTraffic atomic.Int64
 }
 
 // New is the pool end of a channel for the pool whose key is poolKey, which
@@ -100,6 +106,46 @@ func (c *Channel) install(session *cpmux.Session) {
 	}
 }
 
+// drainQuiet is how long the connections forwarded onto a draining channel
+// must carry nothing before it is closed. Most of them are idle keep-alive
+// connections of the pool's own clients, which would otherwise hold it to
+// the bound; a call waiting longer than this on its answer is cut.
+const drainQuiet = 500 * time.Millisecond
+
+// Drain closes the channel once the connections already forwarded onto it
+// have ended, or have carried nothing for drainQuiet, or when ctx ends,
+// whichever is first: what a draining agent does once it has stopped
+// accepting its socket (ADR 26-11-26-536 §4). The server then dials a channel
+// again, which reaches the agent that took over, the only one still
+// accepting; a draining agent's own calls to the control plane reach it
+// through the socket that agent now serves. Until then, the agent that took
+// over and its proxy reach no control plane, so the drain is kept short.
+func (c *Channel) Drain(ctx context.Context) {
+	ticker := time.NewTicker(drainQuiet / 10)
+	defer ticker.Stop()
+	for {
+		idle, cancel := context.WithTimeout(ctx, drainQuiet/10)
+		err := c.forwarding.Wait(idle)
+		cancel()
+		if err == nil || time.Since(time.Unix(0, c.lastTraffic.Load())) >= drainQuiet {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			c.logger.Warn("closing the control-plane channel with connections still busy on it", "error", ctx.Err())
+		case <-ticker.C:
+			continue
+		}
+		break
+	}
+	c.mu.Lock()
+	session := c.session
+	c.mu.Unlock()
+	if session != nil {
+		_ = session.Close()
+	}
+}
+
 // Wait returns once a channel is open, or when ctx ends.
 func (c *Channel) Wait(ctx context.Context) error {
 	_, err := c.current(ctx)
@@ -141,6 +187,7 @@ func (c *Channel) Serve(ctx context.Context, listener net.Listener) error {
 }
 
 func (c *Channel) forward(ctx context.Context, conn net.Conn) {
+	defer c.forwarding.Begin()()
 	defer func() { _ = conn.Close() }()
 	wait, cancel := context.WithTimeout(ctx, streamWait)
 	session, err := c.current(wait)
@@ -156,5 +203,27 @@ func (c *Channel) forward(ctx context.Context, conn net.Conn) {
 		return
 	}
 	defer func() { _ = stream.Close() }()
-	cpmux.Splice(conn, stream)
+	cpmux.Splice(trafficConn{Conn: conn, last: &c.lastTraffic}, stream)
+}
+
+// trafficConn records when a byte last crossed conn, either way.
+type trafficConn struct {
+	net.Conn
+	last *atomic.Int64
+}
+
+func (t trafficConn) Read(p []byte) (int, error) {
+	n, err := t.Conn.Read(p)
+	if n > 0 {
+		t.last.Store(time.Now().UnixNano())
+	}
+	return n, err
+}
+
+func (t trafficConn) Write(p []byte) (int, error) {
+	n, err := t.Conn.Write(p)
+	if n > 0 {
+		t.last.Store(time.Now().UnixNano())
+	}
+	return n, err
 }

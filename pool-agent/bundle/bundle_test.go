@@ -4,10 +4,12 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
+	"github.com/discobox-ai/discobox/pool-agent/handover"
 	"github.com/discobox-ai/discobox/proxy"
 )
 
@@ -61,7 +63,7 @@ func TestThePoolBundleLoads(t *testing.T) {
 			t.Errorf("%s must wait for %s", feature.Name, dependency)
 		}
 	}
-	unit, err := os.ReadFile(filepath.Join("features", "pool-agent", "systemd", "discobox-pool-agent.service"))
+	unit, err := os.ReadFile(filepath.Join("features", "pool-agent", "systemd", AgentTemplate))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +78,7 @@ func TestThePoolBundleLoads(t *testing.T) {
 // into PID 1 by an outer sandbox. Keep the unit's opt-in aligned with the
 // upstream transports, including both cases and the trust needed for MITM.
 func TestPoolAgentInheritsUpstreamEnvironment(t *testing.T) {
-	unit, err := os.ReadFile(filepath.Join("features", "pool-agent", "systemd", "discobox-pool-agent.service"))
+	unit, err := os.ReadFile(filepath.Join("features", "pool-agent", "systemd", AgentTemplate))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,39 +102,32 @@ func TestPoolAgentInheritsUpstreamEnvironment(t *testing.T) {
 	}
 }
 
-// The units a maker restarts on a new bootstrap are the pool-agent feature's
-// own, and the agent's is the one that reads the bootstrap.
-func TestBootstrapUnitsAreTheFeaturesUnits(t *testing.T) {
-	for _, unit := range BootstrapUnits {
+// The slots' units are the pool-agent feature's templates, and the agent's is
+// the one that reads the bootstrap; the unit a socket starts is laid beside
+// them.
+func TestSlotUnitsAreTheFeaturesTemplates(t *testing.T) {
+	for _, slot := range Slots {
+		for unit, template := range map[string]string{AgentUnit(slot): AgentTemplate, ProxyUnit(slot): ProxyTemplate} {
+			if prefix, _, _ := strings.Cut(unit, "@"); !strings.HasPrefix(template, prefix+"@.") {
+				t.Errorf("%s is not an instance of %s", unit, template)
+			}
+		}
+	}
+	for _, unit := range []string{AgentTemplate, ProxyTemplate, UnitsService} {
 		data, err := os.ReadFile(filepath.Join("features", "pool-agent", "systemd", unit))
 		if err != nil {
-			t.Fatalf("bootstrap unit %s is not the pool-agent feature's: %v", unit, err)
+			t.Fatalf("%s is not the pool-agent feature's: %v", unit, err)
 		}
-		if unit == "discobox-pool-agent.service" && !strings.Contains(string(data), BootstrapFile) {
+		if unit == AgentTemplate && !strings.Contains(string(data), BootstrapFile) {
 			t.Fatalf("%s does not read %s", unit, BootstrapFile)
 		}
 	}
 }
 
-func TestAgentRestartDoesNotStopBuildMediator(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("features", "pool-builder-units", "systemd", "discobox-buildkit-mediator.service"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for line := range strings.SplitSeq(string(data), "\n") {
-		key, value, ok := strings.Cut(line, "=")
-		if !ok || (key != "Requires" && key != "BindsTo" && key != "PartOf") {
-			continue
-		}
-		for _, unit := range strings.Fields(value) {
-			if unit == "discobox-pool-agent.service" {
-				t.Errorf("mediator %s=%s propagates agent stop into its build drain, blocking agent/proxy restart", key, unit)
-			}
-		}
-	}
-}
-
-// Every path from the agent into the builder must leave builds running.
+// An agent that stops, drains or hands over leaves the builder running: no
+// builder unit binds itself to an agent's unit, or wants one, which would
+// start a slot the pool does not run. Each is ordered after the agent of
+// either slot, which renders its configuration.
 func TestAgentRestartLeavesBuilderRunning(t *testing.T) {
 	for _, name := range []string{"discobox-buildkit-mediator", "discobox-buildkitd", "discobox-registry"} {
 		t.Run(name, func(t *testing.T) {
@@ -140,31 +135,27 @@ func TestAgentRestartLeavesBuilderRunning(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			after := map[string]bool{}
 			for line := range strings.SplitSeq(string(data), "\n") {
 				key, value, ok := strings.Cut(line, "=")
 				if !ok {
 					continue
 				}
 				for _, unit := range strings.Fields(value) {
-					if unit != "discobox-pool-agent.service" {
+					if !strings.HasPrefix(unit, "discobox-pool-agent") {
 						continue
 					}
-					if key == "Requires" || key == "BindsTo" || key == "PartOf" {
-						t.Errorf("%s=%s propagates agent shutdown", key, unit)
+					switch key {
+					case "Requires", "BindsTo", "PartOf", "Wants", "Requisite":
+						t.Errorf("%s=%s ties the builder to an agent", key, unit)
+					case "After":
+						after[unit] = true
 					}
 				}
 			}
-			for _, key := range []string{"Wants", "After"} {
-				found := false
-				for line := range strings.SplitSeq(string(data), "\n") {
-					if value, ok := strings.CutPrefix(line, key+"="); ok {
-						for _, unit := range strings.Fields(value) {
-							found = found || unit == "discobox-pool-agent.service"
-						}
-					}
-				}
-				if !found {
-					t.Errorf("missing %s dependency on agent", key)
+			for _, unit := range AgentUnits() {
+				if !after[unit] {
+					t.Errorf("not ordered after %s", unit)
 				}
 			}
 		})
@@ -178,7 +169,7 @@ func TestAgentRestartLeavesBuilderRunning(t *testing.T) {
 func TestSandboxTrafficUnitsLoadTheInMachineFence(t *testing.T) {
 	const pre = "ExecStartPre=/usr/local/bin/discobox-pool-agent in-machine-fence"
 	for _, unit := range []string{
-		filepath.Join("features", "pool-agent", "systemd", "discobox-proxy.service"),
+		filepath.Join("features", "pool-agent", "systemd", ProxyTemplate),
 		filepath.Join("features", "pool-builder-units", "systemd", "discobox-buildkitd.service"),
 		filepath.Join("features", "pool-builder-units", "systemd", "discobox-buildkit-mediator.service"),
 		filepath.Join("features", "pool-builder-units", "systemd", "discobox-registry.service"),
@@ -197,7 +188,27 @@ func TestSandboxTrafficUnitsLoadTheInMachineFence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(matches) != 5 {
+	// The agent's, the units service's (which runs only `units start`), and
+	// the four above.
+	if len(matches) != 6 {
 		t.Errorf("units = %v: a new one that carries a sandbox's traffic loads the in-machine fence too", matches)
+	}
+}
+
+// An agent or proxy is started again whatever it exits with, but for the
+// status a drain ends with: where systemd holds none of its listeners,
+// nothing else would start it.
+func TestSlotUnitsRestartButForADrain(t *testing.T) {
+	for _, unit := range []string{AgentTemplate, ProxyTemplate} {
+		data, err := os.ReadFile(filepath.Join("features", "pool-agent", "systemd", unit))
+		if err != nil {
+			t.Fatal(err)
+		}
+		drained := strconv.Itoa(handover.DrainedExitCode)
+		for _, want := range []string{"Restart=always", "RestartPreventExitStatus=" + drained, "SuccessExitStatus=" + drained} {
+			if !strings.Contains(string(data), "\n"+want+"\n") {
+				t.Errorf("%s lacks %q", unit, want)
+			}
+		}
 	}
 }

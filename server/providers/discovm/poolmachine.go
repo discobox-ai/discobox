@@ -485,12 +485,15 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		defer releaseAgent()
 	}
 	if replacesAgent(created, started, provisioned, !current) {
-		// Recorded before the apply, and a moved placement's restart after
-		// it: the new agent's first report lands before they return (ADR
-		// 26-11-15-602 §1).
+		// Recorded before the apply, whose units hand over to the new agent
+		// (ADR 26-11-15-602 §1, 26-11-26-536 §4).
 		sandbox.ReportAgentStarted(ctx, time.Now(), sandbox.AgentStartInPlace)
 	}
-	box, err := poolruntime.ProvisionBox(agentCtx, guest, maker, placement)
+	var placed poolruntime.BoxRecord
+	if provisioned {
+		placed = record.Box
+	}
+	box, err := poolruntime.ProvisionBox(agentCtx, guest, maker, placement, placed)
 	if err != nil {
 		if provisioned && !force && !made && !started {
 			// A running pool is never taken down over its bundles (ADR
@@ -506,12 +509,6 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		return fmt.Errorf("provision pool %s's machine: %w", pool.ID, err)
 	}
 	steps.Step(ctx, "provisioned the pool's box")
-	if provisioned && record.Box.Placement != box.Placement {
-		if err := poolruntime.RestartPoolUnits(agentCtx, guest, false); err != nil {
-			return fmt.Errorf("restart pool %s's agent on its new placement: %w", pool.ID, err)
-		}
-		steps.Step(ctx, "restarted the pool's agent on its new placement")
-	}
 	record.Box = box
 	pool.OutboundAppliedRevision = pool.Outbound.Revision()
 	if err := h.writeState(pool, record); err != nil {
@@ -712,7 +709,13 @@ func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engi
 	if err != nil {
 		return poolruntime.BoxPlacement{}, err
 	}
-	return poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: h.policy, Outbound: pool.Outbound, Fence: held(h.engine.Driver.Capabilities())}, nil
+	// The pool's box hands over to a new agent beside the running one when
+	// what it runs moves, rather than restarting it, so its streams are not
+	// cut (ADR 26-11-26-536 §§1, 4): every driver's but one whose machines
+	// this server's engine holds on this host, whose host agent is not
+	// staged (#64).
+	caps := h.engine.Driver.Capabilities()
+	return poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: h.policy, Outbound: pool.Outbound, Fence: held(caps), HandOver: !held(caps)}, nil
 }
 
 // held reports whether a driver's machines are held by this server's engine

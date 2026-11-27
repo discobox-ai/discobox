@@ -8,11 +8,13 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	workerapi "github.com/discobox-ai/discobox/pool-agent/api/gen"
+	"github.com/discobox-ai/discobox/pool-agent/handover"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxtoken"
 )
@@ -57,6 +59,16 @@ type Config struct {
 	// listener (ADR 26-10-29-481 §2). Nothing names a caller until the mTLS
 	// inside a stream completes there, so it takes no token here.
 	Tunnels http.Handler
+	// Drain, when it closes, has the agent drain rather than stop (ADR
+	// 26-11-26-536 §3): it stops accepting on every listener, calls
+	// StoppedAccepting, and serves what it holds to its end, and waits out
+	// the boots and snapshot builds its runtime began, all within one
+	// handover.DrainBound, before Serve returns handover.ErrDrained. Nil
+	// never drains.
+	Drain <-chan struct{}
+	// StoppedAccepting is called once a drain has closed every listener here,
+	// before it waits on what they accepted.
+	StoppedAccepting func()
 }
 
 func NewRouter(cfg Config) (*chi.Mux, error) {
@@ -177,6 +189,9 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	go func() { errCh <- cfg.Front.serve(ctx, router) }()
 
 	select {
+	case <-cfg.Drain:
+		drain(ctx, logger, cfg, originServer, assetServer)
+		return handover.ErrDrained
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -194,4 +209,48 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		}
 		return err
 	}
+}
+
+// drain stops accepting on every listener the agent serves, and serves what
+// they accepted to its end, and waits out the boots and snapshot builds the
+// runtime began, until handover.DrainBound has passed or ctx ends, which cuts
+// what is left.
+func drain(ctx context.Context, logger *slog.Logger, cfg Config, servers ...*http.Server) {
+	cfg.Front.StopAccepting()
+	for _, listener := range []net.Listener{cfg.OriginListener, cfg.AssetListener} {
+		if listener != nil {
+			_ = listener.Close()
+		}
+	}
+	if cfg.StoppedAccepting != nil {
+		cfg.StoppedAccepting()
+	}
+	logger.Info("pool agent draining", "bound", handover.DrainBound)
+	bounded, cancel := context.WithTimeout(ctx, handover.DrainBound)
+	defer cancel()
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		if err := cfg.Front.Drain(bounded); err != nil {
+			logger.Warn("pool agent drain cut what was left", "error", err)
+		}
+	})
+	if cfg.Runtime != nil {
+		wg.Go(func() {
+			if err := cfg.Runtime.AwaitBackground(bounded); err != nil {
+				logger.Warn("pool agent exiting with sandbox boots or snapshot builds under way", "error", err)
+			}
+		})
+	}
+	for _, server := range servers {
+		if server == nil {
+			continue
+		}
+		wg.Go(func() {
+			if err := server.Shutdown(bounded); err != nil {
+				_ = server.Close()
+			}
+		})
+	}
+	wg.Wait()
+	logger.Info("pool agent drained")
 }
