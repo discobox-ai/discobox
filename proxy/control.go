@@ -81,7 +81,13 @@ func (s *Server) ServeControl(ctx context.Context, listener net.Listener) error 
 	}()
 	err := server.Serve(listener)
 	if errors.Is(err, net.ErrClosed) && ctx.Err() == nil {
-		return server.Shutdown(ctx)
+		// A drain closed the listener: answer what was accepted. A ctx
+		// that ends meanwhile closes the server, which is a stop, not an
+		// error.
+		if err := server.Shutdown(ctx); err != nil && ctx.Err() == nil {
+			return err
+		}
+		return nil
 	}
 	if errors.Is(err, http.ErrServerClosed) || errors.Is(err, net.ErrClosed) {
 		return nil

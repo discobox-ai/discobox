@@ -311,6 +311,11 @@ func (s *Server) Serve(tcp net.Listener) error {
 	}
 	s.listener = listener
 	s.startRetentionSweeper()
+	// The accept loop counts in wg until it returns, so a connection it
+	// accepted just before a drain closed the listener is admitted while Drain
+	// and Close still wait on wg, never after their Wait began at zero.
+	s.wg.Add(1)
+	defer s.wg.Done()
 	s.connMu.Unlock()
 	for {
 		conn, err := listener.Accept()
@@ -389,7 +394,13 @@ func (s *Server) startRetentionSweeper() {
 				}
 				stop()
 			}()
-			if gate(gated) != nil {
+			if err := gate(gated); err != nil {
+				// A gate ended by a close or a drain is not an error.
+				if gated.Err() == nil {
+					_, span := proxyTracer().Start(contextOrBackground(s.ctx), "proxy.audit.sweep.gate")
+					recordSpanError(span, err)
+					span.End()
+				}
 				return
 			}
 			s.retireColumns()

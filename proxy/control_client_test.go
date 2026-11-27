@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -273,5 +274,65 @@ func TestControlClientPurgesOneSandboxsAudit(t *testing.T) {
 	}
 	if _, err := client.PurgeClient(ctx, ""); err == nil {
 		t.Error("a purge naming no sandbox was sent")
+	}
+}
+
+// A drain closes the control API's listener: ServeControl answers what it
+// accepted, and a ctx that ends while it does is a stop, not an error.
+func TestTheControlAPIDrainsWhenItsListenerCloses(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dir := t.TempDir()
+	prepared, err := PrepareCertificates(PrepareOptions{
+		Dir:         filepath.Join(dir, "certs"),
+		ProxyURL:    "https://127.0.0.1:0",
+		ServerHosts: []string{"127.0.0.1"},
+		ClientIDs:   []string{"sandbox-1"},
+	})
+	if err != nil {
+		t.Fatalf("PrepareCertificates() error = %v", err)
+	}
+	server, err := NewServer(ctx, Config{
+		ListenAddress: "127.0.0.1:0",
+		CertDir:       prepared.Bundle.Dir,
+		DatabaseDSN:   filepath.Join(dir, "audit.db"),
+	}, prepared.Bundle, nil)
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	t.Cleanup(func() { _ = server.Close() })
+	var listenConfig net.ListenConfig
+	listener, err := listenConfig.Listen(ctx, "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	served := make(chan error, 1)
+	go func() { served <- server.ServeControl(ctx, listener) }()
+
+	// A request under way when the drain begins: the server holds it.
+	var dialer net.Dialer
+	conn, err := dialer.DialContext(ctx, "tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := conn.Write([]byte("GET /audit/http HTTP/1.1\r\nHost: control\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	_ = listener.Close()
+	select {
+	case err := <-served:
+		t.Fatalf("ServeControl returned %v with a request still under way", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	cancel()
+	select {
+	case err := <-served:
+		if err != nil {
+			t.Fatalf("ServeControl = %v after a drain the stop ended, want nil", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("ServeControl did not return once ctx ended")
 	}
 }
