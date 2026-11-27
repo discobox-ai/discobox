@@ -569,9 +569,11 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	// (ADR 0021 §3). Taking the same per-sandbox lock is what stops an auto-start
 	// (ADR 0017 §12) from racing the replacement — starting the container being
 	// removed, or finding none at all.
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	if err := r.finishSuspend(ctx, sandboxID); err != nil {
 		return nil, err
 	}
@@ -1827,9 +1829,11 @@ func (r *sandboxCore) UpdateSandbox(ctx context.Context, sandboxID string, req *
 // or between containers — is left alone: the create that gives it one sends its
 // whole secret set.
 func (r *sandboxCore) updateSandboxSecretEnv(ctx context.Context, sandboxID string, secretEnv map[string]string) error {
-	power := r.sandboxLock(sandboxID)
-	power.Lock()
-	defer power.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	set := func(doc *sandboxconfig.RuntimeConfig) { doc.SecretEnv = secretEnv }
 	sb, err := r.boxes.GetSandbox(ctx, sandboxID)
 	if errors.Is(err, ErrNotFound) || (err == nil && r.isArchived(sandboxID)) {
@@ -1853,9 +1857,11 @@ func (r *sandboxCore) updateSandboxSecretEnv(ctx context.Context, sandboxID stri
 // reads from elsewhere — the raw secrets SecretsFile holds — reaches the
 // sandbox. It holds the power lock as updateSandboxSecretEnv does.
 func (r *sandboxCore) redeliverRuntimeConfig(ctx context.Context, sandboxID string) error {
-	power := r.sandboxLock(sandboxID)
-	power.Lock()
-	defer power.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	sb, err := r.boxes.GetSandbox(ctx, sandboxID)
 	if errors.Is(err, ErrNotFound) || (err == nil && r.isArchived(sandboxID)) {
 		return nil
@@ -1955,9 +1961,11 @@ func (r *sandboxCore) readFileSecretsRecord(sandboxID string) (fileSecretsRecord
 // policy (ADR 26-10-01-032 §5, ADR 26-10-16-470 §5), and a push that raced a
 // delete must not leave an entry nothing would ever remove.
 func (r *sandboxCore) updateSandboxProxyPolicy(ctx context.Context, sandboxID string, write func() error) error {
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if _, err := r.boxes.GetSandbox(ctx, sandboxID); err != nil {
 		return err
 	}
@@ -2028,9 +2036,15 @@ func (r *DockerSandboxRuntime) reapSandbox(ctx context.Context, sandboxID string
 }
 
 func (r *DockerSandboxRuntime) removeSandbox(ctx context.Context, sandboxID string, purge bool) error {
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	// Before the lock is let go of: what removal leaves of the sandbox's
+	// locks is nothing, whether it got as far as the tree or not; a later
+	// lock of it makes the file again.
+	defer r.forgetLocks(sandboxID)
 
 	sb, err := r.GetSandbox(ctx, sandboxID)
 	if err != nil && !errors.Is(err, ErrNotFound) {
@@ -2224,11 +2238,11 @@ func (r *sandboxCore) reconcileSandboxMaterial(ctx context.Context, logger *slog
 // reapSandboxMaterial removes one orphan candidate's proxy material and policy
 // when nothing holds its lock and it still has no container.
 func (r *sandboxCore) reapSandboxMaterial(ctx context.Context, logger *slog.Logger, sandboxID string) {
-	lock := r.sandboxLock(sandboxID)
-	if !lock.TryLock() {
+	unlock, locked := r.tryLockPower(sandboxID)
+	if !locked {
 		return
 	}
-	defer lock.Unlock()
+	defer unlock()
 	if _, err := r.boxes.GetSandbox(ctx, sandboxID); !errors.Is(err, ErrNotFound) {
 		if err != nil {
 			logger.Warn("look up sandbox container before reaping its proxy material", "sandboxID", sandboxID, "error", err)

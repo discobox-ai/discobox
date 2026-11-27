@@ -47,7 +47,8 @@ type sandboxCore struct {
 	// gitCache is this pool's cache of Git: one repository per remote, a
 	// namespace per sandbox source (ADR 26-10-10-545 §2).
 	gitCache *gitcache.Store
-	// powerLocks serializes power operations per sandbox (see power.go).
+	// powerLocks holds, per sandbox, this process's half of its power lock
+	// (see powerlock.go).
 	powerLocks sync.Map
 	// powerHandover holds, per sandbox, whether its status last advertised
 	// that the control plane may hold its power (ADR 26-10-16-337 §8). A

@@ -71,7 +71,7 @@ func sandboxDaemon(t *testing.T, sandboxID string, running func() bool) *DockerS
 	if err != nil {
 		t.Fatal(err)
 	}
-	return testDockerRuntime(&DockerSandboxRuntime{client: cli, projectID: "proj_a", poolID: "pool_a"})
+	return testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_a", poolID: "pool_a"})
 }
 
 // Docker reports a container running as soon as it starts, before the sandbox
@@ -112,9 +112,7 @@ func TestEnsureSandboxRunningWaitsForABootUnderWay(t *testing.T) {
 // power operation holding its lock for some other reason.
 func TestEnsureSandboxRunningDoesNotWaitOnARunningSandbox(t *testing.T) {
 	runtime := runningDaemon(t, "sbx_1")
-	lock := runtime.sandboxLock("sbx_1")
-	lock.Lock()
-	defer lock.Unlock()
+	defer holdPower(t, runtime, "sbx_1")()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -179,11 +177,11 @@ func TestEnsureSandboxRunningWaitsForABootFoundUnderTheLock(t *testing.T) {
 		t.Fatalf("EnsureSandboxRunning returned %v while the boot was still under way", err)
 	case <-time.After(200 * time.Millisecond):
 	}
-	lock := runtime.sandboxLock("sbx_1")
-	if !lock.TryLock() {
+	unlock, locked := runtime.tryLockPower("sbx_1")
+	if !locked {
 		t.Fatal("the power lock is held while a boot is waited out")
 	}
-	lock.Unlock()
+	unlock()
 
 	runtime.endBoot("sbx_1", boot, nil)
 	select {

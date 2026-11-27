@@ -509,9 +509,11 @@ func (r *MachineSandboxRuntime) CreateSandbox(ctx context.Context, req *workerap
 	if !delivery(req).PlacesAgent() {
 		return nil, fmt.Errorf("sandbox %s: %w", sandboxID, ErrUndelivered)
 	}
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	if err := r.finishSuspend(ctx, sandboxID); err != nil {
 		return nil, err
 	}
@@ -1697,9 +1699,11 @@ func (r *MachineSandboxRuntime) observedSandbox(ctx context.Context, sandboxID s
 // durable tree archiving keeps (ADR 0022 §6). What goes is the proxy
 // material, which the unarchiving create stages again.
 func (r *MachineSandboxRuntime) ArchiveSandbox(ctx context.Context, sandboxID string) error {
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	root := r.sandboxRoot(sandboxID)
 	if _, err := os.Stat(root); err != nil {
 		if !os.IsNotExist(err) {
@@ -1749,9 +1753,15 @@ func (r *MachineSandboxRuntime) reapSandbox(ctx context.Context, sandboxID strin
 }
 
 func (r *MachineSandboxRuntime) removeSandbox(ctx context.Context, sandboxID string, purge bool) error {
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	// Before the lock is let go of: what removal leaves of the sandbox's
+	// locks is nothing, whether it got as far as the tree or not; a later
+	// lock of it makes the file again.
+	defer r.forgetLocks(sandboxID)
 	if err := r.removeMachine(ctx, sandboxID); err != nil {
 		return err
 	}
@@ -2028,9 +2038,11 @@ const resumeRetryInterval = 5 * time.Minute
 // boots on as any start does. Under the power lock it starts only one still
 // paused: one stopped since the poll saw it stays stopped.
 func (r *MachineSandboxRuntime) resumePaused(ctx context.Context, sandboxID string) error {
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	sb, err := r.powerTarget(ctx, sandboxID)
 	if err != nil || sb.Status != StatusPaused {
 		return err

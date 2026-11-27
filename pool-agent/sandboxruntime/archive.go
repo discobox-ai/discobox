@@ -75,9 +75,11 @@ func (r *sandboxCore) hostsSandbox(sandboxID string) bool {
 // removal, arrives in — because what makes a sandbox archived is the marker,
 // not the absence of a container.
 func (r *DockerSandboxRuntime) ArchiveSandbox(ctx context.Context, sandboxID string) error {
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	root := r.sandboxRoot(sandboxID)
 	if _, err := os.Stat(root); err != nil {

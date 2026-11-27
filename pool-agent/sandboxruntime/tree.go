@@ -432,9 +432,11 @@ func (b *tailBuffer) message() string {
 // than none: it would be adopted by a create just as readily as a whole one,
 // and the sandbox would come up with a workspace missing files nobody can name.
 func (r *DockerSandboxRuntime) ImportTree(ctx context.Context, sandboxID string, tree io.Reader) (err error) {
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	root := r.sandboxRoot(sandboxID)
 	if _, statErr := os.Stat(root); statErr == nil {

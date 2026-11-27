@@ -258,9 +258,11 @@ const (
 // publishing `stopping` for a sandbox that is already down would leave it
 // reported as stopping until the next complete sync.
 func (r *DockerSandboxRuntime) stopIfRunning(ctx context.Context, sandboxID string) (bool, error) {
-	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, sandboxID)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
 	sb, err := r.GetSandbox(ctx, sandboxID)
 	if errors.Is(err, ErrNotFound) {
 		return false, nil

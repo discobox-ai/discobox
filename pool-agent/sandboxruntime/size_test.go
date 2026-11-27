@@ -102,10 +102,9 @@ func TestASizedMachineBoxAndItsSnapshotAreMadeAtItsSize(t *testing.T) {
 		t.Fatalf("sbx_2's machine = %d CPUs, %d bytes, %v; want 2 and 3 GiB", inst.CPUs, inst.Memory, err)
 	}
 
-	lock := r.sandboxLock("sbx_1")
-	lock.Lock()
+	unlock := holdPower(t, r, "sbx_1")
 	err = r.remakeMachine(ctx, "sbx_1")
-	lock.Unlock()
+	unlock()
 	if err != nil {
 		t.Fatal(err)
 	}

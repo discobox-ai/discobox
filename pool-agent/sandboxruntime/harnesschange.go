@@ -50,9 +50,11 @@ func (r *sandboxCore) writeHarnessFence(id string, f harnessChangeFence) error {
 // reserveHarnessChange holds the same lock as every power transition. Retrying
 // the same ID is safe after the replacement has landed, even if it has started.
 func (r *sandboxCore) reserveHarnessChange(ctx context.Context, id, change string) (*Sandbox, error) {
-	lock := r.sandboxLock(id)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, err := r.lockPower(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	if r.isArchived(id) {
 		return nil, ErrArchived
 	}
