@@ -2036,9 +2036,11 @@ restarts its units as it did then (`poolruntime.unitsCommand`).
   current response. The proxy carries a CONNECT tunnel, MITM'd or not, an edge
   tunnel and a DNS-over-TLS connection until each ends. The agent waits for
   the boots it began to deliver their runtime-config documents, and closes its
-  control-plane channel once the connections forwarded onto it end, or carry
-  nothing for half a second (`drainQuiet`: idle keep-alives of the pool's own
-  clients), within `channelHandOver` (20s): the server dials again, and
+  control-plane channel once each connection forwarded onto it has ended or
+  is idle: it has its answer, and has carried nothing for half a second since
+  then and since the drain began (`drainQuiet`: idle keep-alives of the
+  pool's own clients). A call still waiting on its answer holds it, within
+  `channelHandOver` (20s). The server then dials again, and
   reaches the new agent, the only one accepting. Until then the new agent and
   proxy reach no control plane: a sentinel the new proxy resolves waits on it. It also waits out the snapshot builds it began
   (`AwaitBackground`). A draining process exits at `handover.DrainBound`
@@ -2059,9 +2061,12 @@ restarts its units as it did then (`poolruntime.unitsCommand`).
   idle slot draining from the last handover, starts it (a standby), tells
   the running slot to drain, waits for the new agent and proxy to say
   `active`, and enables the new slot in place of the old. A standby is
-  ready only once nothing it does before serving can fail: its listener,
-  channel and front are made before it says so. A new slot that does not
-  start is stopped, and the old serves on, as it was, never told to drain.
+  ready once its listener, channel and front are made, and the agent says
+  `active` only once it has built everything it serves with (its engine,
+  fencing and runtime): one that fails after the lock never says so, and is
+  rolled back. A new slot that does not start, or whose old slot cannot be
+  asked or told to drain, is stopped, and the old serves on, as it was, never
+  told to drain.
   One that does not say `active` within two minutes of the old being told is
   stopped, and the old slot is started again (`rollBack`): what it still
   carried is cut, but the pool is never left with nothing accepting. It

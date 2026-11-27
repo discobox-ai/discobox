@@ -1029,11 +1029,20 @@ tracked in #1699, not a pattern to copy.
   (`Restart=always`, `RestartPreventExitStatus=`). Why: `Restart=on-failure`
   left an agent that exited 0 for any other reason down, and nothing started
   one whose listener systemd does not hold.
-- **A standby says it is ready only once nothing before serving can fail.**
-  Build its listener, channel and front before `NotifyReady`; after the lock,
-  only start serving them. Why: the old slot is told to drain on that
-  readiness, and a standby that then fails leaves only `units apply`'s
-  rollback, which cuts what the old one carried.
+- **A slot says `active` only once nothing before serving can fail.** Build
+  its listener, channel and front before `NotifyReady`, and the engine,
+  fencing and runtime before `StatusActive`; after that, only serve. Why: the
+  old slot is drained on readiness, and `units apply` rolls back only a slot
+  that never says `active`. One that fails after saying so crash-loops with
+  nothing else serving.
+- **A drain ends a process with `handover.DrainedExitCode`, whatever else it
+  ends.** A first report, or any work a drain cancels, that fails because of
+  the drain must not cut what the process serves or end it with another
+  code (`serveTakingOver`). Why: the report's failure cancelled the drain's
+  context, cutting every stream, and the exit 1 restarted the slot.
+- **A wrapper around a forwarded connection keeps `CloseWrite`.** Why:
+  `cpmux.Splice` half-closes through it, and a wrapper that hid it closed the
+  pool's client's connection outright.
 - **Nothing but `units apply` signals a slot**, and only to drain once the
   new slot is up. Why: a drain lets go of the active lock, and a slot that
   drains with no standby beside it leaves the queue to wait for a start.

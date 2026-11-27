@@ -88,8 +88,10 @@ func becomeActive(ctx context.Context, logger *slog.Logger, root layout.Root) (*
 // the pool is the one the draining agent registered, under the same key, and
 // a request that arrives while the report waits for a control-plane channel
 // is served rather than answered "starting" (ADR 26-11-26-536 §4). A report
-// that fails ends it, as it ends an agent that reports first.
-func serveTakingOver(ctx context.Context, tookOver bool, report func() error, serve func(context.Context) error) error {
+// that fails ends it, as it ends an agent that reports first, unless the
+// agent was told to drain (drain) meanwhile: what ends the report then is the
+// drain, and the agent serves what it holds to its end, as any drain does.
+func serveTakingOver(ctx context.Context, tookOver bool, drain <-chan struct{}, report func() error, serve func(context.Context) error) error {
 	if !tookOver {
 		return serve(ctx)
 	}
@@ -97,7 +99,11 @@ func serveTakingOver(ctx context.Context, tookOver bool, report func() error, se
 	defer stop(nil)
 	go func() {
 		if err := report(); err != nil {
-			stop(err)
+			select {
+			case <-drain:
+			default:
+				stop(err)
+			}
 		}
 	}()
 	err := serve(serving)
