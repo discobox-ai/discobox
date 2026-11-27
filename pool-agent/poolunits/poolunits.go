@@ -319,6 +319,27 @@ func (a *applier) apply(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// The slots' sockets are bound again when one moved, in this render or
+	// since the last apply recorded them (one refused below), or one is not
+	// listening.
+	rebound, err := a.socketsToBind(ctx, changed, current.Fingerprint, now)
+	if err != nil {
+		return err
+	}
+	// Closing a socket the pool no longer has, or binding the slots'
+	// sockets again, stops what a draining slot still serves on: neither
+	// runs while one drains. Nothing is recorded, and a socket left to close
+	// keeps its unit file, so the next apply after that slot has exited
+	// does both.
+	if len(stale) > 0 || rebound {
+		slotUnits := append(bundle.AgentUnits(), proxyUnits()...)
+		if draining, err := a.anyDraining(ctx, slotUnits...); err != nil || draining {
+			if err != nil {
+				return err
+			}
+			return fmt.Errorf("%w: the pool's sockets moved, and move once it has exited", ErrSlotDraining)
+		}
+	}
 	if err := a.removeStale(ctx, stale); err != nil {
 		return err
 	}
@@ -328,24 +349,8 @@ func (a *applier) apply(ctx context.Context) error {
 	// drains builds.
 	// Every one of the slots' sockets, not just the ones that moved: a
 	// socket left listening while the slots are down starts `units start`.
-	// They are bound again when one moved, in this render or since the last
-	// apply recorded them (one refused below), or one is not listening.
 	var slotSockets []string
-	rebound, err := a.socketsToBind(ctx, changed, current.Fingerprint, now)
-	if err != nil {
-		return err
-	}
 	if rebound {
-		// Binding them stops every slot, which would cut one draining:
-		// it is left to finish, and nothing is recorded, so the next
-		// apply after it has exited binds them.
-		slotUnits := append(bundle.AgentUnits(), proxyUnits()...)
-		if draining, err := a.anyDraining(ctx, slotUnits...); err != nil || draining {
-			if err != nil {
-				return err
-			}
-			return fmt.Errorf("%w: the pool's sockets moved, and are bound once it has exited", ErrSlotDraining)
-		}
 		slotSockets = a.ofRole(RoleAgent, RoleProxy)
 	}
 	stopped, err := a.rebind(ctx, slotSockets, append(bundle.AgentUnits(), proxyUnits()...))

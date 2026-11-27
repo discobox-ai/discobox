@@ -31,6 +31,9 @@ type PendingPool struct {
 	ID        string
 	Name      string
 	WaitingOn string
+	// Draining is a pool whose upgrade waits for its last handover's old
+	// slot to drain (WaitingOn says so too).
+	Draining bool
 }
 
 // UpgradeWatch answers which pools this server run has not yet brought onto
@@ -73,6 +76,11 @@ type UpgradeWatch struct {
 	// at the settle: the pass that starts the agent is often not the one
 	// that settles.
 	started map[string]agentStart
+	// draining is, by pool, when a reconcile last found its box would not
+	// move because a slot still drains from the last handover
+	// (sandbox.ErrPoolSlotDraining). A later settle of the pool supersedes
+	// it.
+	draining map[string]time.Time
 	// firstReport is, by pool, when the server last received a ready first
 	// report from a pool agent process (ADR 26-11-15-602 §2), on the clock
 	// StatusReportedAt is stamped with.
@@ -99,7 +107,7 @@ type agentStart struct {
 func NewUpgradeWatch(appStore *store.Store, manager *sandbox.ProviderManager) *UpgradeWatch {
 	return &UpgradeWatch{
 		store: appStore, manager: manager, now: time.Now, kept: map[string]keptBox{},
-		started: map[string]agentStart{}, firstReport: map[string]time.Time{},
+		started: map[string]agentStart{}, firstReport: map[string]time.Time{}, draining: map[string]time.Time{},
 	}
 }
 
@@ -143,11 +151,20 @@ func (w *UpgradeWatch) Begin(ctx context.Context) error {
 func (w *UpgradeWatch) settled(poolID string, settledAt time.Time, kept error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	delete(w.draining, poolID)
 	if kept == nil {
 		delete(w.kept, poolID)
 		return
 	}
 	w.kept[poolID] = keptBox{settledAt: settledAt, reason: firstLine(kept.Error())}
+}
+
+// drainWaiting records that a reconcile at at found the pool's box would not
+// move while a slot still drains from its last handover.
+func (w *UpgradeWatch) drainWaiting(poolID string, at time.Time) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.draining[poolID] = at
 }
 
 // agentStarted records that a reconcile started the pool's agent at at, as
@@ -228,6 +245,10 @@ func (w *UpgradeWatch) refresh(ctx context.Context, now time.Time) {
 	for id, at := range w.firstReport {
 		firsts[id] = at
 	}
+	draining := make(map[string]time.Time, len(w.draining))
+	for id, at := range w.draining {
+		draining[id] = at
+	}
 	w.mu.Unlock()
 
 	var pending []PendingPool
@@ -235,7 +256,7 @@ func (w *UpgradeWatch) refresh(ctx context.Context, now time.Time) {
 	var err error
 	for _, id := range ids {
 		var waiting *PendingPool
-		waiting, err = w.waitingOn(ctx, id, kept[id], started[id], firsts[id], now)
+		waiting, err = w.waitingOn(ctx, id, kept[id], started[id], firsts[id], draining[id], now)
 		if err != nil {
 			break
 		}
@@ -270,7 +291,7 @@ func (w *UpgradeWatch) refresh(ctx context.Context, now time.Time) {
 
 // waitingOn is what one watched pool is still waiting on, or nil once it is
 // upgraded or no longer watched.
-func (w *UpgradeWatch) waitingOn(ctx context.Context, id string, kept keptBox, started agentStart, first time.Time, now time.Time) (*PendingPool, error) {
+func (w *UpgradeWatch) waitingOn(ctx context.Context, id string, kept keptBox, started agentStart, first, drainAt time.Time, now time.Time) (*PendingPool, error) {
 	pool, err := w.store.GetPoolByID(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, nil
@@ -288,6 +309,9 @@ func (w *UpgradeWatch) waitingOn(ctx context.Context, id string, kept keptBox, s
 	if provider == nil {
 		return nil, nil
 	}
+	if drainingNow(pool, drainAt) {
+		return &PendingPool{ID: pool.ID, Name: pool.Name, WaitingOn: waitingForDrain, Draining: true}, nil
+	}
 	reason := upgradeWaitingOn(pool, kept, started, first, now)
 	if reason == "" {
 		return nil, nil
@@ -296,6 +320,16 @@ func (w *UpgradeWatch) waitingOn(ctx context.Context, id string, kept keptBox, s
 }
 
 const waitingForReconcile = "waiting for its reconcile"
+
+// waitingForDrain is a pool whose box moves once its last handover's old slot
+// has drained, within that slot's drain bound (30 minutes).
+const waitingForDrain = "waiting for its last handover to drain, up to 30 minutes"
+
+// drainingNow is whether pool's upgrade waits on a drain: a reconcile at
+// drainAt found its box would not move for one, and none has settled since.
+func drainingNow(pool *model.Pool, drainAt time.Time) bool {
+	return !drainAt.IsZero() && (pool.ReconciledAt == nil || !pool.ReconciledAt.After(drainAt))
+}
 
 // upgradeWaitingOn is what pool has yet to do in this run, empty once it is
 // upgraded: a reconcile of its current generation settled cleanly since the

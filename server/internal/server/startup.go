@@ -154,7 +154,8 @@ func (h *startupHandler) servingStatus(ctx context.Context) (int, health.Status)
 	if pools == nil {
 		return http.StatusOK, status
 	}
-	status.PoolsUpgrading = pools.PoolsUpgrading(ctx)
+	upgrades := pools.PoolsUpgrading(ctx)
+	status.PoolsUpgrading = upgrades.Upgrading
 	if status.PoolsUpgrading == 0 {
 		return http.StatusOK, status
 	}
@@ -162,9 +163,18 @@ func (h *startupHandler) servingStatus(ctx context.Context) (int, health.Status)
 		status.Status = health.StatusUpgradingPools
 		return http.StatusServiceUnavailable, status
 	}
-	status.Warnings = append(status.Warnings, fmt.Sprintf(
-		"%s not upgraded after %s; the server's log says which and why",
-		countPools(status.PoolsUpgrading), wait))
+	// A pool that waits on its last handover's drain is held back on
+	// purpose, within that drain's bound, and said apart from one stuck.
+	if stuck := upgrades.Upgrading - upgrades.Draining; stuck > 0 {
+		status.Warnings = append(status.Warnings, fmt.Sprintf(
+			"%s not upgraded after %s; the server's log says which and why",
+			countPools(stuck), wait))
+	}
+	if upgrades.Draining > 0 {
+		status.Warnings = append(status.Warnings, fmt.Sprintf(
+			"%s waiting for the last handover to drain before upgrading, up to 30 minutes; the server's log says which",
+			countPools(upgrades.Draining)))
+	}
 	return http.StatusOK, status
 }
 

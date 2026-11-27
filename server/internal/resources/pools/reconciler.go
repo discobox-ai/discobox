@@ -324,6 +324,9 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 		// failure, and asks again once the drain may have ended.
 		if errors.Is(err, sandbox.ErrPoolSlotDraining) {
 			slog.InfoContext(ctx, "pool waits for its last handover to drain before it moves", "pool", pool.ID, "requeue", poolSlotDrainingRequeue)
+			if r.pools != nil {
+				r.pools.Upgrades().drainWaiting(pool.ID, time.Now())
+			}
 			return reconcile.RequeueAfter(poolSlotDrainingRequeue), nil
 		}
 		// A host that is still coming up is not a failed reconcile. Repairing
