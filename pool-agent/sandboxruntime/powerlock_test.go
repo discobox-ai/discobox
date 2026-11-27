@@ -191,3 +191,40 @@ func TestALockTreeThatCannotBeMadeIsAnError(t *testing.T) {
 	}
 	unlock()
 }
+
+// A boot mark that cannot be read reads as a boot under way, and a wait on
+// it fails: never as a boot ended, which would let this agent act on a box
+// the other is booting.
+func TestAnUnreadableBootMarkReadsAsBooting(t *testing.T) {
+	root := layout.ContainerAt(t.TempDir())
+	core := &sandboxCore{root: root, projectID: "prj", poolID: "pool"}
+	// A directory where the mark's file goes: it cannot be opened to probe.
+	if err := os.MkdirAll(core.bootMarkPath("sbx_1"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if !core.SandboxBooting("sbx_1") {
+		t.Fatal("an unreadable boot mark reads as no boot")
+	}
+	if waited, err := core.awaitBoot(context.Background(), "sbx_1"); err == nil || !waited {
+		t.Fatalf("awaitBoot on an unreadable mark = %v, %v; want an error", waited, err)
+	}
+}
+
+// A removal leaves the boot mark of a boot that still holds it, in this
+// process or another: a probe of the path would otherwise find no boot while
+// it runs.
+func TestARemovalKeepsABootMarkStillHeld(t *testing.T) {
+	root := layout.ContainerAt(t.TempDir())
+	booting := &sandboxCore{root: root, projectID: "prj", poolID: "pool"}
+	removing := &sandboxCore{root: root, projectID: "prj", poolID: "pool"}
+	boot := booting.beginBoot("sbx_1")
+	removing.forgetLocks("sbx_1")
+	if !removing.SandboxBooting("sbx_1") {
+		t.Fatal("the removal took the boot mark of a boot still under way")
+	}
+	booting.endBoot("sbx_1", boot, nil)
+	removing.forgetLocks("sbx_1")
+	if _, err := os.Stat(removing.bootMarkPath("sbx_1")); !os.IsNotExist(err) {
+		t.Fatalf("a removal after the boot ended left its mark: %v", err)
+	}
+}
