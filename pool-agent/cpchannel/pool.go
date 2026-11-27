@@ -296,5 +296,5 @@ func (t trafficConn) CloseWrite() error {
 	if cw, ok := t.Conn.(interface{ CloseWrite() error }); ok {
 		return cw.CloseWrite()
 	}
-	return t.Conn.Close()
+	return t.Close()
 }
