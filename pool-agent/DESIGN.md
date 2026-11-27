@@ -22,7 +22,7 @@ from the in-sandbox `sandbox-agent` API.
 | `server` | Pool-local HTTP server and the front that serves its listener from startup, before the router exists (`Front`: the control-plane channel's route alone until then), health/metadata endpoints, generated sandbox API route/auth adapter, the sandbox HTTP/sandbox-agent/Git proxy routes, the Git cache routes the control plane forwards clients' deliveries to (`sandbox_git_cache.go`), on-demand start (`autostart.go`), the loopback origin listener the pool proxy forwards sandboxes' origin fetches to (`NewOriginRouter`; see [Git origins](#git-origins)), and the socket it forwards their bundle fetches to (`Config.AssetListener`; see [Bundle Assets](#bundle-assets)). |
 | `assetcache` | The pool's pull-through cache of bundles (ADR 26-10-16-423 §13): each sandbox's record of what it is delivered (`delivery.json`: its agent and its ordered bundles), and each snapshot build's, kept apart from them by its `layout.SnapshotIDPrefix` ID ([Snapshots](#snapshots)), the blob store under `layout.PoolBuild`, filled through the pool's asset client ([`poolassets`](../pkg/poolassets)), the `assets.discobox.internal` handler scoped to one sandbox's bundles, the sweep, and the one layer of a sandbox's agent bundle (`AgentLayer`, `OpenAgentLayer`), which only the pool reads. See [Bundle Assets](#bundle-assets). |
 | `cpmux` | Symmetric yamux session over one duplex byte stream, for guests that can only be dialed inward (wslc) and the control-plane channel. |
-| `cpchannel` | Both ends of the control-plane channel the server opens to a remote pool with no `controlPlaneUrl` ([ADR 26-10-30-875](../docs/adr/26-10-30-875-a-remote-pool-reaches-its-control-plane-over-a-channel-the-server-opens.md)): a binary WebSocket at `/api/project/{p}/pool/{p}/control-plane-channel` ([ADR 26-10-31-152](../docs/adr/26-10-31-152-the-control-plane-channel-is-a-websocket.md)), TLS 1.3 pinned to the pool's enrolled key and the server's issuer key, and the pool end (`Channel`) that serves the agent's control-plane socket over the latest channel's `cpmux` session. The server's end dials it (`Dial`) from `poolruntime`. |
+| `cpchannel` | Both ends of the control-plane channel the server opens to a remote pool with no `controlPlaneUrl` ([ADR 26-10-30-875](../docs/adr/26-10-30-875-a-remote-pool-reaches-its-control-plane-over-a-channel-the-server-opens.md)): a binary WebSocket at `/api/project/{p}/pool/{p}/control-plane-channel` ([ADR 26-10-31-152](../docs/adr/26-10-31-152-the-control-plane-channel-is-a-websocket.md)), TLS 1.3 pinned to the pool's enrolled key and the server's issuer key, and the pool end (`Channel`) that serves the agent's control-plane socket as HTTP, forwarding each request on a stream of its own over the latest channel's `cpmux` session. The server's end dials it (`Dial`) from `poolruntime`. |
 | `sandboxtoken` | Tokens the pool issues its own sandboxes, signed with the same key under their own audience (`discobox-pool-sandbox`); `origin:fetch` is accepted on the `git-origins` route alone. |
 | `createprotocol` | Instance-bound create revision discovery and the single WebSocket carrying the compatible create. |
 | `internalhttp` | The transport for the pool's own HTTP, which never honors `HTTP_PROXY`: the control-plane client's, and the base of every transport a sandbox `Dialer` builds. |
@@ -2034,11 +2034,10 @@ restarts its units as it did then (`poolruntime.unitsCommand`).
   current response. The proxy carries a CONNECT tunnel, MITM'd or not, an edge
   tunnel and a DNS-over-TLS connection until each ends. The agent waits for
   the boots it began to deliver their runtime-config documents, and closes its
-  control-plane channel once each connection forwarded onto it has ended or
-  is idle: it has its answer, and has carried nothing for half a second since
-  then and since the drain began (`drainQuiet`: idle keep-alives of the
-  pool's own clients). A call still waiting on its answer holds it, within
-  `channelHandOver` (20s). The server then dials again, and
+  control-plane channel once every request forwarded onto it has its whole
+  answer: the socket is served as HTTP, so its idle keep-alives close at
+  once, and a streamed answer, a long poll or an upgrade holds it to its end,
+  within `channelHandOver` (20s). The server then dials again, and
   reaches the new agent, the only one accepting. Until then the new agent and
   proxy reach no control plane: a sentinel the new proxy resolves waits on it. It also waits out the snapshot builds it began
   (`AwaitBackground`). A draining process exits at `handover.DrainBound`
@@ -2055,25 +2054,33 @@ restarts its units as it did then (`poolruntime.unitsCommand`).
 - **`units apply`** is idempotent. It fingerprints what the slot starts
   with (the binary, the slot units and drop-ins, the bootstrap, environment
   and outbound routing) and moves nothing when that has not moved. Otherwise
-  it restarts the running slot, or hands over: it stops what is left of the
-  idle slot draining from the last handover, starts it (a standby), tells
-  the running slot to drain, waits for the new agent and proxy to say
-  `active`, and enables the new slot in place of the old. A standby is
-  ready once its listener, channel and front are made, and the agent says
-  `active` only once it has built everything it serves with (its engine,
-  fencing and runtime): one that fails after the lock never says so, and is
-  rolled back. A new slot that does not start, or whose old slot cannot be
-  asked or told to drain, is stopped, and the old serves on, as it was, never
-  told to drain.
-  One that does not say `active` within two minutes of the old being told is
-  stopped, and the old slot is started again (`rollBack`): what it still
-  carried is cut, but the pool is never left with nothing accepting. It
-  starts on what was laid, as the new one did, since the old binary is gone.
-  The apply fails either way, and the slot recorded is the one serving. It
-  retires the
-  units of a box from before slots once, which cuts what they served. The
-  bundle's `units` step runs it, and the pool's maker runs it after every
-  apply (`poolruntime.ProvisionBox`).
+  it restarts the running slot, or hands over. It never stops or restarts a
+  slot that drains: what that carries ends on its own, within the drain
+  bound.
+  - The idle slot still draining from the last handover is left to finish,
+    and the apply fails without changing anything; the next one, after it
+    has exited, hands over.
+  - Otherwise it starts the idle slot (a standby), records it with the new
+    fingerprint and enables it in place of the old, then tells the running
+    slot to drain and waits for the new agent and proxy to say `active`.
+  - A standby is ready once its listener, channel and front are made, and
+    the agent says `active` only once it has built everything it serves
+    with (its engine, fencing and runtime).
+  - A new slot that does not start, or whose old slot cannot be asked or
+    told to drain, is stopped before the old was told; the old serves on,
+    and is recorded and enabled again.
+  - One that does not say `active` within two minutes is stopped the same
+    way while no unit of the old slot drains. Once one does, the old is
+    left to finish its drain and the new is left running, which systemd
+    restarts until it takes over; the apply fails, with the new slot
+    recorded.
+  - It retires the units of a box from before slots once, and a change to a
+    slot's socket rebinds every slot socket: both stop the agent and proxy
+    of every slot together, which cuts what they served. Every pool takes
+    that once, at the upgrade that first brings slots, since its old units
+    bound their own ports and have nothing to hand over.
+  - The bundle's `units` step runs it, and the pool's maker runs it after
+    every apply (`poolruntime.ProvisionBox`).
 - **Power across the two agents.** A sandbox's power lock and boot mark are
   locked files in the pool's lock tree (`layout.PoolLocks`), behind this
   process's own semaphore: a power operation or a boot the old agent still has

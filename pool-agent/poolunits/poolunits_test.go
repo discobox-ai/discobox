@@ -28,6 +28,10 @@ type fakeSystemd struct {
 	failStart string
 	// noTakeOver leaves a new slot a standby once the old one drains.
 	noTakeOver bool
+	// onKill runs as a slot is told to drain.
+	onKill func()
+	// ignoreKill leaves a slot told to drain as it was.
+	ignoreKill bool
 	// failKill fails every kill, a drain signal systemd cannot send.
 	failKill bool
 }
@@ -89,6 +93,12 @@ func (f *fakeSystemd) systemctl(_ context.Context, args ...string) (string, erro
 	case "kill":
 		if f.failKill {
 			return "", errors.New("kill failed")
+		}
+		if f.onKill != nil {
+			f.onKill()
+		}
+		if f.ignoreKill {
+			return "", nil
 		}
 		for _, unit := range units {
 			f.status[unit] = handover.StatusDraining
@@ -286,15 +296,24 @@ func TestAPoolThatDoesNotHandOverRestartsItsSlot(t *testing.T) {
 }
 
 // A pool that asks for a handover starts the idle slot beside the running
-// one, tells the running one to drain once the new one is up, waits for the
-// new one to take over, and then runs it at boot in place of the old.
+// one, records it and runs it at boot in place of the old, then tells the
+// running one to drain and waits for the new one to take over.
 func TestAPoolThatHandsOverStartsTheIdleSlotAndDrainsTheOld(t *testing.T) {
 	b := newBox(t, true)
 	b.apply(t)
 	b.systemd.active[bundle.MediatorUnit] = true
 	b.systemd.reset()
 	b.write(t, b.cfg.Binary, "agent v2")
+	var slotAtKill string
+	b.systemd.onKill = func() {
+		if slotAtKill == "" {
+			slotAtKill = b.slot(t)
+		}
+	}
 	b.apply(t)
+	if slotAtKill != "b" {
+		t.Errorf("the slot recorded as the old one was told to drain = %q, want b", slotAtKill)
+	}
 
 	commands := b.systemd.commands
 	start := slices.IndexFunc(commands, func(c []string) bool {
@@ -304,8 +323,8 @@ func TestAPoolThatHandsOverStartsTheIdleSlotAndDrainsTheOld(t *testing.T) {
 	enable := slices.IndexFunc(commands, func(c []string) bool {
 		return slices.Equal(c, []string{"enable", bundle.AgentUnit("b"), bundle.ProxyUnit("b")})
 	})
-	if start < 0 || kill < 0 || enable < 0 || start >= kill || kill >= enable {
-		t.Fatalf("a handover ran %q; want the new slot started, then the old told to drain, then the new enabled", commands)
+	if start < 0 || kill < 0 || enable < 0 || start >= enable || enable >= kill {
+		t.Fatalf("a handover ran %q; want the new slot started, then enabled, then the old told to drain", commands)
 	}
 	if !slices.Contains(commands[kill], "--signal=SIGUSR2") {
 		t.Errorf("the old slot was told to drain with %q", commands[kill])
@@ -333,13 +352,16 @@ func TestAPoolThatHandsOverStartsTheIdleSlotAndDrainsTheOld(t *testing.T) {
 		t.Fatalf("slot recorded = %q, want b", got)
 	}
 
-	// The next handover goes back to the first slot, stopping what is left
-	// of it draining first.
+	// The next handover, once the first slot has drained and exited, goes
+	// back to it.
+	for _, unit := range []string{bundle.AgentUnit("a"), bundle.ProxyUnit("a")} {
+		b.systemd.active[unit], b.systemd.status[unit] = false, ""
+	}
 	b.systemd.reset()
 	b.write(t, b.cfg.Inputs[0], `{"poolId":"pool-1","moved":true}`)
 	b.apply(t)
-	if !b.systemd.ran("stop", bundle.ProxyUnit("a"), bundle.AgentUnit("a")) || !b.systemd.ran("start", bundle.AgentUnit("a"), bundle.ProxyUnit("a")) {
-		t.Fatalf("the second handover ran %q; want the first slot stopped and started again", b.systemd.commands)
+	if !b.systemd.ran("start", bundle.AgentUnit("a"), bundle.ProxyUnit("a")) {
+		t.Fatalf("the second handover ran %q; want the first slot started again", b.systemd.commands)
 	}
 	if got := b.slot(t); got != "a" {
 		t.Fatalf("slot recorded = %q, want a", got)
@@ -457,8 +479,11 @@ func TestAMovedSocketIsBoundAgainUnderItsSlot(t *testing.T) {
 
 // A new slot that does not take over once the old one was told to drain is
 // stopped, and the old slot is started again, so the pool is never left with
-// nothing accepting: the box runs the old slot, and the apply says so.
-func TestANewSlotThatDoesNotTakeOverIsRolledBack(t *testing.T) {
+// A new slot that does not take over once the old one drains is left
+// running, for systemd to restart until it does, and the old one is left to
+// finish its drain: nothing that drains is stopped or restarted. The apply
+// fails, with the new slot recorded.
+func TestANewSlotThatDoesNotTakeOverLeavesTheOldToDrain(t *testing.T) {
 	b := newBox(t, true)
 	b.cfg.TakeOver = 200 * time.Millisecond
 	b.apply(t)
@@ -468,39 +493,62 @@ func TestANewSlotThatDoesNotTakeOverIsRolledBack(t *testing.T) {
 	if err := Apply(context.Background(), b.cfg); err == nil {
 		t.Fatal("an apply whose new slot did not take over succeeded")
 	}
-	commands := b.systemd.commands
-	kill := slices.IndexFunc(commands, func(c []string) bool { return c[0] == "kill" })
-	after := func(from int, want ...string) int {
-		if from < 0 {
-			return -1
+	for _, unit := range []string{bundle.AgentUnit("a"), bundle.ProxyUnit("a")} {
+		if b.systemd.ran("restart", bundle.AgentUnit("a"), bundle.ProxyUnit("a")) || slices.ContainsFunc(b.systemd.commands, func(c []string) bool { return c[0] == "stop" && slices.Contains(c, unit) }) {
+			t.Fatalf("the draining slot was stopped or restarted: %q", b.systemd.commands)
 		}
-		i := slices.IndexFunc(commands[from:], func(c []string) bool { return slices.Equal(c, want) })
-		if i < 0 {
-			return -1
+		if got := b.systemd.status[unit]; got != handover.StatusDraining {
+			t.Fatalf("%s says %q, want draining", unit, got)
 		}
-		return from + i
 	}
-	stopNext := after(kill, "stop", bundle.ProxyUnit("b"), bundle.AgentUnit("b"))
-	restartOld := after(stopNext, "restart", bundle.AgentUnit("a"), bundle.ProxyUnit("a"))
-	if kill < 0 || stopNext < 0 || restartOld < 0 {
-		t.Fatalf("ran %q; want the old slot told to drain, then the new one stopped and the old one started again", commands)
+	if !b.systemd.active[bundle.AgentUnit("b")] || !b.systemd.active[bundle.ProxyUnit("b")] {
+		t.Fatalf("the new slot was stopped: %q", b.systemd.commands)
 	}
-	if got := b.slot(t); got != "a" {
-		t.Fatalf("slot recorded = %q, want a, started again", got)
-	}
-	if !b.systemd.ran("enable", bundle.AgentUnit("a"), bundle.ProxyUnit("a")) {
-		t.Fatalf("the old slot is not the one run at boot: %q", commands)
-	}
-	if b.systemd.status[bundle.AgentUnit("a")] != handover.StatusActive {
-		t.Fatalf("the old slot says %q after the rollback, want active", b.systemd.status[bundle.AgentUnit("a")])
+	if got := b.slot(t); got != "b" {
+		t.Fatalf("slot recorded = %q, want b", got)
 	}
 
-	// The old slot was started again on what the apply laid, so the next
-	// apply finds nothing moved.
+	// The next apply finds the old slot still draining and leaves it.
 	b.systemd.reset()
+	b.write(t, b.cfg.Binary, "agent v3")
+	err := Apply(context.Background(), b.cfg)
+	if err == nil || !strings.Contains(err.Error(), "still drains") {
+		t.Fatalf("an apply over a slot still draining = %v, want it refused", err)
+	}
+	if slices.ContainsFunc(b.systemd.commands, func(c []string) bool {
+		return (c[0] == "stop" || c[0] == "restart" || c[0] == "start") && (slices.Contains(c, bundle.AgentUnit("a")) || slices.Contains(c, bundle.ProxyUnit("a")))
+	}) {
+		t.Fatalf("an apply over a draining slot touched it: %q", b.systemd.commands)
+	}
+}
+
+// A new slot that does not take over while the old one never began to drain
+// is stopped, and the old one serves on as it was.
+func TestANewSlotThatDoesNotTakeOverBeforeAnyDrainIsStopped(t *testing.T) {
+	b := newBox(t, true)
+	b.cfg.TakeOver = 200 * time.Millisecond
 	b.apply(t)
-	if len(b.systemd.ranAny("kill")) != 0 || len(b.systemd.ranAny("restart")) != 0 {
-		t.Fatalf("the apply after a rollback ran %q", b.systemd.commands)
+	b.systemd.noTakeOver = true
+	// The old agent took the signal, but says it serves on.
+	b.systemd.onKill = func() {
+		for _, unit := range []string{bundle.AgentUnit("a"), bundle.ProxyUnit("a")} {
+			b.systemd.status[unit] = handover.StatusActive
+		}
+	}
+	b.systemd.ignoreKill = true
+	b.systemd.reset()
+	b.write(t, b.cfg.Binary, "agent v2")
+	if err := Apply(context.Background(), b.cfg); err == nil {
+		t.Fatal("an apply whose new slot did not take over succeeded")
+	}
+	if b.systemd.active[bundle.AgentUnit("b")] || b.systemd.active[bundle.ProxyUnit("b")] {
+		t.Fatalf("the new slot is left running beside an old one that never drained: %q", b.systemd.commands)
+	}
+	if got := b.slot(t); got != "a" {
+		t.Fatalf("slot recorded = %q, want a", got)
+	}
+	if !b.systemd.ran("enable", bundle.AgentUnit("a"), bundle.ProxyUnit("a")) {
+		t.Fatalf("the old slot is not run at boot again: %q", b.systemd.commands)
 	}
 }
 
