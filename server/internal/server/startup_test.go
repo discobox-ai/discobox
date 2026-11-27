@@ -11,6 +11,7 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/pkg/health"
+	"github.com/discobox-ai/discobox/server/internal/services"
 )
 
 // Until the router exists, every request is answered with what startup is
@@ -166,10 +167,13 @@ func TestStartupEventAliasesUseLegacyJSON(t *testing.T) {
 	}
 }
 
-// fakePoolUpgrades counts what its test sets.
-type fakePoolUpgrades struct{ n int }
+// fakePoolUpgrades counts what its test sets: n upgrading, draining of them
+// waiting on a drain.
+type fakePoolUpgrades struct{ n, draining int }
 
-func (f *fakePoolUpgrades) PoolsUpgrading(context.Context) int { return f.n }
+func (f *fakePoolUpgrades) PoolsUpgrading(context.Context) services.PoolUpgrades {
+	return services.PoolUpgrades{Upgrading: f.n, Draining: f.draining}
+}
 
 func readHealth(t *testing.T, handler http.Handler) (int, health.Status, string) {
 	t.Helper()
@@ -230,5 +234,27 @@ func TestHealthIsReadyWithAWarningOnceTheUpgradeWaitRunsOut(t *testing.T) {
 	pools.n = 0
 	if code, status, _ = readHealth(t, h); code != http.StatusOK || !status.Settled() || len(status.Warnings) != 0 {
 		t.Fatalf("health = %d %+v, want settled with no warning", code, status)
+	}
+}
+
+// A pool whose upgrade waits on its last handover's drain is held back on
+// purpose: once the wait runs out, health says so apart from a pool that is
+// stuck.
+func TestHealthSaysAPoolWaitsOnADrain(t *testing.T) {
+	pools := &fakePoolUpgrades{n: 2, draining: 1}
+	h := newStartupHandler("starting services")
+	h.setReady(http.NotFoundHandler(), pools)
+	h.mu.Lock()
+	h.readyAt = time.Now().Add(-health.PoolUpgradeWait - time.Second)
+	h.mu.Unlock()
+
+	code, status, _ := readHealth(t, h)
+	if code != http.StatusOK || status.PoolsUpgrading != 2 {
+		t.Fatalf("health = %d %+v, want ready with 2 pools upgrading", code, status)
+	}
+	if len(status.Warnings) != 2 ||
+		!strings.Contains(status.Warnings[0], "1 pool not upgraded after 5m0s") ||
+		!strings.Contains(status.Warnings[1], "1 pool waiting for the last handover to drain") {
+		t.Fatalf("warnings = %q, want one stuck and one draining", status.Warnings)
 	}
 }

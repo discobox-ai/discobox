@@ -428,3 +428,23 @@ func TestUpgradeWatchCountsTheFirstReportOfAnAgentRestartedAfterABoot(t *testing
 		t.Fatalf("the restarted agent's first report did not count: %v", got)
 	}
 }
+
+// A pool whose box would not move because its last handover still drains is
+// named as waiting on that drain, and counted as draining, until a later
+// reconcile settles.
+func TestUpgradeWatchNamesAPoolWaitingOnADrain(t *testing.T) {
+	f := newUpgradeFixture(t)
+	f.addPool("pool-1", true)
+	f.start()
+	f.watch.drainWaiting("pool-1", time.Now())
+	pending := f.watch.Pending(context.Background())
+	if len(pending) != 1 || pending[0].WaitingOn != waitingForDrain || !pending[0].Draining {
+		t.Fatalf("pending = %+v, want pool-1 waiting on a drain", pending)
+	}
+	f.watch.settled("pool-1", time.Now(), nil)
+	f.reconcile("pool-1")
+	f.report("pool-1", true)
+	if got := f.pending(); len(got) != 0 {
+		t.Fatalf("pool still pending once its reconcile settled: %v", got)
+	}
+}

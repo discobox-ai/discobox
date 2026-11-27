@@ -770,7 +770,15 @@ type Services struct {
 // that it has not yet brought onto its agent. Which they are is logged, not
 // answered: the count is all the unauthenticated health endpoint gives.
 type PoolUpgradeService interface {
-	PoolsUpgrading(ctx context.Context) int
+	PoolsUpgrading(ctx context.Context) PoolUpgrades
+}
+
+// PoolUpgrades counts the pools still upgrading, and how many of them wait
+// only for their last handover's old slot to drain: an upgrade held back on
+// purpose, which health says rather than counting it stuck.
+type PoolUpgrades struct {
+	Upgrading int
+	Draining  int
 }
 
 // AssetService serves bundles to a pool by blob (ADR 26-10-16-423 §13): only

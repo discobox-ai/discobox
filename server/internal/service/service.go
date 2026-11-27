@@ -349,8 +349,15 @@ func (s *Service) SandboxProviderManager() *sandbox.ProviderManager {
 
 // PoolsUpgrading counts the pools this run has not yet brought onto its agent,
 // which the health endpoint waits on (ADR 26-11-14-624).
-func (s *Service) PoolsUpgrading(ctx context.Context) int {
-	return len(s.poolControlPlane.Upgrades().Pending(ctx))
+func (s *Service) PoolsUpgrading(ctx context.Context) services.PoolUpgrades {
+	pending := s.poolControlPlane.Upgrades().Pending(ctx)
+	count := services.PoolUpgrades{Upgrading: len(pending)}
+	for _, pool := range pending {
+		if pool.Draining {
+			count.Draining++
+		}
+	}
+	return count
 }
 
 // Assets is the asset API's service, which only a pool reaches.

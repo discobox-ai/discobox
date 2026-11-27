@@ -772,3 +772,35 @@ func TestAnApplyBindsASocketLeftDown(t *testing.T) {
 		t.Fatalf("the sockets were bound with a socket's own units start still running: %q", b.systemd.commands)
 	}
 }
+
+// A socket the pool no longer has is not closed while a slot drains: the
+// draining slot still serves on it. Its unit file stays, so the apply once
+// that slot has exited closes it.
+func TestASocketDroppedWhileASlotDrainsClosesOnceItHasExited(t *testing.T) {
+	b := newBox(t, true)
+	b.apply(t)
+	b.systemd.reset()
+	b.write(t, b.cfg.Binary, "agent v2")
+	b.apply(t)
+	dropped := b.cfg.Sockets[len(b.cfg.Sockets)-1]
+	b.cfg.Sockets = b.cfg.Sockets[:len(b.cfg.Sockets)-1]
+	b.systemd.reset()
+	if err := Apply(context.Background(), b.cfg); !errors.Is(err, ErrSlotDraining) {
+		t.Fatalf("dropping a socket while a slot drains = %v, want ErrSlotDraining", err)
+	}
+	if slices.ContainsFunc(b.systemd.commands, func(c []string) bool { return slices.Contains(c, dropped.Unit()) }) {
+		t.Fatalf("the dropped socket was touched while a slot drains: %q", b.systemd.commands)
+	}
+	if _, err := os.Stat(filepath.Join(b.cfg.SystemdDir, dropped.Unit())); err != nil {
+		t.Fatalf("the dropped socket's unit file is gone before it was closed: %v", err)
+	}
+
+	for _, unit := range []string{bundle.AgentUnit("a"), bundle.ProxyUnit("a")} {
+		b.systemd.active[unit], b.systemd.status[unit] = false, ""
+	}
+	b.systemd.reset()
+	b.apply(t)
+	if !b.systemd.ran("disable", "--now", dropped.Unit()) {
+		t.Fatalf("the dropped socket was not closed once the drain ended: %q", b.systemd.commands)
+	}
+}

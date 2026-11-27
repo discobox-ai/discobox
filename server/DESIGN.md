@@ -793,7 +793,7 @@ Handing over is not yet being ready. There are three states
 | --- | --- | --- | --- |
 | `starting` | `503` with a contract-compatible error | `503` | no router yet: the database is being opened or migrated, the services built, or the built-in harnesses checked; `phase` names the step |
 | `upgrading_pools` | every route serves | `503` | a pool registered before this start has not yet been brought onto this server's agent; `poolsUpgrading` counts them |
-| `ready` | every route serves | `200` | the router is serving and every such pool is upgraded — or `health.PoolUpgradeWait` (5m) ran out, and `poolsUpgrading` and a warning count those still upgrading until none is |
+| `ready` | every route serves | `200` | the router is serving and every such pool is upgraded — or `health.PoolUpgradeWait` (5m) ran out, and `poolsUpgrading` and a warning count those still upgrading until none is; a pool held back while its last handover drains (`sandbox.ErrPoolSlotDraining`) gets a warning of its own, apart from one stuck |
 
 `/healthz` answers anyone, before authentication, so it counts pools and never
 names them; the log names each and what it waits on.
