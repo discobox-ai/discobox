@@ -182,11 +182,13 @@ next connection to the active process.
 
 *(Amended: the standby is ready once its listeners, channel and front are
 made, and says it is active only once it has built everything it serves with,
-so one that fails after taking the lock never says so. A new agent that still
-does not say it is active within two minutes of step 3 is stopped, and the old
-slot's units are restarted, which cuts what it still carried: the pool is
-never left with nothing accepting. It starts on what was laid, since the old
-binary is gone. Every exit but a drain's is restarted.)*
+so one that fails after taking the lock never says so. A slot that drains is
+never stopped or restarted: a new agent that does not say it is active within
+two minutes of step 3 is stopped only while the old one has not begun to
+drain, and otherwise left for systemd to restart while the old one finishes.
+The new slot is recorded before step 3. An agent or proxy that cannot mark
+itself draining keeps the active lock until it exits. Every exit but a drain's
+is restarted.)*
 
 **Power across the two processes.** The per-sandbox power lock and the boot
 mark move from the agent's memory to a lock file in the pool's lock tree, held
@@ -201,10 +203,9 @@ already on disk.
 **The control-plane channel.** For a pool with no `controlPlaneUrl`, the
 server dials a new channel once the old agent closes its own, which reaches
 the new agent, since it alone accepts. The old agent closes it once the
-connections it forwarded onto it have ended or are idle (each has its answer,
-and has carried nothing for half a second since then and since the drain
-began; a call still waiting on its answer holds it), within 20 seconds of
-step 3: its
+requests it forwarded onto it have their whole answers (the socket is served
+as HTTP, so an idle keep-alive closes at once and a streamed answer holds it
+to its end), within 20 seconds of step 3: its
 own calls to the control plane, from then on, reach it through the socket the
 new agent serves. *(Amended: this said the server dials once the handover
 reaches step 4, and keeps the old channel until the old agent closes it. The
