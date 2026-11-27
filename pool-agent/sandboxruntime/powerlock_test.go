@@ -131,7 +131,7 @@ func TestOverlappingBootsHoldTheMarkUntilTheLastEnds(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	if err := core.AwaitBackground(ctx); err == nil {
-		t.Fatal("AwaitBoots returned with a boot under way")
+		t.Fatal("AwaitBackground returned with a boot under way")
 	}
 	core.endBoot("sbx_1", second, nil)
 	if other.SandboxBooting("sbx_1") {

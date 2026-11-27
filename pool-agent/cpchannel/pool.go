@@ -36,9 +36,9 @@ type Channel struct {
 	// one, so a waiter wakes for each new session.
 	arrived chan struct{}
 	// forwarding counts the connections being spliced onto a session, and
-	// lastTraffic is when a byte last crossed one of them (unix nanoseconds).
-	forwarding  handover.InFlight
-	lastTraffic atomic.Int64
+	// traffic holds what each of them last carried (Drain).
+	forwarding handover.InFlight
+	traffic    map[*traffic]struct{}
 }
 
 // New is the pool end of a channel for the pool whose key is poolKey, which
@@ -106,28 +106,34 @@ func (c *Channel) install(session *cpmux.Session) {
 	}
 }
 
-// drainQuiet is how long the connections forwarded onto a draining channel
-// must carry nothing before it is closed. Most of them are idle keep-alive
-// connections of the pool's own clients, which would otherwise hold it to
-// the bound; a call waiting longer than this on its answer is cut.
+// drainQuiet is how long a connection forwarded onto a draining channel must
+// carry nothing, once it has its answer, before the channel is closed under
+// it. Most of them are idle keep-alive connections of the pool's own
+// clients, which would otherwise hold the drain to its bound.
 const drainQuiet = 500 * time.Millisecond
 
-// Drain closes the channel once the connections already forwarded onto it
-// have ended, or have carried nothing for drainQuiet, or when ctx ends,
-// whichever is first: what a draining agent does once it has stopped
+// Drain closes the channel once every connection already forwarded onto it
+// has ended or is idle, or when ctx ends, whichever is first: what a draining
+// agent does once it has stopped
 // accepting its socket (ADR 26-11-26-536 §4). The server then dials a channel
 // again, which reaches the agent that took over, the only one still
 // accepting; a draining agent's own calls to the control plane reach it
 // through the socket that agent now serves. Until then, the agent that took
 // over and its proxy reach no control plane, so the drain is kept short.
+//
+// A connection is idle once what it last carried went to the pool's client
+// (an answer, not a call still waiting on one) and it has carried nothing for
+// drainQuiet since then and since the drain began. A call still waiting on
+// its answer holds the drain until ctx ends.
 func (c *Channel) Drain(ctx context.Context) {
+	began := time.Now()
 	ticker := time.NewTicker(drainQuiet / 10)
 	defer ticker.Stop()
 	for {
 		idle, cancel := context.WithTimeout(ctx, drainQuiet/10)
 		err := c.forwarding.Wait(idle)
 		cancel()
-		if err == nil || time.Since(time.Unix(0, c.lastTraffic.Load())) >= drainQuiet {
+		if err == nil || c.allIdle(began) {
 			break
 		}
 		select {
@@ -143,6 +149,36 @@ func (c *Channel) Drain(ctx context.Context) {
 	c.mu.Unlock()
 	if session != nil {
 		_ = session.Close()
+	}
+}
+
+// allIdle reports whether every forwarded connection is idle (Drain).
+func (c *Channel) allIdle(began time.Time) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for t := range c.traffic {
+		if !t.idle(began) {
+			return false
+		}
+	}
+	return true
+}
+
+// track registers one forwarded connection's traffic, until the returned
+// func is called.
+func (c *Channel) track() (*traffic, func()) {
+	t := &traffic{}
+	t.last.Store(time.Now().UnixNano())
+	c.mu.Lock()
+	if c.traffic == nil {
+		c.traffic = make(map[*traffic]struct{})
+	}
+	c.traffic[t] = struct{}{}
+	c.mu.Unlock()
+	return t, func() {
+		c.mu.Lock()
+		delete(c.traffic, t)
+		c.mu.Unlock()
 	}
 }
 
@@ -188,6 +224,8 @@ func (c *Channel) Serve(ctx context.Context, listener net.Listener) error {
 
 func (c *Channel) forward(ctx context.Context, conn net.Conn) {
 	defer c.forwarding.Begin()()
+	traffic, untrack := c.track()
+	defer untrack()
 	defer func() { _ = conn.Close() }()
 	wait, cancel := context.WithTimeout(ctx, streamWait)
 	session, err := c.current(wait)
@@ -203,19 +241,41 @@ func (c *Channel) forward(ctx context.Context, conn net.Conn) {
 		return
 	}
 	defer func() { _ = stream.Close() }()
-	cpmux.Splice(trafficConn{Conn: conn, last: &c.lastTraffic}, stream)
+	cpmux.Splice(trafficConn{Conn: conn, traffic: traffic}, stream)
 }
 
-// trafficConn records when a byte last crossed conn, either way.
+// traffic is what one forwarded connection last carried: when, and whether
+// it was a call from the pool's client still waiting on its answer.
+type traffic struct {
+	last    atomic.Int64
+	waiting atomic.Bool
+}
+
+// idle reports whether the connection has its answer and has carried
+// nothing for drainQuiet since then and since began.
+func (t *traffic) idle(began time.Time) bool {
+	if t.waiting.Load() {
+		return false
+	}
+	since := time.Unix(0, t.last.Load())
+	if since.Before(began) {
+		since = began
+	}
+	return time.Since(since) >= drainQuiet
+}
+
+// trafficConn records what crosses conn: a read is the pool's client calling,
+// a write is the control plane answering.
 type trafficConn struct {
 	net.Conn
-	last *atomic.Int64
+	traffic *traffic
 }
 
 func (t trafficConn) Read(p []byte) (int, error) {
 	n, err := t.Conn.Read(p)
 	if n > 0 {
-		t.last.Store(time.Now().UnixNano())
+		t.traffic.last.Store(time.Now().UnixNano())
+		t.traffic.waiting.Store(true)
 	}
 	return n, err
 }
@@ -223,7 +283,18 @@ func (t trafficConn) Read(p []byte) (int, error) {
 func (t trafficConn) Write(p []byte) (int, error) {
 	n, err := t.Conn.Write(p)
 	if n > 0 {
-		t.last.Store(time.Now().UnixNano())
+		t.traffic.last.Store(time.Now().UnixNano())
+		t.traffic.waiting.Store(false)
 	}
 	return n, err
+}
+
+// CloseWrite half-closes conn as cpmux.Splice would without the wrapper: the
+// pool's client reads the rest of its answer after the control plane has
+// sent its last byte.
+func (t trafficConn) CloseWrite() error {
+	if cw, ok := t.Conn.(interface{ CloseWrite() error }); ok {
+		return cw.CloseWrite()
+	}
+	return t.Conn.Close()
 }

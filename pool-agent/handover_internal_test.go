@@ -3,6 +3,7 @@ package poolagent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"testing"
 	"time"
@@ -46,7 +47,7 @@ func TestSweepsWaitForTheDrainingAgentToExit(t *testing.T) {
 func TestAnAgentThatTookOverServesBeforeItsFirstReport(t *testing.T) {
 	reported := make(chan struct{})
 	served := make(chan struct{})
-	err := serveTakingOver(context.Background(), true, func() error {
+	err := serveTakingOver(context.Background(), true, nil, func() error {
 		<-served
 		close(reported)
 		return nil
@@ -60,7 +61,7 @@ func TestAnAgentThatTookOverServesBeforeItsFirstReport(t *testing.T) {
 	}
 
 	refused := errors.New("the control plane does not hold this pool's key")
-	err = serveTakingOver(context.Background(), true, func() error { return refused }, func(ctx context.Context) error {
+	err = serveTakingOver(context.Background(), true, nil, func() error { return refused }, func(ctx context.Context) error {
 		<-ctx.Done()
 		return ctx.Err()
 	})
@@ -69,7 +70,38 @@ func TestAnAgentThatTookOverServesBeforeItsFirstReport(t *testing.T) {
 	}
 
 	calledReport := false
-	if err := serveTakingOver(context.Background(), false, func() error { calledReport = true; return nil }, func(context.Context) error { return nil }); err != nil || calledReport {
+	if err := serveTakingOver(context.Background(), false, nil, func() error { calledReport = true; return nil }, func(context.Context) error { return nil }); err != nil || calledReport {
 		t.Fatalf("an agent that did not take over: %v, reported here %v", err, calledReport)
 	}
+}
+
+// An agent that took over and is told to drain before its first report is
+// made serves what it holds to its end: the report the drain ended does not
+// cut it.
+func TestADrainBeforeTheFirstReportDoesNotCutWhatIsServed(t *testing.T) {
+	drain := make(chan struct{})
+	ended := make(chan struct{})
+	finished := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- serveTakingOver(context.Background(), true, drain, func() error {
+			<-drain
+			defer close(ended)
+			return context.Canceled
+		}, func(ctx context.Context) error {
+			<-ended
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("what was served was cut: %w", context.Cause(ctx))
+			case <-time.After(50 * time.Millisecond):
+			}
+			close(finished)
+			return handover.ErrDrained
+		})
+	}()
+	close(drain)
+	if err := <-done; !errors.Is(err, handover.ErrDrained) {
+		t.Fatalf("serve = %v, want a drained exit", err)
+	}
+	<-finished
 }

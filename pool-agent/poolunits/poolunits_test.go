@@ -28,6 +28,8 @@ type fakeSystemd struct {
 	failStart string
 	// noTakeOver leaves a new slot a standby once the old one drains.
 	noTakeOver bool
+	// failKill fails every kill, a drain signal systemd cannot send.
+	failKill bool
 }
 
 func newFakeSystemd() *fakeSystemd {
@@ -85,6 +87,9 @@ func (f *fakeSystemd) systemctl(_ context.Context, args ...string) (string, erro
 			f.status[unit] = ""
 		}
 	case "kill":
+		if f.failKill {
+			return "", errors.New("kill failed")
+		}
 		for _, unit := range units {
 			f.status[unit] = handover.StatusDraining
 			if peer := f.peer(unit); f.active[peer] && f.status[peer] == handover.StatusStandby && !f.noTakeOver {
@@ -496,6 +501,28 @@ func TestANewSlotThatDoesNotTakeOverIsRolledBack(t *testing.T) {
 	b.apply(t)
 	if len(b.systemd.ranAny("kill")) != 0 || len(b.systemd.ranAny("restart")) != 0 {
 		t.Fatalf("the apply after a rollback ran %q", b.systemd.commands)
+	}
+}
+
+// A new slot whose old one cannot be told to drain is stopped, and the old
+// slot, never told, serves on uncut.
+func TestAnOldSlotThatCannotBeToldIsLeftServing(t *testing.T) {
+	b := newBox(t, true)
+	b.apply(t)
+	b.systemd.failKill = true
+	b.systemd.reset()
+	b.write(t, b.cfg.Binary, "agent v2")
+	if err := Apply(context.Background(), b.cfg); err == nil {
+		t.Fatal("an apply whose old slot could not be told to drain succeeded")
+	}
+	if len(b.systemd.ranAny("restart")) != 0 {
+		t.Fatalf("the old slot was restarted, cutting what it serves, though it was never told to drain: %q", b.systemd.commands)
+	}
+	if b.systemd.active[bundle.AgentUnit("b")] || b.systemd.active[bundle.ProxyUnit("b")] {
+		t.Fatalf("the new slot is left running beside the old: %q", b.systemd.commands)
+	}
+	if !b.systemd.active[bundle.AgentUnit("a")] || b.systemd.status[bundle.AgentUnit("a")] != handover.StatusActive {
+		t.Fatalf("the old slot is not serving: %q", b.systemd.commands)
 	}
 }
 

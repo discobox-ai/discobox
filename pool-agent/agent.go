@@ -161,11 +161,6 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	stopReaper := childproc.StartReaper(ctx, logger, agentsystemd.ManagedChildProcesses(systemd))
 	defer stopReaper()
 	defer agentsystemd.Stop(systemd)
-	// On a pool machine the agent is a unit the proxy's is ordered after, and
-	// this is the start systemd waits for: the proxy's environment, CA and
-	// control key are all written (ADR 26-10-23-551 §1). Anywhere else nothing
-	// is listening, and it does nothing.
-
 	// The control plane URL's scheme selects the transport; nothing here knows
 	// whether that is IP, VSOCK, or a Unix socket served by a guest helper.
 	baseURL, controlPlaneHTTPClient, err := wire.HTTPClient(bootstrap.ControlPlaneURL, 0)
@@ -212,6 +207,10 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// On a pool machine the agent is a unit the proxy's is ordered after, and
+	// this is the start systemd waits for: the proxy's environment, CA and
+	// control key are all written (ADR 26-10-23-551 §1). Anywhere else nothing
+	// is listening, and it does nothing.
 	if err := agentsystemd.NotifyReady(); err != nil {
 		return fmt.Errorf("tell systemd the agent has started: %w", err)
 	}
@@ -229,7 +228,6 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 		serveControlPlaneSocket(ctx, logger, channel, channelListener)
 	}
 	front.Start()
-	_ = agentsystemd.NotifyStatus(handover.StatusActive)
 	// What runs once per pool runs in the active agent alone: a drain ends it
 	// while what was accepted is still served.
 	loops := untilDrained(ctx, drainRequested)
@@ -300,7 +298,9 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	// own; meanwhile it serves (serveTakingOver).
 	firstReport := func() error {
 		if channel != nil && tookOver {
-			if err := awaitControlPlaneChannel(ctx, logger, channel); err != nil {
+			// loops: a drain ends the wait, rather than holding the
+			// report for its bound.
+			if err := awaitControlPlaneChannel(loops, logger, channel); err != nil {
 				return err
 			}
 		}
@@ -359,7 +359,11 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	}
 	// One call for either runtime: the first report is made once, here or
 	// before (firstReport).
-	return serveTakingOver(ctx, tookOver, firstReport, func(ctx context.Context) error {
+	// It says it is active only now, with everything it serves with built:
+	// one that fails before this never says so, and the apply that started
+	// it rolls back to the slot before it (poolunits).
+	_ = agentsystemd.NotifyStatus(handover.StatusActive)
+	return serveTakingOver(ctx, tookOver, drainRequested, firstReport, func(ctx context.Context) error {
 		return Serve(ctx, logger, root, bootstrap, identity, runtime, client, assets, front, audit, lifecycle)
 	})
 }

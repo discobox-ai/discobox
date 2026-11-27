@@ -538,8 +538,9 @@ func (a *applier) rebind(ctx context.Context, sockets, units []string) (bool, er
 // handOver starts next beside slot, tells slot to drain, and waits for next
 // to take over (ADR 26-11-26-536 §4). It answers the slot that serves once it
 // returns, "" when nothing was changed, and an error when that is not next:
-//   - a next that does not start is stopped, and slot was never told to
-//     drain: it serves as it was;
+//   - a next that does not start, or that starts while slot cannot be asked
+//     or told to drain, is stopped before slot was told: it serves as it
+//     was;
 //   - a next that does not say it took over within the wait (TakeOver) is
 //     stopped, and slot is started again (its unit restarted), which cuts
 //     what the draining slot still carried, so the pool is never left with
@@ -561,18 +562,28 @@ func (a *applier) handOver(ctx context.Context, slot, next string) (string, erro
 		return "", fmt.Errorf("start the pool's new agent in slot %s: %w", next, err)
 	}
 	// Each one apart: a proxy that is not running has nothing to drain, and
-	// the new one takes over from no one.
+	// the new one takes over from no one. Until one is told, the old slot
+	// serves as it was, and a failure only stops next.
+	signalled := false
+	fail := func(err error) (string, error) {
+		if signalled {
+			return a.rollBack(ctx, slot, next, err)
+		}
+		_, _ = a.cfg.Systemctl(context.WithoutCancel(ctx), "stop", bundle.ProxyUnit(next), bundle.AgentUnit(next))
+		return "", err
+	}
 	for _, unit := range []string{bundle.AgentUnit(slot), bundle.ProxyUnit(slot)} {
 		running, err := a.active(ctx, unit)
 		if err != nil {
-			return a.rollBack(ctx, slot, next, err)
+			return fail(err)
 		}
 		if !running {
 			continue
 		}
 		if _, err := a.cfg.Systemctl(ctx, "kill", "--kill-who=main", "--signal=SIGUSR2", unit); err != nil {
-			return a.rollBack(ctx, slot, next, fmt.Errorf("tell %s to drain: %w", unit, err))
+			return fail(fmt.Errorf("tell %s to drain: %w", unit, err))
 		}
+		signalled = true
 	}
 	if err := a.awaitTakeOver(ctx, nextUnits); err != nil {
 		return a.rollBack(ctx, slot, next, fmt.Errorf("the pool's new agent in slot %s did not take over: %w", next, err))
