@@ -10,6 +10,11 @@
   pool's handover write one database for up to the drain bound (ADR
   26-11-26-536 §3), and the old one's inserts name every column its schema
   has.
+- Anything that adds to the `wg` that `Drain` and `Close` wait on does so
+  while something already counts in it: the accept loop holds a count for as
+  long as it runs. Why: a connection accepted just before a drain closed the
+  listener was added after `Drain`'s `Wait` began at zero, which
+  `sync.WaitGroup` forbids.
 - Do not put payload blobs in SQLite. Keep cache assets and captured HTTP
   request/response bodies in disk files, and store only audit/cache/spool
   metadata in the database.
