@@ -1809,16 +1809,20 @@ func (r *MachineSandboxRuntime) reapSandbox(ctx context.Context, sandboxID strin
 	return r.removeSandbox(ctx, sandboxID, false)
 }
 
-func (r *MachineSandboxRuntime) removeSandbox(ctx context.Context, sandboxID string, purge bool) error {
+func (r *MachineSandboxRuntime) removeSandbox(ctx context.Context, sandboxID string, purge bool) (resultErr error) {
 	unlock, err := r.lockPower(ctx, sandboxID)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	// Before the lock is let go of: what removal leaves of the sandbox's
-	// locks is nothing, whether it got as far as the tree or not; a later
-	// lock of it makes the file again.
-	defer r.forgetLocks(sandboxID)
+	// Before the lock is let go of, and only once the sandbox is gone: a
+	// removal that failed leaves it, and a boot of it, to be seen by
+	// another process of the pool.
+	defer func() {
+		if resultErr == nil {
+			r.forgetLocks(sandboxID)
+		}
+	}()
 	if err := r.removeMachine(ctx, sandboxID); err != nil {
 		return err
 	}

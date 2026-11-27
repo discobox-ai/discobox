@@ -1,7 +1,6 @@
-// Package handover holds what two processes of a pool share when one gives
-// way to another beside it (ADR 26-11-26-536 §§3–4). Here: the locks they
-// exclude each other with, across processes and within one, and the marks
-// one holds that the other can see.
+// Package handover holds what processes of a pool share to exclude each
+// other (ADR 26-11-26-536 §4): locks, across processes and within one, and
+// marks one holds that another can see.
 //
 // A lock is an open file description lock (fcntl(2) F_OFD_SETLK) on a file of
 // the pool's own: each open of the file is its own holder, in one process or
@@ -52,7 +51,9 @@ func TryAcquire(path string) (*Lock, bool, error) {
 
 // Mark holds the lock at path shared with any other marks of it, for as long
 // as some work runs: Held sees it from any process, and AwaitFree waits it
-// out. It waits only while a Held probe holds the lock for an instant.
+// out. It waits only while the file is locked alone (Acquire), so a file a
+// mark is taken on must be one nothing locks alone, or the mark's taker waits
+// on it as long as ctx lets it.
 func Mark(ctx context.Context, path string) (*Lock, error) {
 	return acquire(ctx, path, false)
 }
