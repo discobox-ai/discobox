@@ -374,11 +374,11 @@ A pool's proxy gives way to a new one beside it without cutting what it
 carries (ADR 26-11-26-536 §3; the pool's side is
 [pool-agent](../pool-agent/DESIGN.md#handing-over)). `Serve` takes a listener
 bound for it, a socket systemd holds that both proxies serve. `StopAccepting`
-closes this proxy's listener only, and `Drain` then serves what it accepted
-to its end, until its context ends: a plain connection's server stops
-keeping it alive (`SetKeepAlivesEnabled(false)`), so it closes once idle or
-after its current response, and the client's next request reaches the new
-proxy; a hijacked connection, a CONNECT tunnel (MITM'd or passed through) or
+first stops keeping plain connections alive (`SetKeepAlivesEnabled(false)`,
+which closes an idle one at once, and one in a response after it), then
+closes this proxy's listener, so a client's next request reaches the new
+proxy. `Drain` then serves what it accepted to its end, until its context
+ends: a hijacked connection, a CONNECT tunnel (MITM'd or passed through) or
 an upgraded stream, runs until it ends. The retention sweeper stops at once,
 since the new proxy sweeps the same trees; the new proxy's first pass waits
 on `RecordingConfig.SweepGate` until the draining one has exited, since a
