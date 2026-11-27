@@ -1040,9 +1040,11 @@ tracked in #1699, not a pattern to copy.
   the drain must not cut what the process serves or end it with another
   code (`serveTakingOver`). Why: the report's failure cancelled the drain's
   context, cutting every stream, and the exit 1 restarted the slot.
-- **A wrapper around a forwarded connection keeps `CloseWrite`.** Why:
-  `cpmux.Splice` half-closes through it, and a wrapper that hid it closed the
-  pool's client's connection outright.
+- **A drain judges what a connection carries by what it is, never by how
+  long it was quiet** (`cpchannel.Channel.Drain`): the control-plane socket
+  is served as HTTP, so a connection between requests is idle and one in a
+  request is not. Why: a quiet rule (500ms) cut streamed and long-poll
+  answers whose gaps were longer.
 - **A slot unit sets nothing that gives it its own `/run` or removes part
   of it** (`PrivateTmp=`, `ProtectSystem=`, `TemporaryFileSystem=`, … make a
   mount namespace of its own; `RuntimeDirectory=` deletes its directory as

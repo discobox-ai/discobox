@@ -457,13 +457,16 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 	server.StopAccepting()
 	listeners.close()
 	// Held until this process exits, from before the proxy taking over can
-	// accept: it sweeps nothing this one still writes until then.
+	// accept: it sweeps nothing this one still writes until then. Without the
+	// mark, this proxy keeps the active lock until it exits instead, so the
+	// one taking over waits for it, its sweeps and column drops included.
 	draining, err := handover.Mark(ctx, root.System(handover.ProxyDraining))
 	if err != nil {
-		logger.Warn("pool proxy draining unmarked", "error", err)
+		logger.Warn("pool proxy draining unmarked; the proxy taking over waits until this one exits", "error", err)
+	} else {
+		_ = active.Release()
 	}
 	defer func() { _ = draining.Release() }()
-	_ = active.Release()
 	_ = agentsystemd.NotifyStatus(handover.StatusDraining)
 	logger.Info("pool proxy draining", "bound", handover.DrainBound)
 	bounded, cancel := context.WithTimeout(ctx, handover.DrainBound)

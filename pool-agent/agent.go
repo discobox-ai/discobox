@@ -242,12 +242,15 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 			}
 			// Held until this process exits, from before the agent taking
 			// over can accept: it sweeps nothing this one still holds until
-			// then (sweepsAfterDrain).
+			// then (sweepsAfterDrain). Without the mark, this agent keeps the
+			// active lock until it exits instead, so the one taking over
+			// waits for it, sweeps included.
 			var markErr error
 			if draining, markErr = handover.Mark(ctx, root.System(handover.AgentDraining)); markErr != nil {
-				logger.Warn("pool agent draining unmarked", "error", markErr)
+				logger.Warn("pool agent draining unmarked; the agent taking over waits until this one exits", "error", markErr)
+			} else {
+				_ = active.Release()
 			}
-			_ = active.Release()
 			_ = agentsystemd.NotifyStatus(handover.StatusDraining)
 			logger.Info("pool agent stopped accepting; the agent that took over serves what arrives")
 			if channel != nil {

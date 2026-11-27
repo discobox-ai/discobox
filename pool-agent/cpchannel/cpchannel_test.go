@@ -1,10 +1,12 @@
 package cpchannel
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -59,65 +61,6 @@ func agent(t *testing.T, poolKey ed25519.PrivateKey, controlPlane ed25519.Public
 	return channel, server, socket
 }
 
-// What the pool's processes write to the socket arrives at the server as a
-// control-plane stream, and the server's answer comes back.
-func TestAPoolsConnectionReachesTheServerOverTheChannel(t *testing.T) {
-	serverKey, poolKey := newKey(t), newKey(t)
-	channel, agentAPI, socket := agent(t, poolKey, public(serverKey))
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	conn, err := Dial(ctx, http.DefaultTransport, agentAPI.URL, "proj", "pool", "token", serverKey, public(poolKey))
-	if err != nil {
-		t.Fatalf("Dial: %v", err)
-	}
-	session, err := cpmux.Client(conn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = session.Close() }()
-	if err := channel.Wait(ctx); err != nil {
-		t.Fatalf("Wait: %v", err)
-	}
-
-	accepted := make(chan string, 1)
-	go func() {
-		stream, target, err := session.Accept()
-		if err != nil {
-			accepted <- "accept: " + err.Error()
-			return
-		}
-		defer func() { _ = stream.Close() }()
-		buf := make([]byte, 4)
-		if _, err := io.ReadFull(stream, buf); err != nil {
-			accepted <- "read: " + err.Error()
-			return
-		}
-		_, _ = stream.Write([]byte("pong"))
-		accepted <- target + " " + string(buf)
-	}()
-
-	var dialer net.Dialer
-	local, err := dialer.DialContext(t.Context(), "unix", socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = local.Close() }()
-	if _, err := local.Write([]byte("ping")); err != nil {
-		t.Fatal(err)
-	}
-	reply := make([]byte, 4)
-	if _, err := io.ReadFull(local, reply); err != nil {
-		t.Fatalf("read reply: %v", err)
-	}
-	if got := <-accepted; got != cpmux.TargetControlPlane+" ping" {
-		t.Fatalf("server saw %q", got)
-	}
-	if string(reply) != "pong" {
-		t.Fatalf("reply = %q", reply)
-	}
-}
-
 // Each end accepts exactly one key: a server that is not the pool's control
 // plane, or a pool that is not the one the server dialed for, gets no channel.
 func TestTheChannelIsPinnedAtBothEnds(t *testing.T) {
@@ -153,43 +96,6 @@ func TestARequestThatIsNotAWebSocketIsRefused(t *testing.T) {
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusUpgradeRequired {
 		t.Fatalf("status = %d, want 426", resp.StatusCode)
-	}
-}
-
-// A connection made while no channel is open waits for one, rather than
-// failing at once while the server redials.
-func TestALocalConnectionWaitsForAChannel(t *testing.T) {
-	serverKey, poolKey := newKey(t), newKey(t)
-	_, agentAPI, socket := agent(t, poolKey, public(serverKey))
-	var dialer net.Dialer
-	local, err := dialer.DialContext(t.Context(), "unix", socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = local.Close() }()
-	if _, err := local.Write([]byte("ping")); err != nil {
-		t.Fatal(err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	conn, err := Dial(ctx, http.DefaultTransport, agentAPI.URL, "proj", "pool", "token", serverKey, public(poolKey))
-	if err != nil {
-		t.Fatalf("Dial: %v", err)
-	}
-	session, err := cpmux.Client(conn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = session.Close() }()
-	stream, _, err := session.Accept()
-	if err != nil {
-		t.Fatalf("Accept: %v", err)
-	}
-	defer func() { _ = stream.Close() }()
-	buf := make([]byte, 4)
-	if _, err := io.ReadFull(stream, buf); err != nil || string(buf) != "ping" {
-		t.Fatalf("read %q, %v", buf, err)
 	}
 }
 
@@ -297,43 +203,17 @@ func TestTheChannelOpensThroughAnEdgeThatForwardsOnlyWebSockets(t *testing.T) {
 	}
 
 	reply := bytes.Repeat([]byte("0123456789abcdef"), 1<<16) // 1 MiB
-	accepted := make(chan string, 1)
-	go func() {
-		stream, target, err := session.Accept()
-		if err != nil {
-			accepted <- "accept: " + err.Error()
-			return
-		}
-		defer func() { _ = stream.Close() }()
-		buf := make([]byte, 4)
-		if _, err := io.ReadFull(stream, buf); err != nil {
-			accepted <- "read: " + err.Error()
-			return
-		}
-		if _, err := stream.Write(reply); err != nil {
-			accepted <- "write: " + err.Error()
-			return
-		}
-		accepted <- target + " " + string(buf)
-	}()
-
-	var dialer net.Dialer
-	local, err := dialer.DialContext(ctx, "unix", socket)
+	targets := serveControlPlane(t, session, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(reply)
+	}))
+	got, err := get(ctx, socketClient(socket), "/ping")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("GET through the channel: %v", err)
 	}
-	defer func() { _ = local.Close() }()
-	if _, err := local.Write([]byte("ping")); err != nil {
-		t.Fatal(err)
+	if target := <-targets; target != cpmux.TargetControlPlane {
+		t.Fatalf("server saw a stream to %q", target)
 	}
-	got := make([]byte, len(reply))
-	if _, err := io.ReadFull(local, got); err != nil {
-		t.Fatalf("read reply: %v", err)
-	}
-	if seen := <-accepted; seen != cpmux.TargetControlPlane+" ping" {
-		t.Fatalf("server saw %q", seen)
-	}
-	if !bytes.Equal(got, reply) {
+	if !bytes.Equal([]byte(got), reply) {
 		t.Fatal("the reply came back altered")
 	}
 }
@@ -377,23 +257,9 @@ func TestANewChannelReplacesADroppedOne(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	var dialer net.Dialer
-	local, err := dialer.DialContext(ctx, "unix", socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = local.Close() }()
-	if _, err := local.Write([]byte("ping")); err != nil {
-		t.Fatal(err)
-	}
-	stream, _, err := session.Accept()
-	if err != nil {
-		t.Fatalf("Accept on the new channel: %v", err)
-	}
-	defer func() { _ = stream.Close() }()
-	buf := make([]byte, 4)
-	if _, err := io.ReadFull(stream, buf); err != nil || string(buf) != "ping" {
-		t.Fatalf("read %q, %v", buf, err)
+	serveControlPlane(t, session, pong())
+	if got, err := get(ctx, socketClient(socket), "/ping"); err != nil || got != "pong /ping" {
+		t.Fatalf("GET on the new channel = %q, %v", got, err)
 	}
 }
 
@@ -417,16 +283,83 @@ func shortTempDir(t *testing.T) string {
 	return dir
 }
 
-// A draining agent's channel closes once the connections it forwarded have
-// ended, so the server dials again and reaches the agent that took over; a
-// connection still forwarded keeps it until it ends, or until the drain's
-// bound.
-func TestADrainClosesTheChannelOnceItsConnectionsEnd(t *testing.T) {
-	serverKey, poolKey := newKey(t), newKey(t)
-	channel, agentAPI, socket := agent(t, poolKey, public(serverKey))
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	conn, err := Dial(ctx, http.DefaultTransport, agentAPI.URL, "proj", "pool", "token", serverKey, public(poolKey))
+// sessionListener is the server's end of a channel as the control plane
+// serves it: each stream the pool opens, a connection; targets has each
+// stream's target.
+type sessionListener struct {
+	session *cpmux.Session
+	targets chan<- string
+}
+
+func (l sessionListener) Accept() (net.Conn, error) {
+	conn, target, err := l.session.Accept()
+	if err != nil {
+		return nil, err
+	}
+	select {
+	case l.targets <- target:
+	default:
+	}
+	return conn, nil
+}
+
+func (l sessionListener) Close() error   { return l.session.Close() }
+func (l sessionListener) Addr() net.Addr { return &net.UnixAddr{Name: "channel", Net: "unix"} }
+
+// serveControlPlane serves handler on the server's end of session, as the
+// control plane's HTTP API is served on the streams a pool opens, and
+// returns the streams' targets.
+func serveControlPlane(t *testing.T, session *cpmux.Session, handler http.Handler) <-chan string {
+	t.Helper()
+	targets := make(chan string, 16)
+	server := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
+	go func() { _ = server.Serve(sessionListener{session: session, targets: targets}) }()
+	t.Cleanup(func() { _ = server.Close() })
+	return targets
+}
+
+// pong answers "pong " and the path.
+func pong() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "pong "+r.URL.Path)
+	})
+}
+
+// socketClient is an HTTP client of the pool's control-plane socket, as the
+// pool's own processes are.
+func socketClient(socket string) *http.Client {
+	return &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		var dialer net.Dialer
+		return dialer.DialContext(ctx, "unix", socket)
+	}}}
+}
+
+// get is the body of a GET of path through client, which must answer 200.
+func get(ctx context.Context, client *http.Client, path string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://control-plane"+path, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return string(body), fmt.Errorf("status %s", resp.Status)
+	}
+	return string(body), nil
+}
+
+// openChannel opens a channel to the pool behind agentAPI, as the server
+// does, and waits for the pool to install it.
+func openChannel(t *testing.T, ctx context.Context, channel *Channel, agentAPI string, serverKey, poolKey ed25519.PrivateKey) *cpmux.Session {
+	t.Helper()
+	conn, err := Dial(ctx, http.DefaultTransport, agentAPI, "proj", "pool", "token", serverKey, public(poolKey))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -434,173 +367,155 @@ func TestADrainClosesTheChannelOnceItsConnectionsEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = session.Close() }()
+	t.Cleanup(func() { _ = session.Close() })
 	if err := channel.Wait(ctx); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Wait: %v", err)
 	}
-	served := make(chan net.Conn, 1)
+	return session
+}
+
+// What the pool's processes ask of the socket reaches the server as a
+// control-plane stream, and the server's answer comes back.
+func TestAPoolsRequestReachesTheServerOverTheChannel(t *testing.T) {
+	serverKey, poolKey := newKey(t), newKey(t)
+	channel, agentAPI, socket := agent(t, poolKey, public(serverKey))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	session := openChannel(t, ctx, channel, agentAPI.URL, serverKey, poolKey)
+	targets := serveControlPlane(t, session, pong())
+	got, err := get(ctx, socketClient(socket), "/ping")
+	if err != nil || got != "pong /ping" {
+		t.Fatalf("GET = %q, %v", got, err)
+	}
+	if target := <-targets; target != cpmux.TargetControlPlane {
+		t.Fatalf("server saw a stream to %q", target)
+	}
+}
+
+// A request made while there is no channel waits for the server to open one.
+func TestALocalRequestWaitsForAChannel(t *testing.T) {
+	serverKey, poolKey := newKey(t), newKey(t)
+	channel, agentAPI, socket := agent(t, poolKey, public(serverKey))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	type result struct {
+		body string
+		err  error
+	}
+	done := make(chan result, 1)
 	go func() {
-		stream, _, err := session.Accept()
-		if err == nil {
-			served <- stream
-		}
+		body, err := get(ctx, socketClient(socket), "/ping")
+		done <- result{body, err}
 	}()
-	var dialer net.Dialer
-	local, err := dialer.DialContext(ctx, "unix", socket)
+	time.Sleep(100 * time.Millisecond)
+	session := openChannel(t, ctx, channel, agentAPI.URL, serverKey, poolKey)
+	serveControlPlane(t, session, pong())
+	if got := <-done; got.err != nil || got.body != "pong /ping" {
+		t.Fatalf("GET = %q, %v", got.body, got.err)
+	}
+}
+
+// A draining agent's channel stays while an answer is still being streamed
+// to the pool, gaps longer than any idle guess included, and closes once it
+// has been answered, so the server dials again and reaches the agent that
+// took over.
+func TestADrainCarriesAStreamedAnswerToItsEnd(t *testing.T) {
+	serverKey, poolKey := newKey(t), newKey(t)
+	channel, agentAPI, socket := agent(t, poolKey, public(serverKey))
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	session := openChannel(t, ctx, channel, agentAPI.URL, serverKey, poolKey)
+	serveControlPlane(t, session, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		flusher, _ := w.(http.Flusher)
+		for i := range 3 {
+			if i > 0 {
+				time.Sleep(700 * time.Millisecond)
+			}
+			_, _ = fmt.Fprintf(w, "tick %d\n", i)
+			flusher.Flush()
+		}
+	}))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://control-plane/events", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := local.Write([]byte("ping")); err != nil {
+	resp, err := socketClient(socket).Do(req)
+	if err != nil {
 		t.Fatal(err)
 	}
-	stream := <-served
+	defer func() { _ = resp.Body.Close() }()
+	reader := bufio.NewReader(resp.Body)
+	if line, err := reader.ReadString('\n'); err != nil || line != "tick 0\n" {
+		t.Fatalf("first line = %q, %v", line, err)
+	}
 
 	drained := make(chan struct{})
 	go func() {
 		channel.Drain(ctx)
 		close(drained)
 	}()
-	// A call waiting on its answer longer than drainQuiet is not idle.
-	select {
-	case <-drained:
-		t.Fatal("the channel closed under a call still waiting on its answer")
-	case <-time.After(3 * drainQuiet):
+	rest, err := io.ReadAll(reader)
+	if err != nil || string(rest) != "tick 1\ntick 2\n" {
+		t.Fatalf("the streamed answer was cut by the drain: %q, %v", rest, err)
 	}
-	if _, err := stream.Write([]byte("pong")); err != nil {
-		t.Fatalf("the forwarded connection was cut by the drain: %v", err)
-	}
-	reply := make([]byte, 4)
-	if _, err := io.ReadFull(local, reply); err != nil || string(reply) != "pong" {
-		t.Fatalf("reply = %q, %v", reply, err)
-	}
-	_ = local.Close()
-	_ = stream.Close()
 	select {
 	case <-drained:
 	case <-time.After(5 * time.Second):
-		t.Fatal("the drain did not end once the connection did")
+		t.Fatal("the drain did not end once the answer did")
 	}
 	if !channel.installed().Closed() {
 		t.Fatal("the drained channel is still open: the server would not dial again")
 	}
 }
 
-// An idle connection forwarded onto a draining channel, a keep-alive of the
-// pool's own client, holds it no longer than drainQuiet: the server dials
-// again at once, and the agent that took over reaches the control plane.
+// An idle connection kept alive between a pool's requests holds no drain:
+// it closes at once, so the server dials again without waiting.
 func TestAnIdleConnectionDoesNotHoldADrain(t *testing.T) {
 	serverKey, poolKey := newKey(t), newKey(t)
 	channel, agentAPI, socket := agent(t, poolKey, public(serverKey))
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	conn, err := Dial(ctx, http.DefaultTransport, agentAPI.URL, "proj", "pool", "token", serverKey, public(poolKey))
-	if err != nil {
-		t.Fatalf("Dial: %v", err)
-	}
-	session, err := cpmux.Client(conn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = session.Close() }()
-	if err := channel.Wait(ctx); err != nil {
-		t.Fatal(err)
-	}
-	go func() {
-		stream, _, err := session.Accept()
-		if err == nil {
-			defer func() { _ = stream.Close() }()
-			ping := make([]byte, 4)
-			if _, err := io.ReadFull(stream, ping); err == nil {
-				_, _ = stream.Write([]byte("pong"))
-			}
-			_, _ = io.Copy(io.Discard, stream)
-		}
-	}()
-	var dialer net.Dialer
-	local, err := dialer.DialContext(ctx, "unix", socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = local.Close() }()
-	if _, err := local.Write([]byte("ping")); err != nil {
-		t.Fatal(err)
-	}
-	reply := make([]byte, 4)
-	if _, err := io.ReadFull(local, reply); err != nil || string(reply) != "pong" {
-		t.Fatalf("reply = %q, %v", reply, err)
+	session := openChannel(t, ctx, channel, agentAPI.URL, serverKey, poolKey)
+	serveControlPlane(t, session, pong())
+	client := socketClient(socket)
+	if got, err := get(ctx, client, "/ping"); err != nil || got != "pong /ping" {
+		t.Fatalf("GET = %q, %v", got, err)
 	}
 	started := time.Now()
-	drained := make(chan struct{})
-	go func() {
-		channel.Drain(ctx)
-		close(drained)
-	}()
-	select {
-	case <-drained:
-	case <-time.After(5 * time.Second):
-		t.Fatal("an idle forwarded connection held the drain")
-	}
-	if took := time.Since(started); took > 3*drainQuiet {
-		t.Fatalf("the drain took %s with only an idle connection on it, want about %s", took, drainQuiet)
+	channel.Drain(ctx)
+	if took := time.Since(started); took > time.Second {
+		t.Fatalf("the drain took %s with only an idle connection on it", took)
 	}
 	if !channel.installed().Closed() {
 		t.Fatal("the drained channel is still open")
 	}
 }
 
-// A control plane that has sent its whole answer half-closes the pool's
-// client's connection, never closes it: the client can still send.
-func TestAForwardedConnectionIsHalfClosed(t *testing.T) {
+// A request still waiting on its answer when the drain's bound comes is cut:
+// the channel closes at the bound.
+func TestADrainEndsAtItsBound(t *testing.T) {
 	serverKey, poolKey := newKey(t), newKey(t)
 	channel, agentAPI, socket := agent(t, poolKey, public(serverKey))
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	conn, err := Dial(ctx, http.DefaultTransport, agentAPI.URL, "proj", "pool", "token", serverKey, public(poolKey))
-	if err != nil {
-		t.Fatalf("Dial: %v", err)
+	session := openChannel(t, ctx, channel, agentAPI.URL, serverKey, poolKey)
+	release := make(chan struct{})
+	defer close(release)
+	arrived := make(chan struct{}, 1)
+	serveControlPlane(t, session, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		arrived <- struct{}{}
+		<-release
+	}))
+	go func() { _, _ = get(ctx, socketClient(socket), "/long-poll") }()
+	<-arrived
+	bound, stop := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer stop()
+	started := time.Now()
+	channel.Drain(bound)
+	if took := time.Since(started); took < 250*time.Millisecond || took > 3*time.Second {
+		t.Fatalf("the drain took %s, want its bound", took)
 	}
-	session, err := cpmux.Client(conn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = session.Close() }()
-	if err := channel.Wait(ctx); err != nil {
-		t.Fatal(err)
-	}
-	got := make(chan string, 1)
-	go func() {
-		stream, _, err := session.Accept()
-		if err != nil {
-			return
-		}
-		defer func() { _ = stream.Close() }()
-		_, _ = stream.Write([]byte("done"))
-		if cw, ok := stream.(interface{ CloseWrite() error }); ok {
-			_ = cw.CloseWrite()
-		}
-		rest, _ := io.ReadAll(stream)
-		got <- string(rest)
-	}()
-	var dialer net.Dialer
-	local, err := dialer.DialContext(ctx, "unix", socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = local.Close() }()
-	answer, err := io.ReadAll(local)
-	if err != nil || string(answer) != "done" {
-		t.Fatalf("answer = %q, %v", answer, err)
-	}
-	if _, err := local.Write([]byte("more")); err != nil {
-		t.Fatalf("the client's connection was closed, not half-closed: %v", err)
-	}
-	_ = local.(*net.UnixConn).CloseWrite()
-	select {
-	case rest := <-got:
-		if rest != "more" {
-			t.Fatalf("the control plane read %q after its half-close, want %q", rest, "more")
-		}
-	case <-ctx.Done():
-		t.Fatal("the control plane never read what the client sent after its half-close")
+	if !channel.installed().Closed() {
+		t.Fatal("the channel is still open after the drain's bound")
 	}
 }

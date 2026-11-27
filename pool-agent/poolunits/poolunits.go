@@ -310,8 +310,8 @@ func (a *applier) apply(ctx context.Context) error {
 	}
 	binaryMoved := current.Fingerprint.Binary != now.Binary
 	handedOver := false
-	// A handover that did not take is reported once what serves is
-	// recorded: the old slot, serving as it was or started again.
+	// A handover that has not taken yet is reported once what the box runs
+	// is recorded: next, while the old slot drains.
 	var notTakenOver error
 	switch {
 	case stopped || !running:
@@ -321,7 +321,7 @@ func (a *applier) apply(ctx context.Context) error {
 	case current.Fingerprint == now:
 	case a.cfg.HandOver && a.ingressHeld():
 		next := other(slot)
-		serving, err := a.handOver(ctx, slot, next)
+		serving, err := a.handOver(ctx, slot, next, state{Slot: slot, Fingerprint: current.Fingerprint}, state{Slot: next, Fingerprint: now})
 		if serving == "" {
 			return err
 		}
@@ -537,58 +537,113 @@ func (a *applier) rebind(ctx context.Context, sockets, units []string) (bool, er
 
 // handOver starts next beside slot, tells slot to drain, and waits for next
 // to take over (ADR 26-11-26-536 §4). It answers the slot that serves once it
-// returns, "" when nothing was changed, and an error when that is not next:
+// returns, "" when nothing was changed, and an error when that is not next or
+// next has not said it took over. No slot that drains is ever stopped or
+// restarted here: what it carries ends on its own, within handover.DrainBound.
+//   - next still draining from the last handover is left to finish, and
+//     nothing is changed: the next apply hands over once it has exited;
 //   - a next that does not start, or that starts while slot cannot be asked
-//     or told to drain, is stopped before slot was told: it serves as it
-//     was;
-//   - a next that does not say it took over within the wait (TakeOver) is
-//     stopped, and slot is started again (its unit restarted), which cuts
-//     what the draining slot still carried, so the pool is never left with
-//     nothing accepting. It starts on what the apply laid, as next did: the
-//     old binary is gone. So this answers a slot that would not come up,
-//     not a release that cannot, which restarting the slot shows.
-func (a *applier) handOver(ctx context.Context, slot, next string) (string, error) {
+//     or told to drain, is stopped before slot was told: slot serves as it
+//     was, and prev stays recorded;
+//   - next is recorded, with now, and enabled before slot is told, so what
+//     the box runs is on record whatever happens after;
+//   - a next that does not say it took over within the wait (TakeOver), while
+//     no unit of slot has begun to drain, is stopped and slot serves on; once
+//     one has, slot is left to finish its drain and next is left running,
+//     which systemd restarts until it takes over.
+func (a *applier) handOver(ctx context.Context, slot, next string, prev, now state) (string, error) {
 	a.log.Info("handing the pool over to a new agent", "from", slot, "to", next)
 	nextUnits := []string{bundle.AgentUnit(next), bundle.ProxyUnit(next)}
-	// A slot still draining from the last handover is what remains of it,
-	// and is cut now: the slot is needed.
+	for _, unit := range nextUnits {
+		status, err := a.status(ctx, unit)
+		if err != nil {
+			return "", err
+		}
+		if status == handover.StatusDraining {
+			return "", fmt.Errorf("%s still drains from the last handover; the pool hands over to slot %s once it has exited", unit, next)
+		}
+	}
+	// What is left of next is no drain (above): stopped, so it starts anew.
 	if _, err := a.cfg.Systemctl(ctx, "stop", bundle.ProxyUnit(next), bundle.AgentUnit(next)); err != nil {
 		return "", err
+	}
+	stopNext := func(cause error) (string, error) {
+		ctx := context.WithoutCancel(ctx)
+		_, stopErr := a.cfg.Systemctl(ctx, "stop", bundle.ProxyUnit(next), bundle.AgentUnit(next))
+		return "", errors.Join(cause, stopErr, a.record(ctx, prev))
 	}
 	// Both are Type=notify, and say they are ready as standbys: prepared,
 	// accepting nothing until the old ones let go.
 	if _, err := a.cfg.Systemctl(ctx, append([]string{"start"}, nextUnits...)...); err != nil {
-		_, _ = a.cfg.Systemctl(context.WithoutCancel(ctx), "stop", bundle.ProxyUnit(next), bundle.AgentUnit(next))
-		return "", fmt.Errorf("start the pool's new agent in slot %s: %w", next, err)
+		return stopNext(fmt.Errorf("start the pool's new agent in slot %s: %w", next, err))
+	}
+	if err := a.record(ctx, state{Slot: next, Fingerprint: now.Fingerprint}); err != nil {
+		return stopNext(err)
 	}
 	// Each one apart: a proxy that is not running has nothing to drain, and
-	// the new one takes over from no one. Until one is told, the old slot
-	// serves as it was, and a failure only stops next.
+	// the new one takes over from no one. Until one is told, slot serves as
+	// it was, and a failure only stops next.
 	signaled := false
-	fail := func(err error) (string, error) {
-		if signaled {
-			return a.rollBack(ctx, slot, next, err)
-		}
-		_, _ = a.cfg.Systemctl(context.WithoutCancel(ctx), "stop", bundle.ProxyUnit(next), bundle.AgentUnit(next))
-		return "", err
-	}
 	for _, unit := range []string{bundle.AgentUnit(slot), bundle.ProxyUnit(slot)} {
 		running, err := a.active(ctx, unit)
 		if err != nil {
-			return fail(err)
+			if !signaled {
+				return stopNext(err)
+			}
+			return next, err
 		}
 		if !running {
 			continue
 		}
 		if _, err := a.cfg.Systemctl(ctx, "kill", "--kill-who=main", "--signal=SIGUSR2", unit); err != nil {
-			return fail(fmt.Errorf("tell %s to drain: %w", unit, err))
+			if !signaled {
+				return stopNext(fmt.Errorf("tell %s to drain: %w", unit, err))
+			}
+			return next, fmt.Errorf("tell %s to drain: %w", unit, err)
 		}
 		signaled = true
 	}
 	if err := a.awaitTakeOver(ctx, nextUnits); err != nil {
-		return a.rollBack(ctx, slot, next, fmt.Errorf("the pool's new agent in slot %s did not take over: %w", next, err))
+		err = fmt.Errorf("the pool's new agent in slot %s did not take over: %w", next, err)
+		draining, statusErr := a.anyStatus(ctx, handover.StatusDraining, bundle.AgentUnit(slot), bundle.ProxyUnit(slot))
+		if statusErr == nil && !draining {
+			return stopNext(err)
+		}
+		a.log.Warn("the pool's new agent has not taken over; the old one drains, and the new one is restarted until it does", "from", slot, "to", next, "error", err)
+		return next, err
 	}
 	return next, nil
+}
+
+// record writes st as the state, and enables its slot alone.
+func (a *applier) record(ctx context.Context, st state) error {
+	if err := a.enableOnly(ctx, st.Slot); err != nil {
+		return err
+	}
+	return writeState(a.cfg.StateFile, st)
+}
+
+// anyStatus reports whether any of units says status.
+func (a *applier) anyStatus(ctx context.Context, status string, units ...string) (bool, error) {
+	for _, unit := range units {
+		got, err := a.status(ctx, unit)
+		if err != nil {
+			return false, err
+		}
+		if got == status {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// status is what unit says it is (STATUS=), "" for one that says nothing.
+func (a *applier) status(ctx context.Context, unit string) (string, error) {
+	out, err := a.cfg.Systemctl(ctx, "show", "--property=StatusText", "--value", unit)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
 }
 
 // awaitTakeOver waits, up to TakeOver, for every one of units to say it is
@@ -606,25 +661,6 @@ func (a *applier) awaitTakeOver(ctx context.Context, units []string) error {
 		}
 	}
 	return nil
-}
-
-// rollBack stops next, which did not take over, and starts slot again, so
-// the pool is served by the slot it ran before, and answers it with cause.
-// The slot is the box's even if it does not say it is serving in time: its
-// unit is the one enabled, which systemd starts again whatever it exits
-// with, and the next apply acts from there.
-func (a *applier) rollBack(ctx context.Context, slot, next string, cause error) (string, error) {
-	a.log.Warn("the pool's new agent did not take over; starting the old one again", "from", next, "to", slot, "error", cause)
-	ctx = context.WithoutCancel(ctx)
-	slotUnits := []string{bundle.AgentUnit(slot), bundle.ProxyUnit(slot)}
-	_, stopErr := a.cfg.Systemctl(ctx, "stop", bundle.ProxyUnit(next), bundle.AgentUnit(next))
-	if _, err := a.cfg.Systemctl(ctx, append([]string{"restart"}, slotUnits...)...); err != nil {
-		return slot, errors.Join(cause, stopErr, err)
-	}
-	if err := a.awaitTakeOver(ctx, slotUnits); err != nil {
-		return slot, errors.Join(cause, stopErr, fmt.Errorf("the pool's agent in slot %s did not come back: %w", slot, err))
-	}
-	return slot, errors.Join(fmt.Errorf("rolled back to slot %s: %w", slot, cause), stopErr)
 }
 
 // awaitStatus waits until unit says it is in status.
