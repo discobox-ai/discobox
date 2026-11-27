@@ -481,8 +481,11 @@ func (r *sandboxCore) beginBoot(sandboxID string) *sandboxBoot {
 	}
 	if boot.mark == nil {
 		// A mark waits only behind the file locked alone, which nothing
-		// does to a boot mark.
-		mark, err := handover.Mark(context.Background(), r.bootMarkPath(sandboxID))
+		// does to a boot mark; the wait is bounded all the same, since every
+		// sandbox's boots begin under bootMu.
+		ctx, cancel := context.WithTimeout(context.Background(), bootMarkWait)
+		mark, err := handover.Mark(ctx, r.bootMarkPath(sandboxID))
+		cancel()
 		if err != nil {
 			slog.Warn("sandbox boot mark not held on disk", "sandboxID", sandboxID, "error", err)
 		}
@@ -703,7 +706,11 @@ func (r *sandboxCore) finishBoot(ctx context.Context, sandboxID string, boot *sa
 func (r *sandboxCore) awaitBoot(ctx context.Context, sandboxID string) (bool, error) {
 	value, ok := r.booting.Load(sandboxID)
 	if !ok {
-		if !r.bootMarked(sandboxID) {
+		held, err := r.bootMarked(sandboxID)
+		if err != nil {
+			return true, err
+		}
+		if !held {
 			return false, nil
 		}
 		return true, handover.AwaitFree(ctx, r.bootMarkPath(sandboxID))
@@ -734,20 +741,28 @@ func (r *sandboxCore) SandboxBooting(sandboxID string) bool {
 	if _, ok := r.booting.Load(sandboxID); ok {
 		return true
 	}
-	return r.bootMarked(sandboxID)
-}
-
-// bootMarked reports whether another process of the pool holds the
-// sandbox's boot mark. A mark that cannot be read is no boot, and is logged:
-// it reads as a boot ended, which is wrong only while the other process's
-// boot runs.
-func (r *sandboxCore) bootMarked(sandboxID string) bool {
-	held, err := handover.Held(r.bootMarkPath(sandboxID))
+	held, err := r.bootMarked(sandboxID)
 	if err != nil {
-		slog.Warn("read a sandbox's boot mark", "sandboxID", sandboxID, "error", err)
-		return false
+		slog.Warn("read a sandbox's boot mark; reading it as booting", "sandboxID", sandboxID, "error", err)
+		return true
 	}
 	return held
+}
+
+// bootMarkWait bounds beginBoot's wait to take a boot mark.
+const bootMarkWait = 5 * time.Second
+
+// bootMarked reports whether a process of the pool holds the sandbox's boot
+// mark. A mark that cannot be read is an error, which its callers read as a
+// boot under way (SandboxBooting) or fail with (awaitBoot): never as a boot
+// ended, which would let this process act on a box the other agent is
+// booting.
+func (r *sandboxCore) bootMarked(sandboxID string) (bool, error) {
+	held, err := handover.Held(r.bootMarkPath(sandboxID))
+	if err != nil {
+		return false, fmt.Errorf("sandbox %s's boot mark: %w", sandboxID, err)
+	}
+	return held, nil
 }
 
 func (r *DockerSandboxRuntime) stopLocked(ctx context.Context, sandboxID string) error {

@@ -998,3 +998,12 @@ tracked in #1699, not a pattern to copy.
   `F_OFD_GETLK`). Why: a probe that took the lock for an instant had two
   probes, or a probe and a boot's mark, see each other as held, on
   `SandboxBooting`'s request path among others.
+- **A lock or mark that cannot be read is held, never free**
+  (`bootMarked`, `tryLockPower`): `SandboxBooting` reads it as booting,
+  `awaitBoot` and a try-lock fail with it. Why: read as free, the agent would
+  act on a sandbox the other agent of a handover is booting or powering.
+- **Every process of a pool that locks shares one run directory**:
+  `layout.PoolLocks` is under `/run`, and a handover's two slots are units of
+  one pool machine or container. A process of the pool that ran in another
+  mount namespace (a unit with `PrivateTmp=` or its own `/run`, a container
+  of its own) would hold locks nobody else sees.

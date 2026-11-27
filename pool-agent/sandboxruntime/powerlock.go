@@ -57,12 +57,32 @@ func (r *sandboxCore) lockPower(ctx context.Context, sandboxID string) (func(), 
 // an update, that waiter) makes its lock file again: on a pool container it
 // lasts until the boot ends, and on a host root it stays an unlocked file
 // (layout.PoolLocks).
+//
+// The boot mark stays while a boot still holds it, in this process or
+// another: removing it would have a probe of the path find no boot while that
+// boot runs. No boot begins meanwhile, since one begins only under the power
+// lock the removal holds; a mark left is an unlocked file of the run
+// directory.
 func (r *sandboxCore) forgetLocks(sandboxID string) {
-	for _, path := range []string{r.powerLockPath(sandboxID), r.bootMarkPath(sandboxID)} {
+	paths := []string{r.powerLockPath(sandboxID)}
+	if !r.bootHeld(sandboxID) {
+		paths = append(paths, r.bootMarkPath(sandboxID))
+	}
+	for _, path := range paths {
 		if err := handover.Remove(path); err != nil {
 			slog.Warn("remove a removed sandbox's lock", "sandboxID", sandboxID, "error", err)
 		}
 	}
+}
+
+// bootHeld reports whether a boot of sandboxID still holds its mark, in this
+// process or another. One that cannot be read is held.
+func (r *sandboxCore) bootHeld(sandboxID string) bool {
+	if _, ok := r.booting.Load(sandboxID); ok {
+		return true
+	}
+	held, err := r.bootMarked(sandboxID)
+	return err != nil || held
 }
 
 // tryLockPower holds sandboxID's power lock if nothing holds it now, in this
