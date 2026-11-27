@@ -181,3 +181,13 @@ func TestZeroRootIsTheContainerView(t *testing.T) {
 		t.Errorf("zero Dir() = %q, want %q", got, ContainerRoot)
 	}
 }
+
+// A host root has no run directory, but a sandbox runtime on it still locks
+// its sandboxes' power: PoolLocks answers under its own state, not System.
+func TestAHostRootLocksUnderItsOwnState(t *testing.T) {
+	dir := t.TempDir()
+	host := Root{state: dir, host: true, native: true}
+	if got, want := host.PoolLocks("prj", "pool"), filepath.Join(dir, "locks", "prj", "pool"); got != want {
+		t.Fatalf("PoolLocks = %q, want %q", got, want)
+	}
+}
