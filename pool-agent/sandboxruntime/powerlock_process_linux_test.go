@@ -43,7 +43,7 @@ func TestThePowerLockAndBootMarkHoldAcrossProcesses(t *testing.T) {
 		lockChild()
 	}
 	dir := t.TempDir()
-	child := exec.Command(os.Args[0], "-test.run=^TestThePowerLockAndBootMarkHoldAcrossProcesses$")
+	child := exec.Command(os.Args[0], "-test.run=^TestThePowerLockAndBootMarkHoldAcrossProcesses$") //nolint:gosec // G204: this test binary, re-run as the other agent
 	child.Env = append(os.Environ(), lockChildEnv+"="+dir)
 	stdin, err := child.StdinPipe()
 	if err != nil {
