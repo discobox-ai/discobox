@@ -36,6 +36,10 @@ func tryLock(file *os.File, exclusive bool) (bool, error) {
 	}
 }
 
+// openPending reports whether a lock file's open failed only for now: never
+// on Linux, where a removed file's path is free at once.
+func openPending(error) bool { return false }
+
 // settle is what a lock does with its file once held: an open file
 // description lock lasts only as long as the file is open, so it stays open.
 func settle(*os.File) {}
