@@ -78,6 +78,7 @@ func acquire(ctx context.Context, path string, exclusive bool) (*Lock, error) {
 			return nil, err
 		}
 		if held && named(path, file) {
+			settle(file)
 			return &Lock{file: file}, nil
 		}
 		if held {
@@ -122,6 +123,10 @@ func (l *Lock) Release() error {
 	unlock(l.file)
 	err := l.file.Close()
 	l.file = nil
+	if errors.Is(err, os.ErrClosed) {
+		// settle closed it already.
+		return nil
+	}
 	return err
 }
 
