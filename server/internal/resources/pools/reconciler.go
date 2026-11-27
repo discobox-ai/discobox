@@ -57,6 +57,12 @@ var poolHeartbeatTimeout = model.PoolHeartbeatTimeout
 // probe interval: the soonest the answer can have changed.
 var poolHostComingUpRequeue = 5 * time.Second
 
+// poolSlotDrainingRequeue is how soon a pool whose box moved nothing, because
+// a slot still drains from its last handover (sandbox.ErrPoolSlotDraining),
+// is reconciled again. A drain ends when what it carries does, within 30
+// minutes.
+var poolSlotDrainingRequeue = 30 * time.Second
+
 // heartbeatStale reports a pool whose agent has stopped answering: it has
 // heartbeated before, and the last beat is older than poolHeartbeatTimeout. A
 // pool that has never heartbeated is not stale — it is still registering, and
@@ -322,6 +328,13 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 		// asks again: no failure is recorded, no repair runs, the pool keeps
 		// the state it had, and this generation is not marked observed over a
 		// runtime the reconcile never reached.
+		// A pool whose last handover still drains moved nothing and failed
+		// nothing: it serves as it was. This pass settles nothing, records no
+		// failure, and asks again once the drain may have ended.
+		if errors.Is(err, sandbox.ErrPoolSlotDraining) {
+			slog.InfoContext(ctx, "pool waits for its last handover to drain before it moves", "pool", pool.ID, "requeue", poolSlotDrainingRequeue)
+			return reconcile.RequeueAfter(poolSlotDrainingRequeue), nil
+		}
 		if errors.Is(err, sandbox.ErrPoolNotReachable) {
 			waitingOnHost = true
 			r.beginHostWait(ctx, pool.ID, err)

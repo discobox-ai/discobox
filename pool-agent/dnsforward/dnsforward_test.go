@@ -508,3 +508,35 @@ func TestAuditEventReadsTheQuestionAndOutcome(t *testing.T) {
 		t.Fatalf("rcode = %q, want NXDOMAIN", got)
 	}
 }
+
+// A drain closes a connection with no query in flight at once, rather than
+// waiting the minute its stub would keep it, and Wait returns: the stub
+// redials, which reaches the proxy taking over.
+func TestADrainClosesAnIdleConnection(t *testing.T) {
+	c := newCerts(t, "sbx_a")
+	var config net.ListenConfig
+	tcp, err := config.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := New(nil, startUpstream(t), func(proxy.DNSAuditEvent) {})
+	served := make(chan struct{})
+	go func() { server.Serve(context.Background(), tls.NewListener(tcp, c.server)); close(served) }()
+	conn := dial(t, tcp.Addr().String(), c.clients["sbx_a"])
+	if got, want := ask(t, conn, "first"), udpAnswer("first"); got != want {
+		t.Fatalf("answer = %q, want %q", got, want)
+	}
+
+	// The proxy drains: it closes its listener, then drains.
+	_ = tcp.Close()
+	<-served
+	server.Drain()
+	wait, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := server.Wait(wait); err != nil {
+		t.Fatalf("an idle connection held the drain: %v", err)
+	}
+	if _, err := readMessage(conn); err == nil {
+		t.Fatal("the idle connection is still open after the drain")
+	}
+}

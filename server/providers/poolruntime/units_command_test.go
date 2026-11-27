@@ -2,12 +2,17 @@ package poolruntime
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/pool-agent/bundle"
+	"github.com/discobox-ai/discobox/pool-agent/provisioner"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
 // A box whose bundle is from before slots has no units step: its agent and
@@ -42,5 +47,27 @@ func TestABundleFromBeforeSlotsRestartsOnAMovedPlacementAlone(t *testing.T) {
 	}
 	if got := run("kept"); got != "" {
 		t.Fatalf("a kept placement ran systemctl %q, want nothing", got)
+	}
+}
+
+// A units step that refused because a slot still drains failed nothing: it
+// is ErrPoolSlotDraining, which the reconciler asks again on, and any other
+// exit is the step's failure as before.
+func TestAUnitsStepRefusedForADrainIsTryLater(t *testing.T) {
+	result := provisioner.Result{Stderr: []byte("a slot still drains from the last handover")}
+	draining := unitsError(result, &provisioner.ExitError{Argv: []string{"sh"}, ExitCode: bundle.UnitsDrainingExitCode})
+	if !errors.Is(draining, sandbox.ErrPoolSlotDraining) {
+		t.Fatalf("a refusal for a drain = %v, want ErrPoolSlotDraining", draining)
+	}
+	failed := unitsError(provisioner.Result{}, &provisioner.ExitError{Argv: []string{"sh"}, ExitCode: 1})
+	if errors.Is(failed, sandbox.ErrPoolSlotDraining) || failed == nil {
+		t.Fatalf("a failed units step = %v, want a failure", failed)
+	}
+}
+
+// The maker runs the units step asking it to report a refusal for a drain.
+func TestTheMakerAsksTheUnitsStepToReportADrain(t *testing.T) {
+	if !strings.Contains(unitsCommand, `exec "$step" `+bundle.UnitsReportDraining) {
+		t.Fatalf("the units command does not pass %s to the step:\n%s", bundle.UnitsReportDraining, unitsCommand)
 	}
 }

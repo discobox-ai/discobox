@@ -9,7 +9,9 @@ import (
 	"syscall"
 
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
+	"github.com/discobox-ai/discobox/pool-agent/bundle"
 	"github.com/discobox-ai/discobox/pool-agent/gitcache"
+	"github.com/discobox-ai/discobox/pool-agent/poolunits"
 	"github.com/discobox-ai/discobox/pool-agent/handover"
 )
 
@@ -39,6 +41,10 @@ func main() {
 
 	if len(os.Args) > 1 && os.Args[1] == poolagent.UnitsCommand {
 		if err := poolagent.RunUnits(ctx, logger, os.Args[2:]); err != nil {
+			if errors.Is(err, poolunits.ErrSlotDraining) {
+				logger.Info("pool units moved nothing", "reason", err)
+				os.Exit(bundle.UnitsDrainingExitCode)
+			}
 			logger.Error("pool units failed", "error", err)
 			os.Exit(1)
 		}

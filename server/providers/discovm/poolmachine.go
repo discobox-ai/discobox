@@ -495,6 +495,12 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	}
 	box, err := poolruntime.ProvisionBox(agentCtx, guest, maker, placement, placed)
 	if err != nil {
+		// A slot still draining from the last handover moved nothing, and
+		// failed nothing: the pool serves as it was, and the reconciler
+		// tries again once it may have exited.
+		if errors.Is(err, sandbox.ErrPoolSlotDraining) {
+			return err
+		}
 		if provisioned && !force && !made && !started {
 			// A running pool is never taken down over its bundles (ADR
 			// 26-10-24-953 §5): it keeps what it last provisioned, and the

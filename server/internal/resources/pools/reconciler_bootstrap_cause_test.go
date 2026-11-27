@@ -68,3 +68,17 @@ func TestExpiredBootstrapDoesNotNameAWaitALaterPassGotPast(t *testing.T) {
 		t.Fatalf("errorMessage = %v; want the expiry without the wait a later pass got past", pool.ErrorMessage)
 	}
 }
+
+// A pool whose box moved nothing because a slot still drains from its last
+// handover failed nothing: the pass records no failure and asks again.
+func TestASlotStillDrainingIsAskedAgainNotFailed(t *testing.T) {
+	f := newBootstrapRetryFixture(t)
+	f.runtime.fail = fmt.Errorf("pool pool-1: start the pool's agent: %w", sandbox.ErrPoolSlotDraining)
+	result, err := f.reconcileResult()
+	if err != nil || result.RequeueAt.IsZero() {
+		t.Fatalf("draining pass: result=%+v err=%v; want a requeue and no error", result, err)
+	}
+	if pool := f.pool(); pool.State == model.PoolStateFailed || pool.ErrorMessage != nil {
+		t.Fatalf("state = %q, error %v; want no failure recorded", pool.State, pool.ErrorMessage)
+	}
+}
