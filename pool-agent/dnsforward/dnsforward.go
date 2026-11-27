@@ -146,12 +146,16 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) {
 	}
 }
 
-// Drain closes every connection with no query in flight, and has each one
-// with a query close once it has answered it: what a draining pool proxy does
-// once it has closed the listener (ADR 26-11-26-536 §3). A sandbox's stub
-// keeps its connections open between queries, and redials one that closes,
-// which reaches the proxy taking over, so the drain is bounded by the queries
-// in flight rather than by how long the stubs keep their connections.
+// Drain closes every connection with no query being answered, and has each
+// one with a query being answered close once it has answered it: what a
+// draining pool proxy does once it has closed the listener (ADR 26-11-26-536
+// §3). A sandbox's stub keeps its connections open between queries, and
+// redials one that closes, which reaches the proxy taking over, so the drain
+// is bounded by the queries being answered rather than by how long the stubs
+// keep their connections. A query not yet read whole when it comes, or one
+// the stub sent behind the one being answered, is cut with its connection,
+// and the stub asks it again of the proxy taking over, a resolver retry's
+// delay later.
 func (s *Server) Drain() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -177,11 +181,16 @@ func (s *Server) track(conn *tls.Conn) func() {
 }
 
 // busy records whether conn has a query in flight, and reports whether the
-// server drains: a connection that has answered its query then closes.
+// server drains: a connection that has answered its query then closes. One
+// waiting for its next query gets its idle deadline here, under the lock
+// Drain takes, so a Drain between the two cannot be overwritten.
 func (s *Server) busy(conn *tls.Conn, inFlight bool) (draining bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.open[conn] = inFlight
+	if !inFlight && !s.draining {
+		_ = conn.SetReadDeadline(time.Now().Add(idleTimeout))
+	}
 	return s.draining
 }
 
@@ -226,7 +235,6 @@ func (s *Server) serveConn(ctx context.Context, conn net.Conn) {
 		if s.busy(tlsConn, false) {
 			return
 		}
-		_ = tlsConn.SetReadDeadline(time.Now().Add(idleTimeout))
 		query, err := readMessage(tlsConn)
 		if err != nil {
 			return
