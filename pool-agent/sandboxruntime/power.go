@@ -703,9 +703,8 @@ func (r *sandboxCore) finishBoot(ctx context.Context, sandboxID string, boot *sa
 func (r *sandboxCore) awaitBoot(ctx context.Context, sandboxID string) (bool, error) {
 	value, ok := r.booting.Load(sandboxID)
 	if !ok {
-		held, err := handover.Held(r.bootMarkPath(sandboxID))
-		if err != nil || !held {
-			return false, nil //nolint:nilerr // a mark that cannot be read is no boot to wait on
+		if !r.bootMarked(sandboxID) {
+			return false, nil
 		}
 		return true, handover.AwaitFree(ctx, r.bootMarkPath(sandboxID))
 	}
@@ -735,8 +734,20 @@ func (r *sandboxCore) SandboxBooting(sandboxID string) bool {
 	if _, ok := r.booting.Load(sandboxID); ok {
 		return true
 	}
+	return r.bootMarked(sandboxID)
+}
+
+// bootMarked reports whether another process of the pool holds the
+// sandbox's boot mark. A mark that cannot be read is no boot, and is logged:
+// it reads as a boot ended, which is wrong only while the other process's
+// boot runs.
+func (r *sandboxCore) bootMarked(sandboxID string) bool {
 	held, err := handover.Held(r.bootMarkPath(sandboxID))
-	return err == nil && held
+	if err != nil {
+		slog.Warn("read a sandbox's boot mark", "sandboxID", sandboxID, "error", err)
+		return false
+	}
+	return held
 }
 
 func (r *DockerSandboxRuntime) stopLocked(ctx context.Context, sandboxID string) error {
