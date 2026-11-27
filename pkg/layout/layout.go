@@ -230,7 +230,14 @@ func (r Root) PoolMachines(projectID, poolID string) string {
 // locker checks it holds the file the path still names). They are kept out
 // of the sandbox's tree, which its delete removes as a whole, and of the
 // pool's durable data, which outlives the processes that lock them.
+//
+// A host root has no run directory of its own (System), so its locks are in a
+// tree of their own under its state, which no reaper enumerates; a file left
+// there is an unlocked file the next locker takes.
 func (r Root) PoolLocks(projectID, poolID string) string {
+	if r.host {
+		return r.join(r.Dir(), "locks", projectID, poolID)
+	}
 	return r.join(r.System(PoolLocksDir), projectID, poolID)
 }
 
