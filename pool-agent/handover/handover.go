@@ -73,9 +73,11 @@ func acquire(ctx context.Context, path string, exclusive bool) (*Lock, error) {
 			return nil, err
 		}
 		if err != nil {
+			// Waited out within ctx; past it, the open's own error, so a
+			// try (TryAcquire) fails with it rather than reading it as held.
 			select {
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return nil, err
 			case <-ticker.C:
 			}
 			continue
