@@ -1,7 +1,12 @@
 # 26-11-26-536 — A disco-vm pool hands over to its new agent, and the old one drains
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-26
+- Accepted by the owner by merging #1825, 2026-11-26
+- Amended 2026-11-26, while nothing had shipped against it, with what its
+  implementation (#1118) found: §2's builder drain, §3's sweeps, §4's lock
+  files, control-plane channel and a handover that does not take, and two of
+  its open questions answered.
 - **Issue**: [#1118](https://github.com/discobox-ai/discobox/issues/1118)
 - **Would narrow**, for a pool whose host is a disco-vm pool machine only:
   - [26-10-24-953](26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
@@ -106,8 +111,11 @@ pool whose agent does not answer, which has nothing to drain.
 A moved builder (BuildKit and the registry) is not handed over in either
 scenario. Their state is one directory, and two builders cannot share it. A
 moved builder restarts as today, but only once the old builder's builds have
-ended or the drain bound (§3) has passed. A new build waits for it at the
-mediator's socket and is not refused.
+ended or the mediator's own build drain (ten minutes) has passed. A new build
+waits for it at the mediator's socket and is not refused. *(Amended: this
+said the drain bound of §3. The mediator's drain runs inside the apply of every
+pool, the Docker engine's included, under its 15-minute bound; after a
+handover nothing waits for it.)*
 
 ### 3. One agent is active, and the old one drains
 
@@ -128,6 +136,12 @@ Handing over makes the old agent and its proxy **draining**:
 - No loop runs, no report is sent, and no power operation starts.
 - The process exits when its last connection ends, or at the **drain bound,
   30 minutes** after the handover, cutting whatever is left.
+- The process that took over sweeps nothing of the pool's shared state (its
+  images, snapshot builds, trees, assets, the proxy's spools and retired
+  audit columns) until the draining one has exited: a sweep removes what its
+  own process holds nothing of, and the draining one still holds its own.
+  *(Amended: the first live handover had the new agent remove the old one's
+  snapshot build mid-build.)*
 - What the old proxy audits while it drains is recorded where it is read
   (ADR 0130 §4): in place, in the same audit tree as the new proxy's. For a
   successor host, it is carried over once the drain ends (§5 step 7).
@@ -166,17 +180,35 @@ It is never refused. Neither the server nor any sandbox changes anything in
 this scenario: the address they dial is the same, and the socket hands their
 next connection to the active process.
 
+*(Amended: the standby is ready only once nothing it does before serving can
+fail. A new agent that still does not say it is active within two minutes of
+step 3 is stopped, and the old slot's units are restarted, which cuts what it
+still carried: the pool is never left with nothing accepting. It starts on
+what was laid, since the old binary is gone. Every exit but a drain's is
+restarted.)*
+
 **Power across the two processes.** The per-sandbox power lock and the boot
-mark move from the agent's memory to a lock file in the sandbox's tree, held
-with `flock`. A power operation the old agent still has in flight (a boot's
+mark move from the agent's memory to a lock file in the pool's lock tree, held
+with an open file description lock (fcntl(2) `F_OFD_SETLK`), which another
+process can be asked about without taking it. *(Amended: this said the
+sandbox's tree, which a delete removes while it holds the lock, and
+`flock`, which can be asked about only by taking it.)* A power operation the old agent still has in flight (a boot's
 wait outlives the operation, `power.go`) holds the lock until it ends, and
 the new agent's operation on that sandbox waits for it. Suspend receipts are
 already on disk.
 
 **The control-plane channel.** For a pool with no `controlPlaneUrl`, the
-server dials a new channel once the handover reaches step 4, which reaches
-the new agent, since it alone accepts. It keeps the old channel until the old
-agent closes it.
+server dials a new channel once the old agent closes its own, which reaches
+the new agent, since it alone accepts. The old agent closes it once the
+connections it forwarded onto it have ended, or have carried nothing for half
+a second, within 20 seconds of step 3: its
+own calls to the control plane, from then on, reach it through the socket the
+new agent serves. *(Amended: this said the server dials once the handover
+reaches step 4, and keeps the old channel until the old agent closes it. The
+server learns of step 4 from nothing but the new agent's first report, which
+needs the channel. So the new agent serves from step 4, before that report,
+which it makes once its channel opens: the pool is the one the old agent
+registered, under the same key.)*
 
 **Only disco-vm asks.** The pool bundle's units take this shape on every
 pool, since one bundle serves them all. A handover runs only when the
@@ -237,9 +269,12 @@ pool until its next start, whose bootstrap names the successor.
 
 ## Open, for implementation
 
-- The units' names, and how `apply` starts the idle slot.
-- Whether the proxy's audit database takes two writing processes on one
-  machine, or each slot writes its own.
+- *(Answered by #1118.)* The units' names, and how `apply` starts the idle
+  slot: `discobox-pool-agent@{a,b}` and `discobox-proxy@{a,b}`, started by
+  `discobox-pool-agent units apply`.
+- *(Answered by #1118.)* The proxy's audit database takes both slots' writes,
+  in turn; a column the new schema retires is dropped only once the old
+  proxy has exited.
 - How the delta copy of §5 step 4 finds what changed.
 - disco-vm's interface for a successor host, settled with 077.
 
