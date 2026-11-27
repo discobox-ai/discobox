@@ -88,7 +88,29 @@ func TestABootUnderWayInTheOtherAgentIsSeenAndWaitedOut(t *testing.T) {
 	}
 }
 
-// Overlapping boots of one sandbox hold its mark until the last ends.
+// Overlapping boots of one sandbox hold its mark until the newest ends, on
+// disk as in this process: an older boot still waiting holds none, so no
+// process reads the sandbox as booting once the newest has ended.
+func TestTheBootMarkEndsWithTheNewestBoot(t *testing.T) {
+	root := layout.ContainerAt(t.TempDir())
+	core := &sandboxCore{root: root, projectID: "prj", poolID: "pool"}
+	other := &sandboxCore{root: root, projectID: "prj", poolID: "pool"}
+	older := core.beginBoot("sbx_1")
+	newer := core.beginBoot("sbx_1")
+	core.endBoot("sbx_1", newer, nil)
+	if core.SandboxBooting("sbx_1") {
+		t.Fatal("the sandbox reads booting in its own process after the newest boot ended")
+	}
+	if other.SandboxBooting("sbx_1") {
+		t.Fatal("another process reads the sandbox booting after the newest boot ended")
+	}
+	core.endBoot("sbx_1", older, nil)
+	if other.SandboxBooting("sbx_1") || core.SandboxBooting("sbx_1") {
+		t.Fatal("the sandbox reads booting once both boots ended")
+	}
+}
+
+// Overlapping boots that end oldest first hold the mark until the newest ends.
 func TestOverlappingBootsHoldTheMarkUntilTheLastEnds(t *testing.T) {
 	root := layout.ContainerAt(t.TempDir())
 	core := &sandboxCore{root: root, projectID: "prj", poolID: "pool"}

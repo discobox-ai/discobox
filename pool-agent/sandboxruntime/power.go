@@ -445,9 +445,11 @@ func (r *DockerSandboxRuntime) startLocked(ctx context.Context, sandboxID string
 type sandboxBoot struct {
 	done chan struct{}
 	err  error
-	// mark is this boot's hold of the sandbox's boot mark on disk, which the
-	// other agent of a handover sees (bootMarkPath); nil if it could not be
-	// taken, which leaves the mark this process's alone.
+	// mark is the sandbox's boot mark on disk (bootMarkPath), which another
+	// process of the pool sees, held by the newest boot alone: a newer boot
+	// takes it over from the one it replaces, and the newest releases it as
+	// it ends. Nil on an older boot, and on one whose mark could not be
+	// taken, which leaves the mark this process's alone. Under bootMu.
 	mark *handover.Lock
 }
 
@@ -461,27 +463,43 @@ type sandboxBoot struct {
 // a restart or a replacing create can begin a new boot while the old one is
 // still waiting. The newer boot replaces the older in the map, and endBoot
 // removes only its own, so the mark lasts until the newest boot ends; a caller
-// waiting on the older one wakes when it ends and looks again. Each holds the
-// mark on disk as well, shared, so it is held until the last of them ends.
+// waiting on the older one wakes when it ends and looks again. The mark on
+// disk follows the map: the newer boot takes it over, and it is let go of
+// when the newest boot ends, so another process sees what this one does.
 //
 // A sandbox deleted or archived mid-boot reads as booting until the wait sees
 // its box gone, or at most until sandboxAgentReadyTimeout. Nothing routes on
 // the mark for a sandbox that is gone.
 func (r *sandboxCore) beginBoot(sandboxID string) *sandboxBoot {
+	r.bootMu.Lock()
+	defer r.bootMu.Unlock()
 	boot := &sandboxBoot{done: make(chan struct{})}
-	mark, err := handover.Mark(context.Background(), r.bootMarkPath(sandboxID))
-	if err != nil {
-		slog.Warn("sandbox boot mark not held on disk", "sandboxID", sandboxID, "error", err)
+	if value, ok := r.booting.Load(sandboxID); ok {
+		if older, ok := value.(*sandboxBoot); ok {
+			boot.mark, older.mark = older.mark, nil
+		}
 	}
-	boot.mark = mark
+	if boot.mark == nil {
+		// A mark waits only behind the file locked alone, which nothing
+		// does to a boot mark.
+		mark, err := handover.Mark(context.Background(), r.bootMarkPath(sandboxID))
+		if err != nil {
+			slog.Warn("sandbox boot mark not held on disk", "sandboxID", sandboxID, "error", err)
+		}
+		boot.mark = mark
+	}
 	r.booting.Store(sandboxID, boot)
 	return boot
 }
 
 func (r *sandboxCore) endBoot(sandboxID string, boot *sandboxBoot, err error) {
+	r.bootMu.Lock()
 	boot.err = err
-	r.booting.CompareAndDelete(sandboxID, boot)
-	_ = boot.mark.Release()
+	if r.booting.CompareAndDelete(sandboxID, boot) {
+		_ = boot.mark.Release()
+		boot.mark = nil
+	}
+	r.bootMu.Unlock()
 	close(boot.done)
 }
 

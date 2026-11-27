@@ -972,8 +972,9 @@ tracked in #1699, not a pattern to copy.
 ## Locks across processes
 
 - **A sandbox's power lock and boot mark are the lock tree's files**
-  (`lockPower`, `beginBoot`), never this process's memory alone. Why: the
-  other agent of a handover must see an operation or a boot in flight.
+  (`lockPower`, `beginBoot`), never this process's memory alone. Why: any
+  process of the pool that powers a sandbox must see an operation or a boot
+  another has in flight, or both act on the sandbox at once.
 - **A lock is asked about without taking it** (`handover.Held`,
   `F_OFD_GETLK`). Why: a probe that took the lock for an instant had two
   probes, or a probe and a boot's mark, see each other as held, on

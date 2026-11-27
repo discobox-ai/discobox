@@ -184,6 +184,9 @@ func (r Root) ProjectPools(projectID string) string {
 	return r.join(r.ProjectData(projectID), "pools")
 }
 
+// PoolLocksDir is where PoolLocks are, under System.
+const PoolLocksDir = "/run/discobox/locks"
+
 // PoolData is one pool's durable subtree.
 func (r Root) PoolData(projectID, poolID string) string {
 	return r.join(r.ProjectPools(projectID), poolID)
@@ -220,13 +223,15 @@ func (r Root) PoolMachines(projectID, poolID string) string {
 }
 
 // PoolLocks holds the files a pool's processes lock to exclude each other
-// across a handover (ADR 26-11-26-536 §4): a sandbox's power lock and boot
-// mark, one file each, removed with the sandbox while its power lock is held
-// (a locker checks it holds the file the path still names). They are kept out
-// of the sandbox's tree, which its delete removes as a whole, a step that does
-// not know of them.
+// (handover): a sandbox's power lock and boot mark, one file each. It is on
+// the run directory, which lives as long as the boot every process of the
+// pool shares, so a file left by a lock of a sandbox gone goes with it; a
+// sandbox's removal also removes its files while holding its power lock (a
+// locker checks it holds the file the path still names). They are kept out
+// of the sandbox's tree, which its delete removes as a whole, and of the
+// pool's durable data, which outlives the processes that lock them.
 func (r Root) PoolLocks(projectID, poolID string) string {
-	return r.join(r.PoolData(projectID, poolID), "locks")
+	return r.join(r.System(PoolLocksDir), projectID, poolID)
 }
 
 // SourceData is one source's durable pool-local data directory. sourceKey is

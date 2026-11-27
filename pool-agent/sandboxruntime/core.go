@@ -60,8 +60,10 @@ type sandboxCore struct {
 	// does for the power.
 	rawSecretsTaken sync.Map
 	// booting holds the boot under way of each sandbox whose box is started
-	// and whose sandbox agent has not answered yet (see beginBoot).
+	// and whose sandbox agent has not answered yet (see beginBoot); bootMu
+	// orders its changes with the boot marks they hand over.
 	booting sync.Map
+	bootMu  sync.Mutex
 	// agentReadyTimeout bounds a boot's wait for its sandbox agent; zero is
 	// sandboxAgentReadyTimeout. Only a test sets it.
 	agentReadyTimeout time.Duration
