@@ -36,11 +36,11 @@ func tryLock(file *os.File, exclusive bool) (bool, error) {
 	}
 }
 
-// unlock lets go of file's lock; closing it would too.
 // settle is what a lock does with its file once held: an open file
 // description lock lasts only as long as the file is open, so it stays open.
 func settle(*os.File) {}
 
+// unlock lets go of file's lock; closing it would too.
 func unlock(file *os.File) {
 	_ = unix.FcntlFlock(file.Fd(), unix.F_OFD_SETLK, wholeFile(unix.F_UNLCK))
 }
