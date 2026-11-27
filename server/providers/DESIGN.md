@@ -416,8 +416,13 @@ placed with the pool's runtime state (`poolruntime.BoxRecord`); a pool whose
 pins or placement moved since — its bootstrap and environment, which carry the
 provider's configuration and the pool's own settings, such as
 `disableAgentEndpointTls` (`PlacementFingerprint`) — is provisioned again in
-its running box, its agent and proxy restarted for a moved placement
-(`RestartPoolUnits`), and the agent alone moving provisions nothing (§5). What else a provider places for its agent
+its running box, and the agent alone moving provisions nothing (§5). After
+every apply, `ProvisionBox` runs `discobox-pool-agent units apply` in the box,
+which restarts the agent and proxy when their bundle or placement moved, or,
+on a pool whose placement says `HandOver`, starts new ones beside them and
+drains the old (ADR 26-11-26-536; see
+[pool-agent](../../pool-agent/DESIGN.md#handing-over)). A Docker pool's moved
+outbound routing then restarts its builder (`RestartPoolBuilder`). What else a provider places for its agent
 — a disco-vm driver's provisioning key — goes in first
 (`poolruntime.PlaceBoxFiles`); see [discovm](discovm/DESIGN.md).
 
@@ -841,9 +846,8 @@ effort to reconcile it back to health instead of abandoning it.
   §1); an in-place start (`AgentStartInPlace`) once placement is closed and
   before the apply that may restart the running agent, on a Docker pool's
   running container and on any machine the pass did not create
-  (ADR 26-11-15-602 §1). One in-place start covers the apply's restart and
-  `RestartPoolUnits` after it: the new agent's first report lands before
-  either returns.
+  (ADR 26-11-15-602 §1). One in-place start covers whatever the apply's
+  units restart or hand over to.
 
 ## Pool Agent HTTP Routing
 

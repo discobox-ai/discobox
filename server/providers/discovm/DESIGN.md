@@ -440,9 +440,12 @@ driver's machine limit), never against anything the machine reports (551 §1):
   configuration and the pool's own settings say of it: its
   `controlPlaneUrl`, its base, its policy, its machine's URLs, its
   `disableAgentEndpointTls`, its driver's machine limit), are applied again in the running machine.
-  `apply` restarts what moved bundles move; a moved placement restarts the
-  agent and proxy, which read it once at start
-  (`poolruntime.RestartPoolUnits`), as a Docker pool's are. A record from
+  The box's units then hand over to a new agent and proxy beside the
+  running ones, which drain (`BoxPlacement.HandOver`, ADR 26-11-26-536 §4; see
+  [pool-agent](../../../pool-agent/DESIGN.md#handing-over)): every driver
+  asks for it but one whose machines this server's engine holds on this host
+  (`held`), whose host agent is not staged. A pool's base moving still keeps
+  the machine's base (953 §5). A record from
   before the box's record held its placement kept it beside the box, and is
   read from there. A running pool whose moved bundles do not resolve or apply
   keeps what it last provisioned and is tried again, as a Docker pool is
@@ -452,8 +455,7 @@ driver's machine limit), never against anything the machine reports (551 §1):
   as a box start before the machine answers, as the pass that settles is a
   later one (26-11-15-294 §1); a machine the pass did not create, as an
   in-place start once `gate` has closed placement and before the apply,
-  which with a moved placement's `RestartPoolUnits` may restart its agent
-  (26-11-15-602 §1), unless the pass booted it and places it again with
+  whose units may hand over to a new agent (26-11-15-602 §1), unless the pass booted it and places it again with
   nothing moved (a repair), which keeps its box start (`replacesAgent`).
 
 The record is written as each step lands, so a reconcile that fails part way
@@ -472,8 +474,8 @@ each held call under the context its hold returns:
 
 - `starting_vm`, held around making the machine, which its create starts,
   and around starting a stopped one;
-- `starting_pool_agent`, held around `ProvisionBox` (and a moved placement's
-  `RestartPoolUnits`) on a pass that made, started or repairs the machine,
+- `starting_pool_agent`, held around `ProvisionBox` on a pass that made,
+  started or repairs the machine,
   or finds its box never provisioned (the pass that made it failed while it
   booted).
   The apply's start of the agent returns only once the agent's first report

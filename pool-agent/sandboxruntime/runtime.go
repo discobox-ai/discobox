@@ -335,6 +335,10 @@ type Runtime interface {
 	// A boot can end without the sandbox up, so a caller that waited looks at
 	// the sandbox again.
 	AwaitSandboxBoot(ctx context.Context, sandboxID string) error
+	// AwaitBackground waits, until ctx ends, for every boot and snapshot
+	// build this process began to end: a draining agent's last wait (ADR
+	// 26-11-26-536 §3).
+	AwaitBackground(ctx context.Context) error
 	// GitOriginPath is the repository behind a source's origin route, as the
 	// sandbox itself reaches it: its namespace of this pool's cache, served
 	// fetch-only (ADR 26-10-10-545 §7), or the bare origin repository an
@@ -3468,6 +3472,9 @@ func (r *MemorySandboxRuntime) EnsureSandboxRunning(ctx context.Context, sandbox
 func (r *MemorySandboxRuntime) SandboxBooting(string) bool {
 	return false
 }
+
+// AwaitBackground has nothing to wait for: a memory sandbox never boots.
+func (r *MemorySandboxRuntime) AwaitBackground(context.Context) error { return nil }
 
 // AwaitSandboxBoot has nothing to wait for: a memory sandbox never boots.
 func (r *MemorySandboxRuntime) AwaitSandboxBoot(context.Context, string) error {

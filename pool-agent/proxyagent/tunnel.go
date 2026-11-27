@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/wstunnel"
+	"github.com/discobox-ai/discobox/pool-agent/handover"
 )
 
 const (
@@ -89,7 +90,13 @@ func loopback(hostPort string) string {
 
 // ConfiguredTunnelURL resolves EnvTunnelURL, returning "" when it is unset.
 func ConfiguredTunnelURL() (string, error) {
-	value := strings.TrimSpace(os.Getenv(EnvTunnelURL))
+	return TunnelURL(os.Getenv(EnvTunnelURL))
+}
+
+// TunnelURL resolves value, what EnvTunnelURL is set to wherever it is read
+// from, returning "" for none.
+func TunnelURL(value string) (string, error) {
+	value = strings.TrimSpace(value)
 	if value == "" {
 		return "", nil
 	}
@@ -131,16 +138,13 @@ func TunnelForwarder() http.Handler {
 	}}
 }
 
-// serveTunnels accepts the edge's tunnels until ctx ends, splicing each stream
-// onto the listener of the service its path names.
-func serveTunnels(ctx context.Context, logger *slog.Logger) error {
-	var listenConfig net.ListenConfig
-	listener, err := listenConfig.Listen(ctx, "tcp", TunnelListenAddress)
-	if err != nil {
-		return err
-	}
+// serveTunnels accepts the edge's tunnels on listener until ctx ends,
+// splicing each stream onto the listener of the service its path names. Once
+// a drain closes listener, it carries the tunnels it holds until they end.
+func serveTunnels(ctx context.Context, logger *slog.Logger, listener net.Listener) error {
+	var tunnels handover.InFlight
 	server := &http.Server{
-		Handler:           newTunnelHandler(ctx, logger),
+		Handler:           tunnels.Wrap(newTunnelHandler(ctx, logger)),
 		ReadHeaderTimeout: 10 * time.Second,
 		BaseContext:       func(net.Listener) context.Context { return ctx },
 	}
@@ -149,7 +153,11 @@ func serveTunnels(ctx context.Context, logger *slog.Logger) error {
 		_ = server.Close()
 	}()
 	logger.Info("pool tunnels serving", "addr", listener.Addr())
-	if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	err := server.Serve(listener)
+	if errors.Is(err, net.ErrClosed) && ctx.Err() == nil {
+		return errors.Join(server.Shutdown(ctx), tunnels.Wait(ctx))
+	}
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil

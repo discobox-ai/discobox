@@ -25,10 +25,11 @@ func TestTheFrontServesTheChannelBeforeTheAgentIsReady(t *testing.T) {
 		t.Fatal(err)
 	}
 	identity := Identity{ProjectID: projectID, PoolID: poolID}
-	front, err := StartFront(slog.New(slog.DiscardHandler), listener, identity, publicKey, channel)
+	front, err := NewFront(slog.New(slog.DiscardHandler), listener, identity, publicKey, channel)
 	if err != nil {
 		t.Fatal(err)
 	}
+	front.Start()
 	t.Cleanup(func() { _ = front.Shutdown(t.Context()) })
 	base := "http://" + listener.Addr().String()
 

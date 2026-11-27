@@ -13,7 +13,7 @@
   upgrade watch the pool runs its previous agent, and the server would report
   itself settled over it (ADR 26-11-14-624 §1).
 - A provider that makes or starts a pool's box, or may restart the agent in
-  a running one (moved bundles' apply, `RestartPoolUnits`), reports it with
+  a running one (the apply and the box's units after it), reports it with
   `sandbox.ReportAgentStarted`: a box start before the make or start, an
   in-place start before the apply, never later, and never a box start for a
   box an agent may already run in. Missing one makes the upgrade watch reject

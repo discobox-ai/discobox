@@ -97,7 +97,7 @@ wait_for_pool_ready() {
     echo "logs for $container:" >&2
     docker logs --tail 100 "$container" >&2 || true
     echo "journal for $container:" >&2
-    docker exec "$container" journalctl --no-pager -n 100 -u discobox-pool-agent.service >&2 || true
+    docker exec "$container" journalctl --no-pager -n 100 -u 'discobox-pool-agent@*.service' -u 'discobox-proxy@*.service' >&2 || true
   done
   return 1
 }

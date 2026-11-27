@@ -89,6 +89,9 @@ func TestABootUnderWayInTheOtherAgentIsSeenAndWaitedOut(t *testing.T) {
 	if next.SandboxBooting("sbx_1") {
 		t.Fatal("a boot that ended still reads booting")
 	}
+	if err := old.AwaitBackground(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // Overlapping boots of one sandbox hold its mark until the newest ends, on
@@ -113,7 +116,8 @@ func TestTheBootMarkEndsWithTheNewestBoot(t *testing.T) {
 	}
 }
 
-// Overlapping boots that end oldest first hold the mark until the newest ends.
+// Overlapping boots that end oldest first hold the mark until the newest
+// ends, and a drain waits for each.
 func TestOverlappingBootsHoldTheMarkUntilTheLastEnds(t *testing.T) {
 	root := layout.ContainerAt(t.TempDir())
 	core := &sandboxCore{root: root, projectID: "prj", poolID: "pool"}
@@ -124,9 +128,17 @@ func TestOverlappingBootsHoldTheMarkUntilTheLastEnds(t *testing.T) {
 	if !other.SandboxBooting("sbx_1") {
 		t.Fatal("the mark ended with the older of two boots")
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if err := core.AwaitBackground(ctx); err == nil {
+		t.Fatal("AwaitBoots returned with a boot under way")
+	}
 	core.endBoot("sbx_1", second, nil)
 	if other.SandboxBooting("sbx_1") {
 		t.Fatal("the mark outlived the last boot")
+	}
+	if err := core.AwaitBackground(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -151,7 +151,7 @@ func TestDockerImageSpecsExportThePoolAgentBundle(t *testing.T) {
 	}
 	for _, want := range []string{
 		filepath.Join(repoRoot, "pool-agent", "Dockerfile"),
-		filepath.Join(repoRoot, "pool-agent", "bundle", "features", "pool-agent", "systemd", "discobox-pool-agent.service"),
+		filepath.Join(repoRoot, "pool-agent", "bundle", "features", "pool-agent", "systemd", "discobox-pool-agent@.service"),
 		filepath.Join(repoRoot, "pool-agent", "bundle", "features", "pool-builder", "provision.yaml"),
 		filepath.Join(repoRoot, "pool-agent", "cmd", "discobox-pool-agent", "main.go"),
 	} {

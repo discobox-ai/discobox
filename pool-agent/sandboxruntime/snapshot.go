@@ -218,7 +218,9 @@ func (r *sandboxCore) requestSnapshot(plan snapshotPlan, build func(context.Cont
 	active := &snapshotBuild{cancel: cancel, plan: plan.name(), requested: time.Now().UTC()}
 	b.active[key] = active
 	b.mu.Unlock()
+	built := r.background.Begin()
 	go func() {
+		defer built()
 		defer cancel()
 		var started time.Time
 		err := func() error {

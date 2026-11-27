@@ -83,13 +83,13 @@ func PlacementFingerprint(placement BoxPlacement) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// RestartPoolUnits first waits for the agent to render consumers' configuration
-// and restore egress. An outbound rotation then drains builds before restarting
-// the builder and registry; their data and caches stay in place.
-func RestartPoolUnits(ctx context.Context, guest machine.Guest, restartBuilder bool) error {
-	commands := [][]string{append([]string{"systemctl", "try-restart"}, bundle.BootstrapUnits...)}
-	if restartBuilder {
-		commands = append(commands, []string{"sh", "-ec", `
+// RestartPoolBuilder drains the builds on the pool's builder and restarts
+// BuildKit and the registry, their data and caches kept in place: an outbound
+// rotation, which they read only at start. The agent has rendered their new
+// configuration and restored egress before, in ProvisionBox's apply of the
+// pool's units.
+func RestartPoolBuilder(ctx context.Context, guest machine.Guest) error {
+	argv := []string{"sh", "-ec", `
 resume=/run/discobox/pool-outbound-resume-mediator
 if [ -e "$resume" ] || systemctl is-active --quiet discobox-buildkit-mediator.service; then
  umask 077
@@ -104,17 +104,14 @@ if [ -e "$resume" ]; then
  rm -f "$resume"
  trap - EXIT HUP INT TERM
 fi
-`})
+`}
+	var stderr strings.Builder
+	code, err := machine.Run(ctx, guest, machine.ExecRequest{Argv: argv}, nil, io.Discard, &stderr)
+	if err != nil {
+		return err
 	}
-	for _, argv := range commands {
-		var stderr strings.Builder
-		code, err := machine.Run(ctx, guest, machine.ExecRequest{Argv: argv}, nil, io.Discard, &stderr)
-		if err != nil {
-			return err
-		}
-		if code != 0 {
-			return fmt.Errorf("pool consumer restart exited with status %d: %s", code, strings.TrimSpace(stderr.String()))
-		}
+	if code != 0 {
+		return fmt.Errorf("pool builder restart exited with status %d: %s", code, strings.TrimSpace(stderr.String()))
 	}
 	return nil
 }
@@ -166,6 +163,32 @@ type BoxPlacement struct {
 	// Fence fences the box's network before anything of the pool is placed
 	// (FenceBox): a held driver's pool machine's (ADR 26-11-11-963 §6).
 	Fence bool
+	// HandOver has the box hand over to a new agent and proxy beside the
+	// running ones when they move, rather than restart them (bundle.HandOverEnv).
+	// It is not in the placement's fingerprint: it changes how a move is
+	// applied, and is no move itself.
+	HandOver bool
+}
+
+// unitsCommand runs the pool-agent feature's units step after an apply, which
+// restarts or hands over to what the bundle and placement now say
+// (poolunits). A bundle from before it has no such step: its apply restarts
+// what moved bundles move, and its agent and proxy, which read the placement
+// once at start, are restarted when the placement moved ($1 is "moved"), as
+// they were then. What ran in their place is not an agent's subcommand it
+// knows.
+const unitsCommand = `step="$(dirname "$(readlink -f ` + bundle.AgentBinary + `)")/` + bundle.UnitsStep + `"
+if [ -x "$step" ]; then exec "$step"; fi
+if [ "$1" = moved ]; then systemctl try-restart discobox-pool-agent.service discobox-proxy.service; fi`
+
+// Environment is what apply and the units step run with: the outbound
+// routing's, and whether the box hands over.
+func (p BoxPlacement) Environment() []string {
+	env := p.Outbound.Environment()
+	if p.HandOver {
+		env = append(env, bundle.HandOverEnv+"=1")
+	}
+	return env
 }
 
 // provisionTimeout bounds one provisioning of a pool's box: placing the pool
@@ -180,8 +203,11 @@ const provisionTimeout = 15 * time.Minute
 // blob of the pool's bundles (applyTree), and applies those bundles, which
 // the box fetches nothing for (ADR 26-10-30-875 §5). What else the agent
 // reads (PlaceBoxFiles) is placed before. Every step is idempotent, so a box
-// provisioned before is provisioned again in place, its key the same.
-func ProvisionBox(ctx context.Context, guest machine.Guest, maker PoolMaker, placement BoxPlacement) (BoxRecord, error) {
+// provisioned before is provisioned again in place, its key the same. placed
+// is the record of what the box was placed with before, the zero record for
+// a box never placed: a bundle from before slots restarts its agent only
+// when the placement moved from it (unitsCommand).
+func ProvisionBox(ctx context.Context, guest machine.Guest, maker PoolMaker, placement BoxPlacement, placed BoxRecord) (BoxRecord, error) {
 	facts, reportErr := sandbox.ReportBootstrap(ctx, model.BootstrapEvidence{Operation: "provision_pool_box", Bounded: true})
 	if reportErr != nil {
 		return BoxRecord{}, reportErr
@@ -272,16 +298,32 @@ func ProvisionBox(ctx context.Context, guest machine.Guest, maker PoolMaker, pla
 	applied, err := provisioner.Provision(ctx, guest, provisioner.Plan{
 		Dir:     "/",
 		Tree:    tree,
-		Command: machine.ExecRequest{Argv: []string{agentlayer.AgentPath, "provision", "apply", "--wait"}, Env: placement.Outbound.Environment()},
+		Command: machine.ExecRequest{Argv: []string{agentlayer.AgentPath, "provision", "apply", "--wait"}, Env: placement.Environment()},
 	})
 	_ = tree.Close()
 	if err != nil {
 		return BoxRecord{}, placement.Outbound.RedactError(provisionError("provision the pool's box", applied, err))
 	}
+	// The bundle's own apply runs the pool's units when they or the agent
+	// moved. A placement that moved alone, or a box whose bundle was applied
+	// before any bootstrap was placed, takes effect here: the command moves
+	// nothing that has not moved (poolunits).
+	record, err := RecordOf(placement)
+	if err != nil {
+		return BoxRecord{}, err
+	}
+	moved := "kept"
+	if placed.Placement != "" && placed.Placement != record.Placement {
+		moved = "moved"
+	}
+	units, err := provisioner.Run(ctx, guest, machine.ExecRequest{Argv: []string{"sh", "-ec", unitsCommand, "units", moved}, Env: placement.Environment()}, nil)
+	if err != nil {
+		return BoxRecord{}, provisionError("start the pool's agent", units, err)
+	}
 	if _, err := sandbox.ReportBootstrap(ctx, model.BootstrapEvidence{Operation: "provision_pool_box", Complete: true, Registration: true}); err != nil {
 		return BoxRecord{}, err
 	}
-	return RecordOf(placement)
+	return record, nil
 }
 
 // PlaceBoxFiles places files in a running pool's box and runs nothing: what

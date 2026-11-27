@@ -416,3 +416,125 @@ func shortTempDir(t *testing.T) string {
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	return dir
 }
+
+// A draining agent's channel closes once the connections it forwarded have
+// ended, so the server dials again and reaches the agent that took over; a
+// connection still forwarded keeps it until it ends, or until the drain's
+// bound.
+func TestADrainClosesTheChannelOnceItsConnectionsEnd(t *testing.T) {
+	serverKey, poolKey := newKey(t), newKey(t)
+	channel, agentAPI, socket := agent(t, poolKey, public(serverKey))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := Dial(ctx, http.DefaultTransport, agentAPI.URL, "proj", "pool", "token", serverKey, public(poolKey))
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	session, err := cpmux.Client(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = session.Close() }()
+	if err := channel.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	served := make(chan net.Conn, 1)
+	go func() {
+		stream, _, err := session.Accept()
+		if err == nil {
+			served <- stream
+		}
+	}()
+	var dialer net.Dialer
+	local, err := dialer.DialContext(ctx, "unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.Write([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	stream := <-served
+
+	drained := make(chan struct{})
+	go func() {
+		channel.Drain(ctx)
+		close(drained)
+	}()
+	select {
+	case <-drained:
+		t.Fatal("the channel closed under a connection still forwarded on it")
+	case <-time.After(200 * time.Millisecond):
+	}
+	if _, err := stream.Write([]byte("pong")); err != nil {
+		t.Fatalf("the forwarded connection was cut by the drain: %v", err)
+	}
+	reply := make([]byte, 4)
+	if _, err := io.ReadFull(local, reply); err != nil || string(reply) != "pong" {
+		t.Fatalf("reply = %q, %v", reply, err)
+	}
+	_ = local.Close()
+	_ = stream.Close()
+	select {
+	case <-drained:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the drain did not end once the connection did")
+	}
+	if !channel.installed().Closed() {
+		t.Fatal("the drained channel is still open: the server would not dial again")
+	}
+}
+
+// An idle connection forwarded onto a draining channel, a keep-alive of the
+// pool's own client, holds it no longer than drainQuiet: the server dials
+// again at once, and the agent that took over reaches the control plane.
+func TestAnIdleConnectionDoesNotHoldADrain(t *testing.T) {
+	serverKey, poolKey := newKey(t), newKey(t)
+	channel, agentAPI, socket := agent(t, poolKey, public(serverKey))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := Dial(ctx, http.DefaultTransport, agentAPI.URL, "proj", "pool", "token", serverKey, public(poolKey))
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	session, err := cpmux.Client(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = session.Close() }()
+	if err := channel.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		stream, _, err := session.Accept()
+		if err == nil {
+			defer func() { _ = stream.Close() }()
+			_, _ = io.Copy(io.Discard, stream)
+		}
+	}()
+	var dialer net.Dialer
+	local, err := dialer.DialContext(ctx, "unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = local.Close() }()
+	if _, err := local.Write([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	drained := make(chan struct{})
+	go func() {
+		channel.Drain(ctx)
+		close(drained)
+	}()
+	select {
+	case <-drained:
+	case <-time.After(5 * time.Second):
+		t.Fatal("an idle forwarded connection held the drain")
+	}
+	if took := time.Since(started); took > 3*drainQuiet {
+		t.Fatalf("the drain took %s with only an idle connection on it, want about %s", took, drainQuiet)
+	}
+	if !channel.installed().Closed() {
+		t.Fatal("the drained channel is still open")
+	}
+}

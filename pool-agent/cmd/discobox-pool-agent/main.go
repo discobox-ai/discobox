@@ -10,6 +10,7 @@ import (
 
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/pool-agent/gitcache"
+	"github.com/discobox-ai/discobox/pool-agent/handover"
 )
 
 func main() {
@@ -36,6 +37,14 @@ func main() {
 		return
 	}
 
+	if len(os.Args) > 1 && os.Args[1] == poolagent.UnitsCommand {
+		if err := poolagent.RunUnits(ctx, logger, os.Args[2:]); err != nil {
+			logger.Error("pool units failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if len(os.Args) > 1 && os.Args[1] == "buildkit-mediator" {
 		if err := poolagent.RunBuildkitMediator(ctx, logger); err != nil && !errors.Is(err, context.Canceled) {
 			logger.Error("buildkit mediator failed", "error", err)
@@ -45,15 +54,27 @@ func main() {
 	}
 
 	if len(os.Args) > 1 && os.Args[1] == "proxy" {
-		if err := poolagent.RunProxy(ctx, logger); err != nil && !errors.Is(err, context.Canceled) {
+		err := poolagent.RunProxy(ctx, logger)
+		exitDrained(err)
+		if err != nil && !errors.Is(err, context.Canceled) {
 			logger.Error("pool proxy failed", "error", err)
 			os.Exit(1)
 		}
 		return
 	}
 
-	if err := poolagent.RunAgent(ctx, logger); err != nil && !errors.Is(err, context.Canceled) {
+	err := poolagent.RunAgent(ctx, logger)
+	exitDrained(err)
+	if err != nil && !errors.Is(err, context.Canceled) {
 		logger.Error("pool agent failed", "error", err)
 		os.Exit(1)
+	}
+}
+
+// exitDrained ends a process that drained for the one that took over with
+// the status its unit does not restart.
+func exitDrained(err error) {
+	if errors.Is(err, handover.ErrDrained) {
+		os.Exit(handover.DrainedExitCode)
 	}
 }

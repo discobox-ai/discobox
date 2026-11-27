@@ -40,8 +40,9 @@
   decides (the bootstrap, the policy) is recorded and compared on every
   reconcile, as its bundles are, so a moved configuration is placed again in
   a running machine, and the agent and proxy, which read it once at start,
-  are restarted (`restartPoolUnits`): `apply` restarts only what moved
-  bundles move. Why: only a pool that never registered is repaired, so a
+  are handed over to new ones by the box's units after the apply
+  (`poolunits`, which `ProvisionBox` runs): `apply` alone moves only what
+  moved bundles move. Why: only a pool that never registered is repaired, so a
   registered pool given a wrong `controlPlaneUrl` would otherwise stay
   offline for good.
 - A remote engine's `Unknown` state is not a network fault until the error of

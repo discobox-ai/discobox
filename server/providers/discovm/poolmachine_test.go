@@ -52,6 +52,11 @@ type poolTestDriver struct {
 	keys    []machine.Key
 	// restarts is every systemctl command the machines were asked to run.
 	restarts [][]string
+	// unitsApplied counts the pool-agent feature's units step run in the
+	// machines after an apply: the box's, which restarts or hands over what
+	// moved. handOver is whether the last was asked to hand over.
+	unitsApplied int
+	handOver     bool
 	// issueErr, when set, is what IssueKey answers.
 	issueErr error
 	// checkErr, when set, is what Check answers: an account the driver
@@ -376,6 +381,15 @@ func (m *poolTestMachine) Exec(ctx context.Context, req machine.ExecRequest) (ma
 	if len(req.Argv) == 3 && req.Argv[0] == "rm" && req.Argv[1] == "-f" {
 		// A fake guest's command runs on the host: the path is its root's.
 		return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", `rm -f "$DISCO_VM_GUEST_ROOT$0"`, req.Argv[2]}})
+	}
+	if len(req.Argv) >= 3 && req.Argv[0] == "sh" && strings.Contains(req.Argv[2], bundle.UnitsStep) {
+		// The bundle's step, which the fake guest has none of: what is
+		// asked is counted, and answered.
+		m.driver.mu.Lock()
+		m.driver.unitsApplied++
+		m.driver.handOver = slices.Contains(req.Env, bundle.HandOverEnv+"=1")
+		m.driver.mu.Unlock()
+		return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"true"}})
 	}
 	if len(req.Argv) < 2 || req.Argv[0] != agentlayer.AgentPath || req.Argv[1] != "provision" {
 		return m.Machine.Exec(ctx, req)
@@ -1398,8 +1412,8 @@ func TestFakePoolMachinePlacesItsDriversMachineLimit(t *testing.T) {
 	if want := map[machine.OS]int{machine.Linux: 6}; driver.applies() != 2 || !maps.Equal(lastPlaced(), want) || !maps.Equal(recorded(), want) {
 		t.Fatalf("applies %d, placed %v, recorded %v; want the moved limit %v placed", driver.applies(), lastPlaced(), recorded(), want)
 	}
-	if len(driver.restarts) != 1 {
-		t.Fatalf("restarts = %q, want the agent restarted once on its new placement", driver.restarts)
+	if len(driver.restarts) != 0 || driver.unitsApplied != 2 {
+		t.Fatalf("restarts = %q, units applied %d; want the box's units applied after each apply, which restart what moved, and nothing restarted by the server", driver.restarts, driver.unitsApplied)
 	}
 	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
 		t.Fatal(err)
@@ -1464,7 +1478,8 @@ func TestRuntimeCheckUnreachableNamesTheServiceNotAPoolAgent(t *testing.T) {
 
 // A running pool is provisioned again when what the provider's configuration
 // says of it moves — its control plane URL, its policy — not only its
-// bundles, and its agent and proxy, which read them at start, are restarted.
+// bundles, and its units applied after each apply, which hand its agent and
+// proxy over to ones that read them at start (poolunits).
 func TestFakePoolMachineFollowsItsConfiguration(t *testing.T) {
 	r, driver := newFakePool(t, "")
 	ctx := context.Background()
@@ -1482,8 +1497,8 @@ func TestFakePoolMachineFollowsItsConfiguration(t *testing.T) {
 	if driver.applies() != 2 || driver.applied[1].ControlPlaneURL != "https://discobox.example.com" {
 		t.Fatalf("a moved control plane URL: applies %d; want it placed again", driver.applies())
 	}
-	if len(driver.restarts) != 1 || !slices.Equal(driver.restarts[0], []string{"systemctl", "try-restart", "discobox-pool-agent.service", "discobox-proxy.service"}) {
-		t.Fatalf("restarts = %q, want the agent and proxy restarted once", driver.restarts)
+	if len(driver.restarts) != 0 || driver.unitsApplied != 2 || !driver.handOver {
+		t.Fatalf("restarts = %q, units applied %d, hands over %v; want the box's units applied after each apply, asked to hand over", driver.restarts, driver.unitsApplied, driver.handOver)
 	}
 	host.policy = map[string]string{"DISCOBOX_SANDBOX_IDLE_TIMEOUT": "1h0m0s"}
 	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
@@ -1492,16 +1507,16 @@ func TestFakePoolMachineFollowsItsConfiguration(t *testing.T) {
 	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
 		t.Fatal(err)
 	}
-	if driver.applies() != 3 || len(driver.restarts) != 2 {
-		t.Fatalf("a moved policy: applies %d, restarts %d; want it placed again and the agent restarted, once", driver.applies(), len(driver.restarts))
+	if driver.applies() != 3 || driver.unitsApplied != 3 {
+		t.Fatalf("a moved policy: applies %d, units applied %d; want it placed again, once", driver.applies(), driver.unitsApplied)
 	}
 	// Moved bundles restart what they move through apply, and nothing more.
 	maker.digest = "sha256:" + strings.Repeat("4", 64)
 	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
 		t.Fatal(err)
 	}
-	if driver.applies() != 4 || len(driver.restarts) != 2 {
-		t.Fatalf("moved bundles: applies %d, restarts %d; want applied with no restart of its own", driver.applies(), len(driver.restarts))
+	if driver.applies() != 4 || driver.unitsApplied != 4 || len(driver.restarts) != 0 {
+		t.Fatalf("moved bundles: applies %d, units applied %d, restarts %q; want applied once more", driver.applies(), driver.unitsApplied, driver.restarts)
 	}
 }
 

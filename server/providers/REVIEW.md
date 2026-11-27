@@ -94,7 +94,7 @@
 - A running pool container proves only that systemd is up: it is PID 1, and
   the agent's unit restarts a failing agent for ever. A wait for a pool's agent
   must ask the agent, through the container's healthcheck where it has one, or
-  its unit (`bundle.AgentUnit`, `Type=notify`) where it has none (VSOCK on
+  its unit in either slot (`bundle.AgentUnits`, `Type=notify`) where it has none (VSOCK on
   `libkrun` and `vz`), and be bounded. A wait on container state alone passes a
   box whose agent never comes up, and nothing re-drives a registered pool that
   then goes offline.

@@ -102,13 +102,15 @@ func TestArchilGuestRunsThePoolsAndSandboxsUnits(t *testing.T) {
 		g := startArchilGuest(ctx, t, "pool")
 		g.launched(ctx, t)
 		placement := archilPoolPlacement(box)
-		if _, err := poolruntime.ProvisionBox(ctx, g, enrollAny{}, placement); err != nil {
+		if _, err := poolruntime.ProvisionBox(ctx, g, enrollAny{}, placement, poolruntime.BoxRecord{}); err != nil {
 			t.Fatalf("provision the pool's box: %v\n%s", err, g.journal(ctx, t))
 		}
-		first := g.started(ctx, t, bundle.AgentUnit, "discobox-pool-agent")
+		// The first apply runs the agent in the first slot, which it enables.
+		agent := bundle.AgentUnit(bundle.Slots[0])
+		first := g.started(ctx, t, agent, "discobox-pool-agent")
 		g.reboot(ctx, t)
-		if again := g.started(ctx, t, bundle.AgentUnit, "discobox-pool-agent"); again == first {
-			t.Fatalf("%s is the same invocation after a reboot", bundle.AgentUnit)
+		if again := g.started(ctx, t, agent, "discobox-pool-agent"); again == first {
+			t.Fatalf("%s is the same invocation after a reboot", agent)
 		}
 	})
 

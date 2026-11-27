@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
@@ -19,27 +20,37 @@ import (
 // as an unreachable control plane does, and systemd tries it again.
 const firstChannelWait = 3 * time.Minute
 
-// openControlPlaneChannel is the pool end of the control-plane channel of a
-// pool whose bootstrap says the server opens one (ADR 26-10-30-875 §§1–2),
-// serving ControlPlaneChannelSocket to the agent and the proxy unit, which
-// reach the control plane there. A pool that dials its control plane has
-// none, and gets nil.
-func openControlPlaneChannel(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, identity *Identity) (*cpchannel.Channel, error) {
+// prepareControlPlaneChannel is the pool end of the control-plane channel of
+// a pool whose bootstrap says the server opens one (ADR 26-10-30-875 §§1–2),
+// and the listener it serves ControlPlaneChannelSocket to the agent and the
+// proxy unit on, which reach the control plane there: held, the socket
+// systemd holds for it, or else one bound here. It serves nothing yet
+// (serveControlPlaneSocket). A pool that dials its control plane has none,
+// and gets nil.
+func prepareControlPlaneChannel(logger *slog.Logger, bootstrap Bootstrap, identity *Identity, held net.Listener) (*cpchannel.Channel, net.Listener, error) {
 	if !bootstrap.ControlPlaneChannel {
-		return nil, nil
+		return nil, nil, nil
 	}
 	controlPlane, err := decodeControlPlaneKey(bootstrap.ControlPlaneKey)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	channel, err := cpchannel.New(logger, identity.PrivateKey, controlPlane)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	listener, err := listenProxySocket(ControlPlaneChannelSocket)
-	if err != nil {
-		return nil, fmt.Errorf("listen for the control plane on %s: %w", ControlPlaneChannelSocket, err)
+	listener := held
+	if listener == nil {
+		if listener, err = listenProxySocket(ControlPlaneChannelSocket); err != nil {
+			return nil, nil, fmt.Errorf("listen for the control plane on %s: %w", ControlPlaneChannelSocket, err)
+		}
 	}
+	return channel, listener, nil
+}
+
+// serveControlPlaneSocket serves listener through channel until ctx ends,
+// or a drain closes it.
+func serveControlPlaneSocket(ctx context.Context, logger *slog.Logger, channel *cpchannel.Channel, listener net.Listener) {
 	go func() {
 		<-ctx.Done()
 		_ = listener.Close()
@@ -49,7 +60,6 @@ func openControlPlaneChannel(ctx context.Context, logger *slog.Logger, bootstrap
 			logger.Error("control-plane socket ended", "error", err)
 		}
 	}()
-	return channel, nil
 }
 
 // awaitControlPlaneChannel waits for the server's first channel, which the

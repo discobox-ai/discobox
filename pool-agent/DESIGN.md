@@ -35,7 +35,8 @@ from the in-sandbox `sandbox-agent` API.
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
 | `cmd/discobox-pool-runc` | The pool's runc wrapper, installed as `runc` ahead of BuildKit's own. Injects MITM trust and the per-build egress hooks into each build step's OCI spec. |
 | `systemd` | Linux/systemd child pid namespace startup and shutdown, with non-Linux stubs, and `NotifyReady` (`sd_notify` for a Type=notify unit). |
-| `handover` | Locks a pool's processes exclude each other with (ADR 26-11-26-536 §4): open file description locks (fcntl(2) `F_OFD_SETLK`) that exclude across processes and within one (`Acquire`, `TryAcquire`), shared marks another process can see (`Mark`), and probes that take nothing (`Held`, `AwaitFree`). A locker checks that the path still names the file it locked, so a lock file removed while held (`Remove`) never splits the lock. |
+| `handover` | What two processes of a pool's agent or proxy share across a handover ([Handing Over](#handing-over)): the sockets systemd passed (`Listeners`), the active lock and the marks other processes can see (`Acquire`, `Mark`, `Held`), the drain signal, `InFlight`, and `DrainBound`. |
+| `poolunits` | `discobox-pool-agent units apply`: renders the pool's socket units and the slots' drop-ins, and restarts the running slot or hands over to the other when what it starts with moved ([Handing Over](#handing-over)). |
 | `bundle` | The pool bundle (ADR 26-10-24-953 §2): its features (`bundle/features`: `pool-builder-units`, `pool-agent` and `pool-builder`), and where a pool's maker places what the agent reads beside them (`BootstrapFile`, `EnvironmentFile`, and an issued key's `ProvisioningKeyFile` on a machine pool that does not authenticate in-machine). See [The Pool Bundle](#the-pool-bundle). |
 | `childproc` | This process's children: every subprocess start in the agent, and the reaper for the ones nothing is waiting for. See [Child Processes](#child-processes). |
 | `provisioner` | The box provisioner ([ADR 26-10-23-551](../docs/adr/26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md) §3, [ADR 26-10-24-953](../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md) §3): given a box's guest operations (`machine.Guest`: a disco-vm machine's, or a container's as `ContainerGuest`, with the daemon's platform from `ContainerPlatform`), a tar tree, a command and its stdin, it places the tree with the guest's copy and runs the command with its exec, returning its exit code and the tail of its output; and `RequireSystemd`, which refuses a box or machine whose base carries no systemd, naming the requirement (ADR 26-11-16-619 §4), since every unit placed in one runs under it. No per-driver code beyond that container's guest, and no state: it is as idempotent as its command. A tree may hold secrets (a key, a credential), so no error carries its contents; a command's argv is named in errors, so secrets go in the tree — or on `Plan.Stdin` where they must never touch the box's disk, as a snapshot build's plan (ADR 26-11-03-986 §1). It is in this module rather than the root's so that the server can import it and the root module takes no dependency on disco-vm, which this module imports by commit, as the server does. |
@@ -83,7 +84,9 @@ nothing ([ADR 26-10-30-875](../docs/adr/26-10-30-875-a-remote-pool-reaches-its-c
    (`layout.PoolIdentityKey`, `LoadIdentity`). It never makes one: the key is
    the one its maker enrolled, and none is a box nobody enrolled, which fails
    the boot. Nothing registers it.
-4. The agent binds its own listener and serves it through `server.Front`
+4. The agent waits to be the pool's active agent ([Handing
+   Over](#handing-over)), takes its listener — the socket systemd holds for
+   it, or one it binds — and serves it through `server.Front`
    from here on, answering only the control-plane channel's route, to a
    server token carrying `pool:control-plane-channel`, and 503 to anything else
    until `Serve` hands it the full router. A pool whose bootstrap says
@@ -1927,10 +1930,13 @@ bundle. `bundle` names the files its maker places beside it.
     `Requires=` graph first; any unit upgrade drains while egress still runs.
     It enables nothing: binaries and configuration are installed later.
   - `pool-agent`, which requires `pool-builder-units`: `discobox-pool-agent`,
-    `git` where absent, the units `discobox-pool-agent.service`
-    and `discobox-proxy.service`, and a journald drop-in keeping the
-    journal on disk, bounded at 256M: it is what says why the agent did not
-    come up, and a boxd base keeps none;
+    `git` where absent, the template units `discobox-pool-agent@.service`
+    and `discobox-proxy@.service` (two slots, `a` and `b`; see
+    [Handing Over](#handing-over)), `discobox-pool-units.service`, which a
+    socket starts when traffic finds no slot serving it, the `units` step
+    that runs `discobox-pool-agent units apply`, and a journald drop-in
+    keeping the journal on disk, bounded at 256M: it is what says why the
+    agent did not come up, and a boxd base keeps none;
   - `pool-builder`, which requires it: the pool-shared builder of ADR 0044 —
     BuildKit's binaries and the registry's from their upstream images,
     `discobox-pool-runc` as `/opt/discobox/bin/runc`, `registry.yml`, and the
@@ -1940,9 +1946,10 @@ bundle. `bundle` names the files its maker places beside it.
     what a pool runs does not follow from its host (ADR 26-10-27-767).
 
   The agent and builder run their binaries from their feature's directory under the bundle's
-  stable link (`agentlayer.BundleTree`), and restarts its units from a step
-  whose inputs are those binaries, so a new bundle restarts exactly what it
-  moved.
+  stable link (`agentlayer.BundleTree`). The builder restarts its units from a
+  step whose inputs are its binaries; the agent's `units` step's inputs are
+  its binary and its units, so a new bundle restarts, or hands over, exactly
+  what it moved.
 - **Where things go**: the maker places the agent bundle, the pool's pins and
   the bootstrap at `/etc/discobox/pool-agent/bootstrap.json`
   (`bundle.BootstrapFile`; 0600 and root's, or the agent refuses it), with the
@@ -1954,22 +1961,143 @@ bundle. `bundle` names the files its maker places beside it.
 - **Ordering**: the agent's unit is `Type=notify`, ready once the proxy's
   environment, CA and control key — and on a Docker pool the builder's and
   registry's configuration — are written; the proxy, builder, registry and
-  mediator units are `After=` it. The proxy `Requires=` it; all three builder
-  units only `Wants=` it, so an agent-only restart leaves builds and the
-  registry running and cannot pull the mediator's drain into the proxy's
-  restart transaction. Explicit builder upgrades still restart their units.
-  A moved pool-agent binary restarts the agent and proxy first, then restarts
-  the mediator separately to pick up that binary without holding egress down.
+  mediator units are `After=` the agent of either slot. None of them
+  `Requires=`, `Wants=` or binds itself to an agent's unit: an agent that
+  stops or drains leaves the proxy, builds and the registry running, and a
+  want would start a slot the pool does not run. Explicit builder upgrades
+  still restart their units. A moved pool-agent binary cycles the agent and
+  proxy first, then restarts the mediator separately to pick up that binary
+  without holding egress down (without waiting for its build drain after a
+  handover).
 - **Nested egress**: the agent's unit uses `PassEnvironment` for the upstream
   proxy and CA variables injected into the container's systemd environment.
   The agent forwards them into the proxy, builder and registry environment
   files. The maker's explicit environment file takes precedence; a pool with
   no inherited proxy needs no extra configuration.
-- **Across a reboot** systemd starts the enabled units; the agent loads its
-  identity key from `/var/lib/discobox`.
+- **Across a reboot** systemd binds the pool's sockets and starts the enabled
+  slot; the agent loads its identity key from `/var/lib/discobox`.
 - **How a server names it**: see
   [providers](../server/providers/DESIGN.md#pool-bundle).
 - **Tested** by `bundle`'s test, that the tree the Dockerfile assembles loads.
+
+## Handing Over
+
+A pool's agent and proxy are replaced without cutting what they serve
+([ADR 26-11-26-536](../docs/adr/26-11-26-536-a-disco-vm-pool-hands-over-to-its-new-agent-and-the-old-one-drains.md)
+§§3–4). Every pool runs them this way; only a pool whose maker sets
+`bundle.HandOverEnv` in the apply's environment (a disco-vm pool machine on a
+remote driver) hands over when they move, and every other restarts its
+running slot as before. It is not in the bootstrap, which an older agent
+would refuse; a bundle from before slots has no units step, and the maker
+restarts its units as it did then (`poolruntime.unitsCommand`).
+
+- **Sockets systemd holds.** `discobox-pool-agent units apply` (`poolunits`)
+  renders a socket unit for each listener the agent, the proxy and the
+  builder's mediator serve, from the bootstrap (`poolagent.poolSockets`): the
+  agent's ingress (TCP or Unix only; a VSOCK agent binds its own and never
+  hands over), the control-plane socket of a pool with a channel, the origins
+  and assets listeners, the proxy's mTLS, credentials, DNS and control
+  listeners, an edge's tunnels, and the mediator's two. Each process takes
+  them by `FileDescriptorName=` (`handover.Listeners`) and binds only what it
+  was not passed. A slot template's drop-in names its sockets (`Sockets=`), so
+  both slots are passed the same ones; the mediator's name it as theirs
+  (`Service=`). A connection that arrives while no process accepts waits in
+  the socket's queue. A socket whose address moved is bound again under a
+  stop of what served it: that cannot be handed over.
+- **One active process of each kind.** A process becomes a standby once
+  prepared (`READY=1`, `STATUS=standby`), and active once it holds its kind's
+  lock (`handover.AgentLock`, `handover.ProxyLock`, open file description
+  locks, fcntl(2) `F_OFD_SETLK`, under
+  `/run/discobox/handover`), which the one before it lets go of when it stops
+  accepting. The active agent alone runs the status reporter, the
+  resolve-token refresher, the state, progress, poll, resource, reaper and
+  sweep loops (`untilDrained`); the proxy's retention sweeper the same.
+- **Taking over.** An agent that waited for the lock took over from a
+  draining one: the pool is registered, under the same key. It serves at
+  once, and makes its first report, and on a pool with a control-plane
+  channel waits for the server to dial it one, beside serving
+  (`serveTakingOver`); that report failing ends it as it ends any agent. An
+  agent with no predecessor reports first, as before. Otherwise a request on
+  a channel pool would be answered "starting" for as long as the draining
+  agent keeps its channel.
+- **Restarts.** The slots' units restart whatever their process exits with,
+  a clean exit included (`Restart=always`): where systemd holds none of its
+  listeners (a VSOCK agent's), no socket would start it. A process that
+  drained exits with `handover.DrainedExitCode` (75), which they do not
+  restart (`RestartPreventExitStatus=`).
+- **Probes take nothing.** A lock or mark is asked about with `F_OFD_GETLK`
+  (`handover.Held`), never by taking it: two probes, or a probe and a mark
+  being taken, never see each other as held.
+- **A drain** (`SIGUSR2`, which only `units apply` sends): the process closes
+  its descriptors of the sockets (the sockets stay open), lets go of its lock,
+  says `STATUS=draining`, and ends its loops. It finishes each request it
+  received, an upgraded stream's whole life included (`handover.InFlight`
+  around the front's handler); a keep-alive connection closes after its
+  current response. The proxy carries a CONNECT tunnel, MITM'd or not, an edge
+  tunnel and a DNS-over-TLS connection until each ends. The agent waits for
+  the boots it began to deliver their runtime-config documents, and closes its
+  control-plane channel once the connections forwarded onto it end, or carry
+  nothing for half a second (`drainQuiet`: idle keep-alives of the pool's own
+  clients), within `channelHandOver` (20s): the server dials again, and
+  reaches the new agent, the only one accepting. Until then the new agent and
+  proxy reach no control plane: a sentinel the new proxy resolves waits on it. It also waits out the snapshot builds it began
+  (`AwaitBackground`). A draining process exits at `handover.DrainBound`
+  (30 minutes), cutting what is left. `SIGTERM` is still the quick stop.
+- **No sweep while another drains.** A draining process holds its kind's
+  draining mark (`handover.AgentDraining`, `handover.ProxyDraining`) from
+  before it lets go of the active lock until it exits. The process that took
+  over starts its sweeps only once the mark is free (`sweepsAfterDrain`: the
+  image, snapshot-build and agent sweep, the tree and orphan reapers, the
+  proxy-material reaper, the asset sweep; the proxy's retention and spool
+  budget through `RecordingConfig.SweepGate`). A sweep judges what to remove
+  by what its own process holds, and would otherwise remove a snapshot build,
+  a fetch or a stream spool the draining one still writes.
+- **`units apply`** is idempotent. It fingerprints what the slot starts
+  with (the binary, the slot units and drop-ins, the bootstrap, environment
+  and outbound routing) and moves nothing when that has not moved. Otherwise
+  it restarts the running slot, or hands over: it stops what is left of the
+  idle slot draining from the last handover, starts it (a standby), tells
+  the running slot to drain, waits for the new agent and proxy to say
+  `active`, and enables the new slot in place of the old. A standby is
+  ready only once nothing it does before serving can fail: its listener,
+  channel and front are made before it says so. A new slot that does not
+  start is stopped, and the old serves on, as it was, never told to drain.
+  One that does not say `active` within two minutes of the old being told is
+  stopped, and the old slot is started again (`rollBack`): what it still
+  carried is cut, but the pool is never left with nothing accepting. It
+  starts on what was laid, as the new one did, since the old binary is gone.
+  The apply fails either way, and the slot recorded is the one serving. It
+  retires the
+  units of a box from before slots once, which cuts what they served. The
+  bundle's `units` step runs it, and the pool's maker runs it after every
+  apply (`poolruntime.ProvisionBox`).
+- **Power across the two agents.** A sandbox's power lock and boot mark are
+  locked files in the pool's lock tree (`layout.PoolLocks`), behind this
+  process's own semaphore: a power operation or a boot the old agent still has
+  in flight is waited out by the new one. A sandbox's removal removes both
+  while it holds the power lock (`forgetLocks`); a locker that took the lock
+  of a file removed meanwhile finds the path names another, and locks that one
+  (`handover.Acquire`), so the lock never splits in two.
+
+```mermaid
+sequenceDiagram
+    participant U as units apply
+    participant O as agent@a (active)
+    participant N as agent@b
+    participant S as sockets (systemd)
+    U->>N: systemctl start (standby: READY=1)
+    U->>O: systemctl kill SIGUSR2
+    O->>S: close its descriptors
+    O-->>N: lets go of the active lock
+    N->>S: accepts (STATUS=active)
+    U->>U: enable b, disable a
+    O->>O: drains: streams, tunnels, boots, channel
+    O-->>O: exits when idle, or at 30 minutes
+```
+
+The builder is not handed over: its state is one directory. A moved binary
+restarts the mediator, which drains its builds (`buildkitagent.BuildDrain`)
+while its socket queues new ones.
 
 ## Snapshots
 
@@ -2300,7 +2428,7 @@ egress is intercepted, recorded, and policy-controlled.
 flowchart LR
     subgraph pool["pool container"]
         agent["pool-agent (pid 1)"] -->|"forks child pid ns"| sysd["systemd"]
-        sysd -->|"discobox-proxy.service"| wproxy["pool proxy :17080 (mTLS)"]
+        sysd -->|"discobox-proxy@<slot>.service"| wproxy["pool proxy :17080 (mTLS)"]
         agent -->|"reads/writes"| certs["/var/lib/discobox/proxy/certs"]
         wproxy -->|"reads"| certs
         agent -->|"audit relay, loopback :17084"| wproxy
@@ -2313,7 +2441,7 @@ flowchart LR
 ```
 
 - `proxyagent` prepares the CA bundle and pool server certificate before
-  systemd boots, so the `discobox-proxy.service` unit and per-sandbox client
+  systemd boots, so the `discobox-proxy@<slot>.service` unit and per-sandbox client
   certificates share one CA without a first-generation race. Both processes see
   the same `/var/lib/discobox/proxy` files because the child systemd namespace
   shares the container filesystem content.

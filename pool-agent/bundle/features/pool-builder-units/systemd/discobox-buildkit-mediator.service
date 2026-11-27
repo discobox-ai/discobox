@@ -1,8 +1,8 @@
 [Unit]
 Description=Discobox Pool BuildKit Mediator
 Documentation=https://github.com/discobox-ai/discobox
-Wants=discobox-pool-agent.service
-After=discobox-buildkitd.service discobox-pool-agent.service
+# Ordered after the agent of either slot, never wanting one, as buildkitd.
+After=discobox-buildkitd.service discobox-pool-agent@a.service discobox-pool-agent@b.service
 Wants=discobox-buildkitd.service
 # Retried for as long as the box is a pool's, as the agent is: a load that
 # fails at boot (no default route yet) must not leave it down for good.
@@ -27,6 +27,10 @@ Environment=GRPC_ENFORCE_ALPN_ENABLED=false
 # from the bootstrap as the agent reads it.
 Environment=DISCOBOX_POOL_BOOTSTRAP_FILE=/etc/discobox/pool-agent/bootstrap.json
 ExecStartPre=/usr/local/bin/discobox-pool-agent in-machine-fence
+# Its listeners are sockets systemd holds (discobox-pool-buildkit.socket and
+# discobox-pool-registry-front.socket, rendered by `discobox-pool-agent units
+# apply`), which name this unit as theirs: a build that arrives while it
+# restarts waits for it rather than being refused.
 ExecStart=/usr/local/bin/discobox-pool-agent buildkit-mediator
 Restart=on-failure
 RestartSec=2s

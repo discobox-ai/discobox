@@ -1,0 +1,9 @@
+[Unit]
+Description=Discobox Pool Units
+Documentation=https://github.com/discobox-ai/discobox
+# What a pool's socket starts when traffic finds no slot serving it: the slot
+# the box runs, which a stop or a failure left down. Never enabled.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/discobox-pool-agent units start

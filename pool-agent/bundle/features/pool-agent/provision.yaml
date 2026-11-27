@@ -18,13 +18,14 @@ steps:
     file: {path: /etc/systemd/journald.conf.d/discobox-pool.conf, source: journald.conf, restart: [systemd-journald.service]}
 
   - name: unit-agent
-    file: {path: /etc/systemd/system/discobox-pool-agent.service, source: systemd/discobox-pool-agent.service, restart: [discobox-pool-agent.service]}
+    file: {path: /etc/systemd/system/discobox-pool-agent@.service, source: systemd/discobox-pool-agent@.service}
   - name: unit-proxy
-    file: {path: /etc/systemd/system/discobox-proxy.service, source: systemd/discobox-proxy.service, restart: [discobox-proxy.service]}
+    file: {path: /etc/systemd/system/discobox-proxy@.service, source: systemd/discobox-proxy@.service}
+  - name: unit-units
+    file: {path: /etc/systemd/system/discobox-pool-units.service, source: systemd/discobox-pool-units.service}
 
-  - name: restart
-    run: restart.sh
-    inputs: [discobox-pool-agent]
+  # Starts the agent and its proxy, in a slot, and enables that slot: what
+  # restarts them, or hands over, is this command's, not the unit steps'.
   - name: units
-    systemd:
-      enable: [discobox-pool-agent.service, discobox-proxy.service]
+    run: units.sh
+    inputs: [discobox-pool-agent, systemd]

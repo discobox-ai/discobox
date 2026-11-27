@@ -18,6 +18,7 @@ require (
 	github.com/go-faster/errors v0.7.1
 	github.com/go-faster/jx v1.2.0
 	github.com/hashicorp/yamux v0.1.2
+	github.com/joho/godotenv v1.5.1
 	github.com/moby/buildkit v0.20.2
 	github.com/moby/moby/api v1.57.0
 	github.com/moby/moby/client v0.6.3

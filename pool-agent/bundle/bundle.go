@@ -30,12 +30,57 @@ const (
 	SandboxEdgeCredentialFile = "/etc/discobox/pool-agent/sandbox-edge-credential.json" //nolint:gosec // G101: a path, not a credential
 )
 
-// AgentUnit is the pool agent's own unit. It is Type=notify: active once the
-// agent has written what its proxy and builder read and said it is ready.
-const AgentUnit = "discobox-pool-agent.service"
+// HandOverEnv, set to "1" in the environment a pool's maker runs `apply`
+// and `units apply` with, has the box hand over to a new agent and proxy
+// beside the running ones when what they run moves, rather than restarting
+// them, so what the old ones serve is not cut (ADR 26-11-26-536 §§1, 4): a
+// disco-vm pool machine's. It is not in the bootstrap, which an agent from
+// before it would refuse to start on (pool-agent/REVIEW.md, "Bootstrap
+// fields reach older agents"), and a bundle from before it ignores it.
+const HandOverEnv = "DISCOBOX_POOL_HAND_OVER"
 
-// BootstrapUnits are the pool-agent feature's units that read the bootstrap
-// and the environment beside it, once, at start: a maker that places either
-// again in a running box restarts them, since apply restarts only what moved
-// bundles move.
-var BootstrapUnits = []string{AgentUnit, "discobox-proxy.service"}
+// UnitsStep is the pool-agent feature's step script that runs `units apply`,
+// beside the agent's binary in the feature's directory: a pool's maker runs
+// it after each apply where the bundle has it.
+const UnitsStep = "units.sh"
+
+// AgentBinary is where the pool-agent feature links the agent's binary,
+// which the agent's, the proxy's and the mediator's units all run.
+const AgentBinary = "/usr/local/bin/discobox-pool-agent"
+
+// The pool agent and its proxy each run as an instance of a template unit,
+// in one of two slots (ADR 26-11-26-536 §4): a handover starts the idle slot
+// beside the running one, and the old one drains. Both slots serve the same
+// sockets, which systemd holds (the units poolunits renders), so a restart or
+// a handover refuses no connection.
+const (
+	AgentTemplate = "discobox-pool-agent@.service"
+	ProxyTemplate = "discobox-proxy@.service"
+	// UnitsService is what a pool's socket starts when traffic finds no slot
+	// serving it: `discobox-pool-agent units start`, which starts the
+	// enabled slot.
+	UnitsService = "discobox-pool-units.service"
+	// MediatorUnit is the builder's mediator, which its own sockets start.
+	MediatorUnit = "discobox-buildkit-mediator.service"
+)
+
+// Slots are the two instances the agent and its proxy alternate between.
+var Slots = []string{"a", "b"}
+
+// AgentUnit is the pool agent's unit in slot. It is Type=notify: active
+// once the agent has written what its proxy and builder read and said it is
+// ready, which is before it serves.
+func AgentUnit(slot string) string { return "discobox-pool-agent@" + slot + ".service" }
+
+// ProxyUnit is the pool proxy's unit in slot, Type=notify as the agent's.
+func ProxyUnit(slot string) string { return "discobox-proxy@" + slot + ".service" }
+
+// AgentUnits are the agent's units in every slot: one of them is active
+// once the pool's agent is up (`systemctl is-active` holds if any is).
+func AgentUnits() []string {
+	units := make([]string, 0, len(Slots))
+	for _, slot := range Slots {
+		units = append(units, AgentUnit(slot))
+	}
+	return units
+}

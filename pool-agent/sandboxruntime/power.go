@@ -451,6 +451,8 @@ type sandboxBoot struct {
 	// it ends. Nil on an older boot, and on one whose mark could not be
 	// taken, which leaves the mark this process's alone. Under bootMu.
 	mark *handover.Lock
+	// ended ends this boot's count in background.
+	ended func()
 }
 
 // beginBoot marks a sandbox as booting. It is called before ContainerStart, so
@@ -475,7 +477,7 @@ type sandboxBoot struct {
 // its box gone, or at most until sandboxAgentReadyTimeout. Nothing routes on
 // the mark for a sandbox that is gone.
 func (r *sandboxCore) beginBoot(sandboxID string) *sandboxBoot {
-	boot := &sandboxBoot{done: make(chan struct{})}
+	boot := &sandboxBoot{done: make(chan struct{}), ended: r.background.Begin()}
 	r.bootMu.Lock()
 	if value, ok := r.booting.Load(sandboxID); ok {
 		if older, ok := value.(*sandboxBoot); ok {
@@ -526,6 +528,15 @@ func (r *sandboxCore) endBoot(sandboxID string, boot *sandboxBoot, err error) {
 	r.bootMu.Unlock()
 	_ = mark.Release()
 	close(boot.done)
+	boot.ended()
+}
+
+// AwaitBackground waits, until ctx ends, for every boot and snapshot build
+// this process has begun to end: what a draining agent waits for before it
+// exits, since a boot's wait delivers the sandbox's runtime-config document
+// once its agent answers, and a build cut short is recorded as failed.
+func (r *sandboxCore) AwaitBackground(ctx context.Context) error {
+	return r.background.Wait(ctx)
 }
 
 // stopRefusedSandbox stops a container whose agent refused the pool's

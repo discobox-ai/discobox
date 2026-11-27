@@ -11,6 +11,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 	"github.com/discobox-ai/discobox/pool-agent/gitcache"
+	"github.com/discobox-ai/discobox/pool-agent/handover"
 )
 
 // sandboxCore is the half of a runtime that is the same whatever a sandbox
@@ -67,6 +68,9 @@ type sandboxCore struct {
 	// bootMarkWarned is when each sandbox's unreadable boot mark was last
 	// logged (warnBootMark).
 	bootMarkWarned sync.Map
+	// background counts the boots and snapshot builds under way in this
+	// process (AwaitBackground).
+	background handover.InFlight
 	// agentReadyTimeout bounds a boot's wait for its sandbox agent; zero is
 	// sandboxAgentReadyTimeout. Only a test sets it.
 	agentReadyTimeout time.Duration

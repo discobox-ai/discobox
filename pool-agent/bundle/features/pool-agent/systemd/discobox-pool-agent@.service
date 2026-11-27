@@ -1,5 +1,5 @@
 [Unit]
-Description=Discobox Pool Agent
+Description=Discobox Pool Agent (slot %i)
 Documentation=https://github.com/discobox-ai/discobox
 After=network-online.target
 Wants=network-online.target
@@ -7,10 +7,17 @@ Wants=network-online.target
 # is waited out, never given up on.
 StartLimitIntervalSec=0
 
+# One of two slots (ADR 26-11-26-536 §4): `discobox-pool-agent units apply`
+# runs the agent in one, and hands over to the other when the pool asks it
+# to. Both serve the sockets systemd holds for the pool, which the drop-in
+# that command renders beside this unit names (Sockets=).
+
 [Service]
 # Ready once it has written the proxy's environment, CA and control key, and
 # on a Docker pool the builder's and registry's configuration, which their
-# units are ordered after.
+# units are ordered after. Ready is a standby: it serves once the agent
+# before it, if any, has stopped accepting, and says so in its status
+# (STATUS=active).
 Type=notify
 # Nested pools inherit the outer sandbox's proxy and trust settings at PID 1.
 # System services must opt in to that environment. The agent forwards these
@@ -22,7 +29,13 @@ Environment=DISCOBOX_POOL_BOOTSTRAP_FILE=/etc/discobox/pool-agent/bootstrap.json
 # timeout). Optional, since a maker may set none.
 EnvironmentFile=-/etc/discobox/pool-agent/environment
 ExecStart=/usr/local/bin/discobox-pool-agent
+# Started again whatever it exits with, a clean exit included: where systemd
+# holds no listener of the agent's (a VSOCK one), no socket would start it.
+# One that drained after a handover exits with handover.DrainedExitCode, and
+# is done: the agent that took over serves.
 Restart=always
+RestartPreventExitStatus=75
+SuccessExitStatus=75
 RestartSec=2s
 KillMode=mixed
 

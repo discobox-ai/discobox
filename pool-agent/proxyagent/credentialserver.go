@@ -38,19 +38,6 @@ const (
 	CredentialsURL = "https://" + ServerName + ":17083"
 )
 
-// serveCredentials runs the sandbox-facing agent credentials endpoint until ctx
-// is done. Every request is served for the sandbox named by the verified client
-// certificate, so a sandbox cannot ask about another sandbox's credentials by
-// saying so in a body (ADR 0031 §2).
-func serveCredentials(ctx context.Context, logger *slog.Logger, bundle *proxy.CertificateBundle, controlPlane *controlPlaneCredentials, secretsPath string, trusts *hostTrusts, proxyServer *proxy.Server) error {
-	var listenConfig net.ListenConfig
-	tcp, err := listenConfig.Listen(ctx, "tcp", CredentialsListenAddress)
-	if err != nil {
-		return err
-	}
-	return serveCredentialsOn(ctx, logger, tcp, bundle, controlPlane, secretsPath, trusts, proxyServer)
-}
-
 // newControlPlaneCredentials is the broker's client of the control plane for
 // one pool, authenticated by the scoped token the pool agent writes.
 func newControlPlaneCredentials(root layout.Root, projectID, poolID string) *controlPlaneCredentials {
@@ -60,10 +47,13 @@ func newControlPlaneCredentials(root layout.Root, projectID, poolID string) *con
 	}
 }
 
-// serveCredentialsOn serves on an already-bound listener. The seam exists so a
-// test can drive the real mTLS stack on an ephemeral port — the certificate
-// handling and identity derivation are the parts worth testing, and they are
-// exactly what a fake listener would skip.
+// serveCredentialsOn runs the sandbox-facing agent credentials endpoint on
+// tcp until ctx is done, or tcp is closed, which a drain does: then it answers
+// what it accepted, each a bounded round trip, and returns. Every request is
+// served for the sandbox named by the verified client certificate, so a
+// sandbox cannot ask about another sandbox's credentials by saying so in a
+// body (ADR 0031 §2). Its listener is given, so a test can drive the real
+// mTLS stack on an ephemeral port.
 func serveCredentialsOn(ctx context.Context, logger *slog.Logger, tcp net.Listener, bundle *proxy.CertificateBundle, controlPlane *controlPlaneCredentials, secretsPath string, trusts *hostTrusts, proxyServer *proxy.Server) error {
 	handler := &credentialsHandler{
 		logger:       logger,
@@ -92,6 +82,9 @@ func serveCredentialsOn(ctx context.Context, logger *slog.Logger, tcp net.Listen
 
 	logger.Info("pool credentials endpoint serving", "addr", tcp.Addr())
 	err := server.Serve(listener)
+	if errors.Is(err, net.ErrClosed) && ctx.Err() == nil {
+		return server.Shutdown(ctx)
+	}
 	if errors.Is(err, http.ErrServerClosed) || errors.Is(err, net.ErrClosed) {
 		return nil
 	}
