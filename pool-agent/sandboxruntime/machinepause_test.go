@@ -213,7 +213,7 @@ func TestMachinePausedWithAMovedPlacementIsPlacedInPlace(t *testing.T) {
 	if err := r.EnsureSandboxRunning(ctx, "sbx_s"); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := f.driver.takeEvents("sbx-s"), []string{"resume", "apply in place"}; !slices.Equal(got, want) {
+	if got, want := f.driver.takeEvents("sbx-s"), []string{"resume", "stop agent", "apply in place"}; !slices.Equal(got, want) {
 		t.Fatalf("what the use did to the machine = %v, want %v: a resume, then its placement applied in place", got, want)
 	}
 	if _, ok, err := r.readPlaced("sbx_s"); err != nil || !ok {

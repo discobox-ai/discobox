@@ -570,12 +570,15 @@ changed. A step added that lays a binary needs it there too.
   is still starting (discobox-ai/vm#180, boxd's sandbox image). A step that runs
   `systemctl` straight after `Start` waits until systemd answers first, as
   the snapshot command's `awaitSystemd` does, or tries a bus failure again.
-  `/run/systemd/system` existing is not that; the sandbox start's
-  `applyDeliveredBundles` does not wait yet (#1240). When the pin moves, compare
-  what `Start` waits for, and
-  check a box's start and restart on a live pool of that driver if it waits for less
-  (boxd: done for #1238; archil: done for #1819). Why: the fake driver boots instantly, so CI cannot show
-  a step that needs a settled system.
+  `/run/systemd/system` existing is not that; `discobox-provision apply`
+  waits (`awaitSystemdBus`, since #1240). The pool's own `systemctl` in a
+  machine waits too, in the command it sends (`stopAgentCommand`), since a
+  moved placement's stop runs before apply's wait: the first version of
+  that stop (ADR 26-11-28-686) sent a bare `systemctl stop`, repeating
+  #1240. When the pin moves, compare what `Start` waits for, and check a
+  box's start and restart on a live pool of that driver if it waits for less
+  (boxd: done for #1238; archil: done for #1819). Why: the fake driver boots
+  instantly, so CI cannot show a step that needs a settled system.
 
 ## A provider's pause is not a sleep
 
@@ -677,7 +680,10 @@ was meant to show (#1523).
   command: the guest's binaries are the box's, and an unbounded read is the
   pool's memory. Why: the first per-start check ran the guest's `cat` and
   buffered its output whole, so a box could swap `cat` and take down the pool
-  agent every sandbox of the pool shares.
+  agent every sandbox of the pool shares. A command the pool must run there
+  (a `systemctl`, a check) keeps only a bounded tail of its stdout and
+  stderr (`tailBuffer`), never a `bytes.Buffer`: the first version of the
+  placement's agent stop buffered the guest's stderr whole.
 - **A new root is finished from the root it was begun from.** disco-vm's
   drivers finish an upgrade cut short only with the `From` it began with, so
   the pool records which before it asks (`newRootSnapshot`, `newRootAsked`),
