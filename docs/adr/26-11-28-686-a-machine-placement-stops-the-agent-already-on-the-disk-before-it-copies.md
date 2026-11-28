@@ -1,9 +1,10 @@
 # 26-11-28-686 — A machine placement stops the agent already on the disk before it copies
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-28
+  Accepted by the owner by merging #1847, 2026-11-28
 - **Issue**: [#1846](https://github.com/discobox-ai/discobox/issues/1846)
-- **Would narrow**:
+- **Narrows**:
   [26-11-23-458](26-11-23-458-a-machine-sandbox-is-provisioned-in-place-and-only-docker-and-containerd-restart-around-its-mounts.md)
   §4's "where the agent was running on a placement that moved, apply
   restarts it". The stop half moves to the pool, before the placement's

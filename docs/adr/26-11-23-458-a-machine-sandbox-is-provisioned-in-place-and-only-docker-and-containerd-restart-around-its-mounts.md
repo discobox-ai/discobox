@@ -3,7 +3,10 @@
 - **Status**: Accepted (supersedes in part [26-11-02-023](26-11-02-023-every-machine-sandbox-mounts-its-volumes-from-its-own-data-and-cache-roots.md)
   §3's first-placement restart and its rejection of mounting on the running
   machine, and [26-10-27-345](26-10-27-345-a-machine-sandbox-is-made-again-in-place-and-its-bootstrap-names-where-its-agent-listens.md)
-  §1's restart of a machine onto what was placed)
+  §1's restart of a machine onto what was placed; §4's stop of an agent
+  running on a placement that moved narrowed by
+  [26-11-28-686](26-11-28-686-a-machine-placement-stops-the-agent-already-on-the-disk-before-it-copies.md):
+  the pool stops it before the placement's first copy)
 - **Date**: 2026-11-23
   Accepted by the owner by merging #1603, 2026-11-25
 - **Issue**: #1602
