@@ -1107,6 +1107,15 @@ tracked in #1699, not a pattern to copy.
 - **Nothing but `units apply` signals a slot**, and only to drain once the
   new slot is up. Why: a drain lets go of the active lock, and a slot that
   drains with no standby beside it leaves the queue to wait for a start.
+- **A slot process catches `SIGUSR2` before it says anything**: the agent
+  and proxy call `handover.DrainRequested` before `NotifyReady` and any
+  `NotifyStatus`, and `tellToDrain` signals only a unit that runs and says
+  `standby`, `active` or `draining`. Why: a signal that reaches one before
+  its handler is dropped (Go's runtime ignores `SIGUSR2` until
+  `signal.Notify`; it does not end the process), so the unit would count
+  as told and never drain.
+  Systemd keeps a stopped unit's last status, so the status alone is not
+  proof: check it is running too.
 
 ## Locks across processes
 

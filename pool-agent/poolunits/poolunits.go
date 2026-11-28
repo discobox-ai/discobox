@@ -766,14 +766,15 @@ func (a *applier) handOver(ctx context.Context, slot, next string, prev, now sta
 		if !running {
 			continue
 		}
-		if err := a.tellToDrain(ctx, unit); err != nil {
+		told, err := a.tellToDrain(ctx, unit)
+		if err != nil {
 			if !signaled {
 				return stopNext(err)
 			}
 			// What is left untold is told by the next apply (finishHandOver).
 			return next, err
 		}
-		signaled = true
+		signaled = signaled || told
 	}
 	if err := a.awaitTakeOver(ctx, nextUnits); err != nil {
 		err = fmt.Errorf("%w: slot %s did not say it took over: %w", ErrNotTakenOver, next, err)
@@ -794,22 +795,42 @@ func (a *applier) handOver(ctx context.Context, slot, next string, prev, now sta
 // the handover gives up on it.
 const drainSignalTries = 3
 
-// tellToDrain sends unit the drain signal, trying again on a failure.
-func (a *applier) tellToDrain(ctx context.Context, unit string) error {
-	var err error
+// tellToDrain sends unit the drain signal, trying again on a failure, and
+// reports whether it did. Only a unit that runs and says it is a standby,
+// active or draining is told: a process says any of those only once it
+// catches the signal (handover.DrainRequested, before its readiness), and
+// one that does not yet drops it (Go's runtime ignores SIGUSR2 until
+// signal.Notify), so it would count as told and never drain. One that says
+// none of them, a process still starting or a status a stopped one left,
+// is not told; finishHandOver tells it once it says it is active.
+func (a *applier) tellToDrain(ctx context.Context, unit string) (bool, error) {
+	running, err := a.active(ctx, unit)
+	if err != nil || !running {
+		return false, err
+	}
+	status, err := a.status(ctx, unit)
+	if err != nil {
+		return false, err
+	}
+	switch status {
+	case handover.StatusStandby, handover.StatusActive, handover.StatusDraining:
+	default:
+		a.log.Info("not telling a unit to drain that does not yet catch the signal", "unit", unit, "status", status)
+		return false, nil
+	}
 	for try := range drainSignalTries {
 		if try > 0 {
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return false, ctx.Err()
 			case <-time.After(time.Duration(try) * 200 * time.Millisecond):
 			}
 		}
 		if _, err = a.cfg.Systemctl(ctx, "kill", "--kill-who=main", "--signal=SIGUSR2", unit); err == nil {
-			return nil
+			return true, nil
 		}
 	}
-	return fmt.Errorf("tell %s to drain: %w", unit, err)
+	return false, fmt.Errorf("tell %s to drain: %w", unit, err)
 }
 
 // finishHandOver ends what a handover left of the slot other than serving:
@@ -836,7 +857,7 @@ func (a *applier) finishHandOver(ctx context.Context, serving string) error {
 		switch status {
 		case handover.StatusActive:
 			a.log.Info("telling the pool's old slot to drain, as its handover left it", "unit", unit)
-			if err := a.tellToDrain(ctx, unit); err != nil {
+			if _, err := a.tellToDrain(ctx, unit); err != nil {
 				return err
 			}
 		case handover.StatusStandby:
