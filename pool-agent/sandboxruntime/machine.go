@@ -1218,8 +1218,7 @@ func (r *MachineSandboxRuntime) createOptions(name string, size MachineSize) eng
 // back before it returns. An archil machine with its data disk mounted also
 // reaches the two hosts Archil adds for the mount, which its driver leaves out
 // of the fence it reports; discobox cannot take them away, so they are
-// accepted, and what they let a box reach is in pool-agent DESIGN.md (One
-// machine per sandbox).
+// accepted (ADR 26-11-28-634 §1).
 func (r *MachineSandboxRuntime) fenced(inst machine.Instance) error {
 	if r.egress == nil || sameEgress(inst.Egress, r.egress) {
 		return nil
