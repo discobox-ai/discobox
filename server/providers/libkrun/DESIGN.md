@@ -177,7 +177,12 @@ become `/dev/vda`, `/dev/vdb`, `/dev/vdc` — and all three are raw.
 
 Sizing comes from the host: every vCPU and half the memory
 (`krunvm.DefaultHostResources`), a 100 GiB data disk, a 50 GiB cache disk. None
-of it is a reservation — the disks are sparse and the guest has a balloon. Disk
+of it is a reservation — the disks are sparse and the guest has a balloon. The
+guest trims both disks every 15 minutes (`vm-image/DESIGN.md`), and libkrun's
+virtio-blk advertises discard on every disk and, through its imago storage
+layer, punches the discarded range out of the raw file
+(`fallocate(PUNCH_HOLE)`, libkrun 1.19), so a pool's disk files shrink after
+its boxes and images are removed. Disk
 sizes are ceilings a pool can be given more of: `ensureSparseImage` grows an
 existing image when the configured size is raised and never shrinks one, the
 guest formats each disk on first boot, and runs `resize2fs` on every mount so

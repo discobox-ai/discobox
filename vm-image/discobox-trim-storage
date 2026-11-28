@@ -1,0 +1,42 @@
+#!/bin/sh
+# Hands the blocks the guest has freed on the data and cache disks back to the
+# host. Both disks are sparse files on the host, and a block the guest frees is
+# only returned when the guest discards it: the filesystems are mounted without
+# online discard, so this trim, run by discobox-trim-storage.timer, is what
+# keeps a pool's disk files from only ever growing after its boxes and images
+# are removed.
+#
+# It names the mounts, not the disks: each is trimmed on the device mounted
+# there, so which disk discobox-mount-storage put where is that script's alone.
+# A path with nothing mounted on it is not trimmed: fstrim would trim whatever
+# filesystem holds the path, the root's.
+#
+# Whether a trim reaches the host file is the hypervisor's: a disk that does
+# not advertise discard reports a DISC-MAX of 0, which is logged, and one that
+# advertises it but answers that it is not supported is passed over by
+# --quiet-unsupported. Neither is a failure. The guest boots on every backend,
+# and a unit that fails on one of them is a failed unit on its serial console,
+# every time. Each mount is trimmed whatever happened to the other.
+set -u
+
+trim() {
+    mountpoint=$1
+    if ! mountpoint -q "$mountpoint"; then
+        echo "$mountpoint: nothing is mounted here; not trimming" >&2
+        return 1
+    fi
+    # The filesystem visible at the path, which is what fstrim trims. findmnt
+    # --mountpoint would also list any mount hidden beneath it.
+    device=$(df --output=source "$mountpoint" | tail -n 1)
+    max=$(lsblk --noheadings --nodeps --bytes --output DISC-MAX "$device" | tr -d ' ')
+    if [ "${max:-0}" = 0 ]; then
+        echo "$mountpoint: $device does not accept discard; freed space stays allocated on the host"
+        return 0
+    fi
+    fstrim --verbose --quiet-unsupported "$mountpoint"
+}
+
+status=0
+trim /var/lib/discobox || status=1
+trim /var/lib/discobox/cache || status=1
+exit "$status"

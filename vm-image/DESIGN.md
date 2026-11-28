@@ -115,6 +115,25 @@ deliberately answered the same way for both:
   else that would fail on one backend is masked or conditioned, because the
   serial console is the one diagnostic a guest that never came up leaves behind.
 
+**The guest trims both pool disks.** Each is a sparse file on the host, and a
+block the guest frees is returned to the host only when the guest discards it.
+Neither is mounted with online `discard`, which would make every delete pay for
+it at journal commit. Instead `discobox-trim-storage.timer` runs `fstrim` on
+both mounts 5 minutes after boot and every 15 minutes after that, so a removed
+box's or image's space is back on the host within minutes. A repeat is cheap,
+because ext4 skips the block groups that freed nothing since the last trim.
+Whether the host file shrinks is the hypervisor's to decide: libkrun's
+virtio-blk advertises discard and punches the hole in its raw file. The script
+names the two mounts, never the disks: it trims each on whatever device the
+mount table says is mounted there, so the disk order stays
+`discobox-mount-storage`'s alone, and it trims nothing at a path with no mount,
+where `fstrim` would trim the root. A disk that advertises no discard (a
+`DISC-MAX` of 0) is logged to the journal and skipped, and one that refuses the
+request is passed over, so the unit stays quiet on a backend that cannot take
+it, rather than failing.
+Nothing here depends on a purge being seen: the pool agent, in its container,
+is not the guest's to trim from.
+
 The clock timer is the same shape of tolerance: every 30 seconds it steps the
 guest clock from a host-backed RTC, and its service is conditioned on that RTC
 existing, so where there is none it never runs.
@@ -257,8 +276,8 @@ a contract:
 - the storage layout — `/dev/vda` root read-only, `/dev/vdb` data at
   `/var/lib/discobox` (Docker's and containerd's state bind-mounted from it),
   `/dev/vdc` cache at `/var/lib/discobox/cache`. The host creates both writable
-  disks empty and sparse; the guest formats them on first boot and grows each
-  filesystem to its device;
+  disks empty and sparse; the guest formats them on first boot, grows each
+  filesystem to its device, and trims both (below);
 - the `discobox-users` virtiofs tag and the path it mounts at;
 - `discobox-vsock-guest`, built here from `pool-agent` sources.
 

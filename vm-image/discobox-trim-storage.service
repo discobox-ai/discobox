@@ -1,0 +1,14 @@
+[Unit]
+Description=Return the space freed on the Discobox data and cache disks to the host
+Requires=discobox-storage.service
+After=discobox-storage.service
+
+[Service]
+Type=oneshot
+Nice=19
+IOSchedulingClass=idle
+ExecStart=/usr/local/sbin/discobox-trim-storage
+# The journal only: a backend whose disks take no discard says so on every
+# run, and the serial console is kept for what stops a guest coming up.
+StandardOutput=journal
+StandardError=journal+console

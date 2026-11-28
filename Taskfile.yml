@@ -2463,6 +2463,13 @@ tasks:
           echo "systemd-networkd-wait-online.service is not enabled" >&2
           exit 1
         fi
+        # Both pool disks are sparse on the host and mounted without online
+        # discard, so this timer's trim is the only thing that hands a removed
+        # box's or image's blocks back. Without it the host files only grow.
+        if ! debugfs -R "ls /etc/systemd/system/timers.target.wants" root.ext4 2>/dev/null | grep -q "discobox-trim-storage.timer"; then
+          echo "discobox-trim-storage.timer is not enabled; the pool's disk files will never shrink" >&2
+          exit 1
+        fi
         # The modules the guest loads on demand, which the build's pruning of
         # whole driver classes, or an Ubuntu kernel update, could take away:
         # Docker's netfilter and bridge, the overlay store, the VSOCK transport
