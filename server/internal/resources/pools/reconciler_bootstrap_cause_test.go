@@ -82,3 +82,28 @@ func TestASlotStillDrainingIsAskedAgainNotFailed(t *testing.T) {
 		t.Fatalf("state = %q, error %v; want no failure recorded", pool.State, pool.ErrorMessage)
 	}
 }
+
+// A failed reconcile ends a drain streak: a drain after it is timed from its
+// own first pass, not the earlier streak's.
+func TestAFailedReconcileEndsADrainStreak(t *testing.T) {
+	f := newBootstrapRetryFixture(t)
+	f.runtime.fail = fmt.Errorf("pool pool-1: start the pool's agent: %w", sandbox.ErrPoolSlotDraining)
+	if _, err := f.reconcileResult(); err != nil {
+		t.Fatal(err)
+	}
+	watch := f.reconciler.pools.Upgrades()
+	watch.mu.Lock()
+	_, began := watch.draining["pool-1"]
+	watch.mu.Unlock()
+	if !began {
+		t.Fatal("a pass that waited on a drain began no streak")
+	}
+	f.runtime.fail = fmt.Errorf("pool pool-1: %w: the bundle did not apply", sandbox.ErrPoolConfigApply)
+	_, _ = f.reconcileResult()
+	watch.mu.Lock()
+	_, still := watch.draining["pool-1"]
+	watch.mu.Unlock()
+	if still {
+		t.Fatal("a failed reconcile left the earlier drain streak running")
+	}
+}
