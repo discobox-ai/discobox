@@ -3,6 +3,10 @@ package sandboxuser
 import (
 	"errors"
 	"fmt"
+	"strings"
+
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 )
 
 // AccountIDs is what ids a guest OS gives the ordinary accounts it creates, and
@@ -98,7 +102,8 @@ var errAccountWithoutUID = errors.New("a sandbox user that names an account must
 // clamped: which id to use instead is the caller's to choose, and a client
 // that has no usable one of its own picks it before sending (ADR 0141, ADR
 // 26-11-12-060). A user that names only groups keeps the image's account and
-// needs no uid.
+// needs no uid. A home must name a directory below the root by
+// sandboxpath.Paths.Rooted, the reading the pool gives it.
 //
 // Off Linux the sandbox has one account, which its template provisions and
 // its manifest names, so the user may name that account and nothing else: no
@@ -118,6 +123,12 @@ func (u *User) ValidateAccount(goos string) error {
 	}
 	if err := u.Validate(); err != nil || u == nil {
 		return err
+	}
+	// The pool reads a home by Rooted, and creates the account with no home
+	// of its own when it refuses it, so a home it would not place is refused
+	// here rather than dropped.
+	if home := strings.TrimSpace(u.HomeDirectory); home != "" && sandboxpath.For(platform.Platform{OS: goos}).Rooted(home) == "" {
+		return fmt.Errorf("home directory %q names no directory below the sandbox's root", u.HomeDirectory)
 	}
 	if NamesIdentity(u) && u.UID == nil {
 		return errAccountWithoutUID

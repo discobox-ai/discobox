@@ -18,6 +18,7 @@ package sandboxpath
 import (
 	"path"
 	"strings"
+	"unicode"
 
 	"github.com/discobox-ai/discobox/pkg/platform"
 )
@@ -183,8 +184,8 @@ func (p Paths) Dir(value string) string {
 // Rooted is value as a path below the root, cleaned, or "" when it names no
 // such place. It is the reading a create request's sandbox path gets — a
 // source's directory, the user's home, a working directory: surrounding space
-// is trimmed, and a path with whitespace inside it, or one naming the root
-// itself, names nothing a sandbox may be given.
+// is trimmed, and a path with whitespace or a control character inside it, or
+// one naming the root itself, names nothing a sandbox may be given.
 //
 // A relative path is read from the root on a platform that has one, so on
 // Linux and macOS "src" is "/src", as pool-agent has always read it. Windows
@@ -192,7 +193,7 @@ func (p Paths) Dir(value string) string {
 // not say its drive or share names no place.
 func (p Paths) Rooted(value string) string {
 	value = strings.TrimSpace(value)
-	if value == "" || strings.ContainsAny(value, " \t\r\n") {
+	if value == "" || strings.ContainsFunc(value, isSpaceOrControl) {
 		return ""
 	}
 	if !p.windows {
@@ -306,3 +307,9 @@ func isDriveLetter(c byte) bool {
 }
 
 func isWindowsSeparator(c byte) bool { return c == '\\' || c == '/' }
+
+// isSpaceOrControl reports whether r is a character Rooted refuses inside a
+// path: whitespace, or a control character (NUL, DEL and the rest).
+func isSpaceOrControl(r rune) bool {
+	return r == ' ' || unicode.IsControl(r)
+}

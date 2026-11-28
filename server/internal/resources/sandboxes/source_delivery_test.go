@@ -520,3 +520,37 @@ func TestValidateSourceDirectories(t *testing.T) {
 		})
 	}
 }
+
+// A source directory or reference key the pool would not place (it reads them
+// by sandboxpath.Paths.Rooted, which places such a source at the working root
+// instead) is refused at create, naming the field.
+func TestValidateSourceDirectoriesRefusesWhatThePoolWouldNotPlace(t *testing.T) {
+	linux := platform.Platform{OS: "linux", Arch: "amd64"}
+	str := func(v string) *string { return &v }
+	primary := func(dir string) *model.GitSource {
+		return &model.GitSource{Destination: &model.GitSourceDestination{Directory: str(dir)}}
+	}
+	for _, tc := range []struct {
+		name   string
+		source *model.GitSource
+		refs   model.SourceCodeReferences
+		field  string
+	}{
+		{"primary with a tab", primary("/work\tspace"), nil, "source directory"},
+		{"primary with a line break", primary("/work\nspace"), nil, "source directory"},
+		{"primary with NUL", primary("/work\x00space"), nil, "source directory"},
+		{"primary at the root", primary("/"), nil, "source directory"},
+		{"reference key with a tab", nil, model.SourceCodeReferences{"/work\tspace/lib": {Kind: "git"}}, "source code reference"},
+		{"reference placed with a tab", nil, model.SourceCodeReferences{"/workspace/lib": {Kind: "git", Destination: &model.GitSourceDestination{Directory: str("/work\tspace/lib")}}}, "source code reference"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateSourceDirectories(tc.source, tc.refs, linux)
+			if err == nil {
+				t.Fatal("accepted; the pool would place this source at the working root")
+			}
+			if !strings.Contains(err.Error(), tc.field) {
+				t.Fatalf("error %q does not name %q", err, tc.field)
+			}
+		})
+	}
+}

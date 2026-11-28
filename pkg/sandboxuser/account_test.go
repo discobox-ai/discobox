@@ -147,3 +147,14 @@ func TestDefaultGIDIsTheGuests(t *testing.T) {
 		t.Errorf("darwin DefaultGID(501) = %d, want 20", got)
 	}
 }
+
+// A home directory the pool would not place (sandboxpath.Paths.Rooted reads
+// it as no home at all) is refused, not silently dropped.
+func TestValidateAccountRefusesAHomeThePoolWouldNotPlace(t *testing.T) {
+	for _, home := range []string{"/home/dis\tcobox", "/home/dis\ncobox", "/home/dis\x00cobox", "/"} {
+		u := &User{Name: "discobox", UID: ID(10000), GID: ID(10000), HomeDirectory: home}
+		if err := u.ValidateAccount("linux"); err == nil {
+			t.Errorf("ValidateAccount(home %q) = nil, want it refused", home)
+		}
+	}
+}

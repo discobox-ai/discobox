@@ -283,11 +283,14 @@ func ValidateSkillsDirectory(dir string) error {
 // the sandbox could not place it at (ADR 26-11-01-692 §1). Only a skills
 // source may be home-relative (sandboxpath.HomeRelative): a work source's
 // directory reaches host tools, which take an absolute path alone (ADR
-// 26-10-15-417). A skills source is home-relative or a clean absolute path by
-// one of rules, the sandbox's platform's, or each one it may be when that is
-// not known yet; with no rules, only the home-relative form is judged, and
-// any other directory is left to the rules that place it, as it is on a work
-// source. An empty directory names nothing and passes.
+// 26-10-15-417). Any other directory must name a place below the root by one
+// of rules (sandboxpath.Paths.Rooted, the reading the pool places it by), the
+// sandbox's platform's, or each one it may be when that is not known yet: the
+// pool puts a source whose directory names no such place at the working root,
+// so the create is refused instead. A skills source is, besides, home-relative
+// or a clean absolute path. With no rules, only the home-relative form is
+// judged, and any other directory is left to the rules that place it. An
+// empty directory names nothing and passes.
 func ValidateSourceDirectory(directory string, skills bool, rules ...sandboxpath.Paths) error {
 	if directory == "" {
 		return nil
@@ -301,11 +304,27 @@ func ValidateSourceDirectory(directory string, skills bool, rules ...sandboxpath
 		}
 		return nil
 	}
-	if !skills || len(rules) == 0 {
+	if len(rules) == 0 {
+		return nil
+	}
+	// The pool places any other directory by Rooted, and puts a source whose
+	// directory Rooted refuses at the working root instead, so a directory it
+	// refuses under every rule is refused here rather than silently moved.
+	placed := false
+	for _, paths := range rules {
+		if paths.Rooted(directory) != "" {
+			placed = true
+			break
+		}
+	}
+	if !placed {
+		return fmt.Errorf("%q names no directory below the sandbox's root that a source can be placed at", directory)
+	}
+	if !skills {
 		return nil
 	}
 	for _, paths := range rules {
-		if paths.IsTarget(directory) {
+		if paths.IsTarget(directory) && paths.Rooted(directory) != "" {
 			return nil
 		}
 	}

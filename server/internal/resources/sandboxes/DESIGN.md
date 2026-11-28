@@ -59,14 +59,20 @@ flowchart LR
   such a pool has always meant and what the CLI judges it as. Its uids are
   narrower than macOS's; its gids are not quite (root's 0, which macOS
   refuses), so root in group 0 passes here and is refused on a macOS guest. An account that lands on a guest whose rule it breaks is
-  refused inside the sandbox as it resolves (ADR 0145 §5), never ignored.
+  refused inside the sandbox as it resolves (ADR 0145 §5), never ignored. Its
+  home must be one the pool places (`sandboxpath.Paths.Rooted`), which
+  otherwise creates the account with no home of its own.
 - A source's placement is checked at create and at import, by the sandbox's
   platform's path rules or, before its pool declares one, by each it may be
   (`sandboxPathRules`): a working directory is an absolute path inside its
   source (`validateSourceWorkingDirectory`, ADR 26-10-15-417), and only a
   skills source may be placed below home, `~/...`, which the sandbox expands
-  (`validateSourceDirectories`, ADR 26-11-01-692). Both a reference's key and
-  its destination's directory are checked, since the pool reads both.
+  (`validateSourceDirectories`, ADR 26-11-01-692). Any other source directory
+  must be one the pool places by `sandboxpath.Paths.Rooted`: the pool puts a
+  source whose directory names no place below the root (the root itself, or a
+  path with whitespace or a control character in it) at the working root
+  without an error, so the create is refused instead. Both a reference's key and its destination's directory are
+  checked, since the pool reads both.
 - Sandboxes that have no harness config converge by *upgrade*, not by
   migration. The target comes from the reserved `shell` built-in
   (`fallbackHarnessConfig`). Such a sandbox reports `available` regardless of

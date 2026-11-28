@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
@@ -122,5 +123,52 @@ func TestImportHoldsSkillsToTheCreatesLine(t *testing.T) {
 	}
 	if !reflect.DeepEqual(sb.Skills, sandboxconfig.Skills{"foo": {Skill: "# foo"}}) {
 		t.Fatalf("imported skills = %#v", sb.Skills)
+	}
+}
+
+// A create naming a source directory or a home the pool would not place — it
+// would put the source at the working root, or create the account with no
+// home, instead — is refused with a 400 naming the field, before anything is
+// written.
+func TestCreateRefusesADirectoryThePoolWouldNotPlace(t *testing.T) {
+	ctx, svc, st, _ := transferFixture(t)
+	configuredHarness(t, st, "codex", "Codex")
+	placed := serverapi.SandboxCreateConfig{Name: "placed"}
+	placed.SetSource(serverapi.NewOptGitSource(serverapi.GitSource{
+		Kind:        serverapi.GitSourceKindGit,
+		Destination: serverapi.NewOptGitSourceDestination(serverapi.GitSourceDestination{Directory: serverapi.NewOptString("/work\tspace")}),
+	}))
+	homed := serverapi.SandboxCreateConfig{Name: "homed"}
+	homed.SetUser(serverapi.NewOptSandboxUser(serverapi.SandboxUser{
+		Name:          serverapi.NewOptString("discobox"),
+		UID:           serverapi.NewOptInt64(10000),
+		Gid:           serverapi.NewOptInt64(10000),
+		HomeDirectory: serverapi.NewOptString("/home/dis\tcobox"),
+	}))
+	for _, tc := range []struct {
+		config serverapi.SandboxCreateConfig
+		field  string
+	}{
+		{placed, "source directory"},
+		{homed, "home directory"},
+	} {
+		_, err := svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{
+			HarnessName: serverapi.NewOptString("codex"),
+			Config:      tc.config,
+		})
+		var status interface{ StatusCode() int }
+		if !errors.As(err, &status) || status.StatusCode() != http.StatusBadRequest {
+			t.Fatalf("%s: err = %v, want a 400", tc.config.Name, err)
+		}
+		if !strings.Contains(err.Error(), tc.field) {
+			t.Fatalf("%s: err %q does not name %q", tc.config.Name, err, tc.field)
+		}
+	}
+	all, err := st.ListSandboxes(ctx, "project-1", "", nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 0 {
+		t.Fatalf("sandboxes = %d, want none: a refused create left one behind", len(all))
 	}
 }
