@@ -79,6 +79,8 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error 
 //
 // SOURCE is where each was cut from, the one column telling two discoboxes of
 // a name apart in a list that crosses directories.
+//
+// DISK is what each holds on its pool's disk (sandboxDiskColumn).
 func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, serverOf map[string]string) error {
 	sandboxes = sortedByRecency(sandboxes, func(sandbox apimodel.Sandbox) time.Time { return sandbox.CreatedAt })
 	if a.quiet {
@@ -103,7 +105,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 	if serverOf != nil {
 		header = append(header, "SERVER")
 	}
-	header = append(header, "STATE", "AGENT", "HARNESS", "GIT", "CHANGES", "DIFF", "UPGRADE", "TAGS", "ERROR", "CREATED", "SOURCE", "PARENT")
+	header = append(header, "STATE", "AGENT", "HARNESS", "GIT", "CHANGES", "DIFF", "DISK", "UPGRADE", "TAGS", "ERROR", "CREATED", "SOURCE", "PARENT")
 	fmt.Fprintln(tw, strings.Join(header, "\t"))
 	for _, sandbox := range sandboxes {
 		git := sandboxGitStatus(sandbox)
@@ -115,13 +117,14 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 		if message == "" {
 			message, _ = sandboxProvisioning(sandbox)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			sandboxDisplayState(sandbox),
 			programStatusColumn(sandbox),
 			sandboxHarness(sandbox),
 			sandboxGitColumn(sandbox),
 			git.changes(sandboxSpawnCommit(sandbox)),
 			git.diffColumn(),
+			sandboxDiskColumn(sandbox),
 			sandboxUpgradeState(sandbox),
 			truncateTableValue(sandboxTagsColumn(sandbox), 40),
 			truncateTableValue(message, 80),
@@ -131,6 +134,27 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 		)
 	}
 	return tw.Flush()
+}
+
+// sandboxDiskColumn is what a discobox holds on its pool's disk, as its pool
+// agent last swept it: its own trees, its container's writable layer and its
+// proxy recordings, which a purge frees (ADR 26-11-14-896 §1). The pool's
+// shared cache and images are not on it, so the column sums to something real
+// (ADR 0071 §5); `admin pool resources` shows those.
+//
+// It is "-" until a sweep has measured the discobox, never 0B, which would
+// claim it holds nothing. A stopped or archived discobox is still measured:
+// it holds its disk whether it runs or not.
+func sandboxDiskColumn(sandbox apimodel.Sandbox) string {
+	consumption, ok := sandboxResourceConsumption(sandbox)
+	if !ok {
+		return "-"
+	}
+	storage, ok := consumption.Storage.Get()
+	if !ok {
+		return "-"
+	}
+	return formatBytes(storage.TotalBytes)
 }
 
 // withServerField is sandbox's JSON with the server it is on added in front of

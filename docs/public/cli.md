@@ -4783,6 +4783,14 @@ KEY=VALUE for exactly that value. Repeat it to require several. A discobox's
 tags are its own, in ~/.discobox/meta.json inside it; this filters on the copy
 it last reported, so a stopped discobox is listed by the tags it had.
 
+DISK is what each discobox holds on its pool's disk: its own files, its
+container's (or machine's) writable disk and its proxy recordings, all of which
+purging it frees. The pool's shared cache and images are on no row. The pool
+walks its disk on a slower schedule of its own, so the figure is from its last
+walk rather than from now; "discobox admin pool resources" shows the shared
+figures and when that walk was. DISK is "-" until a walk has measured the
+discobox.
+
 Every server is listed: the primary, and the ones "discobox admin remote"
 registered, with a SERVER column once there is more than one. A registered server that does
 not answer is left out, and says so on stderr.

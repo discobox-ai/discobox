@@ -1110,6 +1110,42 @@ func TestWriteSandboxesTableIncludesErrorMessage(t *testing.T) {
 	}
 }
 
+// DISK is what each discobox holds, from its pool agent's last sweep, and a
+// "-" rather than 0B for one no sweep has measured.
+func TestWriteSandboxesTableShowsEachDiscoboxsDisk(t *testing.T) {
+	app := &App{output: "table"}
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	var measured, unmeasured apimodel.Sandbox
+	if err := measured.UnmarshalJSON([]byte(sandboxRuntime("sandbox-1", "alpha", busySandboxResources))); err != nil {
+		t.Fatalf("decode measured: %v", err)
+	}
+	if err := unmeasured.UnmarshalJSON([]byte(sandboxRuntime("sandbox-2", "beta", ""))); err != nil {
+		t.Fatalf("decode unmeasured: %v", err)
+	}
+	if err := app.writeSandboxes(cmd, []apimodel.Sandbox{measured, unmeasured}, nil); err != nil {
+		t.Fatalf("writeSandboxes: %v", err)
+	}
+
+	disk := map[string]string{}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	at := strings.Index(lines[0], "DISK")
+	if at < 0 {
+		t.Fatalf("sandboxes output = %q, want a DISK column", out.String())
+	}
+	for _, line := range lines[1:] {
+		disk[strings.Fields(line)[0]] = strings.Fields(line[at:])[0]
+	}
+	if got, want := disk["sandbox-1"], "2.9GiB"; got != want {
+		t.Fatalf("sandbox-1 DISK = %q, want %q\n%s", got, want, out.String())
+	}
+	if got, want := disk["sandbox-2"], "-"; got != want {
+		t.Fatalf("sandbox-2 DISK = %q, want %q\n%s", got, want, out.String())
+	}
+}
+
 // A repair in flight lists as `repairing`, and one nobody typed says beside it
 // what set it off and the failure it answers: recording the repair cleared the
 // error the row had (ADR 26-10-12-711 §8).
