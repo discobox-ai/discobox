@@ -981,6 +981,20 @@ shell's command line matches the pattern. Wait on the watcher's outputs
   '.runtime | {state, provisionProgressAt, provisionProgress}'` every 2s.
 - **What the user sees:** `run` without `-d` in tmux opens directly on the
   create progress and then the workspace, including on a fresh project.
+- **The pool's own pull never reaches a forge here.** The pool agent runs
+  git with `gitbackend.BaseEnv` (PATH and git's own settings, no
+  `HTTPS_PROXY`), and a dev box reaches the internet only through its proxy,
+  so every pool pull or refresh answers `unreachable` and the client fetches
+  instead, a public GitHub remote included. To drive the pool path, set the
+  one cache's own proxy and unset it after:
+  `docker exec discobox-vm-pool_<id> git --git-dir=/var/lib/discobox/projects/<proj>/pools/<id>/git-cache/<hash>.git config http.proxy http://172.17.0.1:17008`
+  (the proxy is the pool agent's `HTTPS_PROXY`, in `/proc/<pid>/environ`; the
+  cache with `refs/cache/heads/*` of that remote is the one).
+- **A refresh (`discobox push` of a remote source, ADR 26-11-24-142):** move
+  the origin (commit, add a branch, `branch -D` one), push, then
+  `d exec <box> -- git -C /workspace/<repo> fetch discobox '+refs/remotes/origin/*:refs/remotes/origin/*'`.
+  To see the pool move refs with no forge change, edit the box's namespace in
+  the cache (`refs/namespaces/<sbx>-primary/refs/remotes/origin/*`) first.
 - **A clone cut short:** stop the origin by exact name (`pgrep -x`); a
   `pkill -f` naming it matches your own tool shell. The clone's error is in
   the box's `journalctl -u discobox-sandbox-agent` (`materialize source`).

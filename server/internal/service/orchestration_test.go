@@ -911,6 +911,10 @@ func (noopSandboxProvider) PullSource(context.Context, sandboxes.SandboxRef, sou
 	panic("unexpected source pull")
 }
 
+func (noopSandboxProvider) RefreshSource(context.Context, sandboxes.SandboxRef, sourcecache.RefreshRequest) (sourcecache.Refresh, error) {
+	panic("unexpected source refresh")
+}
+
 func (noopSandboxProvider) CheckCreateCompatibility(context.Context, sandboxes.SandboxRef) error {
 	return nil
 }

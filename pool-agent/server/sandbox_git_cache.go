@@ -115,7 +115,13 @@ func (s *sandboxService) cacheOriginHandler() http.Handler {
 			}
 			repo.Config = gitcache.ReceiveConfig()
 			if caller == "" {
-				repo.Config = append(repo.Config, gitcache.MemberReceiveConfig()...)
+				config, env, err := store.MemberReceiveConfig()
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				repo.Config = append(repo.Config, config...)
+				repo.Env = env
 				break
 			}
 			config, env, err := store.SandboxReceiveConfig(path, caller, sandboxID, slug)

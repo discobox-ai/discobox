@@ -19,8 +19,12 @@ terminal, the directory is copied automatically.
 
 The box fetches its source through a read-only origin. Your host's files
 stay separate. `discobox push BOX` delivers your local commits into an
-existing box; it does not bring the box's changes home. Commit and push the
-agent's result to a Git host, then review and merge it in your normal workflow.
+existing box; it does not bring the box's changes home. For a box made from a
+remote URL, `discobox push BOX` instead brings the box's copy of that remote
+up to date, and the box picks it up with
+`git fetch discobox '+refs/remotes/origin/*:refs/remotes/origin/*'`. Commit
+and push the agent's result to a Git host, then review and merge it in your
+normal workflow.
 
 ## Harnesses
 

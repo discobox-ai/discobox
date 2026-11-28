@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/crypto/ssh"
 
@@ -388,7 +389,7 @@ func (*fakeSandboxService) OpenSandboxEvents(context.Context, string, *int64) (s
 	return nil, errors.New("not implemented")
 }
 
-func (f *fakeSandboxService) PullSandboxSource(context.Context, string, string, string, services.PullSandboxSourceBody) (*model.Sandbox, error) {
+func (f *fakeSandboxService) PullSandboxSource(context.Context, string, string, string, services.PullSandboxSourceBody) (*model.Sandbox, *sourcecache.Refresh, error) {
 	panic("not implemented")
 }
 

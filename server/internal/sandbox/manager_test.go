@@ -465,6 +465,10 @@ func (p *fakeProvider) PullSource(context.Context, sandbox.SandboxRef, sourcecac
 	panic("unexpected source pull")
 }
 
+func (p *fakeProvider) RefreshSource(context.Context, sandbox.SandboxRef, sourcecache.RefreshRequest) (sourcecache.Refresh, error) {
+	panic("unexpected source refresh")
+}
+
 // sealedFields stands in for the store: what it opens for every instance.
 type sealedFields map[string]json.RawMessage
 

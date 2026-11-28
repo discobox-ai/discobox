@@ -152,7 +152,10 @@ Current authorizers:
     source delivery — the pin and the push into its `git-origins`, and
     `complete-source-push`
     ([ADR 26-09-24-630](../../../docs/adr/26-09-24-630-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md)
-    §2); its terminals — the exec listing, one exec, its `logs`, `events`,
+    §2), and the anonymous pool pull of a source's remote,
+    `sources/{slug}/pull`, which never takes a credential from a sandbox
+    ([ADR 26-11-24-142](../../../docs/adr/26-11-24-142-a-push-refreshes-a-remote-sources-pool-copy-of-its-remote.md)
+    §4); its terminals — the exec listing, one exec, its `logs`, `events`,
     `screen`, `wait`, and `input`, plus exec create/start/attach/delete and the complete files API
     ([ADR 26-10-01-397](../../../docs/adr/26-10-01-397-a-discobox-reads-and-types-into-the-terminals-of-the-discoboxes-it-creates.md));
     its power — `start`, `stop`, `restart`, `repair`, and `upgrade`

@@ -14,7 +14,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/cli` | Cobra command tree, output formatting, local server resolution and auto-start, console API adapter, and the attach transports and policy layered on `pkg/execstream/client`. Staging itself is the root module's `serverstage`. |
 | `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. See [`internal/sandboxcreate/DESIGN.md`](internal/sandboxcreate/DESIGN.md). |
 | `internal/sandboxgit` | The client's git transport to a sandbox: the worktree and origin repository URLs the control plane proxies, bearer-token auth on those requests, and the client-side ref names that record what has been sent. Shared by create and push; owns Git authentication execution policy and process-tree cancellation for source ref lookup, delivery and lending. |
-| `internal/sandboxpush` | `discobox push`: sending a local source's commits into the origin on its pool that its sandbox fetches from, under a lease (ADR 0058), and resolving locally whether there is anything to send (ADR 26-09-05-008). |
+| `internal/sandboxpush` | `discobox push`: sending a local source's commits into the origin on its pool that its sandbox fetches from, under a lease (ADR 0058), and resolving locally whether there is anything to send (ADR 26-09-05-008). A remote source's refresh is `sandboxcreate.RefreshSource`, beside the create's remote delivery it reuses. |
 | `internal/origin` | Resolves the client host a sandbox is created from, and a directory's project root (its repository root). Host identity itself is shared, in the root module's `internal/hostid`. |
 | `internal/gitunborn` | A repository with no commits: whether HEAD is unborn. Used by create (ADR 0083). |
 | `internal/tui` | The `discobox console` window: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
@@ -2668,9 +2668,11 @@ See [ADR 0001](../docs/adr/0001-sandbox-origin-and-remote-source-push.md),
 `discobox push` (`internal/cli/push.go`, `internal/sandboxpush`) sends local commits
 into the origin on its pool that a source's sandbox fetches from, so work done
 here since create can be rebased onto there. It acts per source — every source
-of the sandbox that came from a directory on a machine, or the one `--source`
-names; a source that is a remote URL has no checkout to push from
-(`sandboxpush.CheckPushDelivered`). Nothing in the sandbox moves: it gains
+of the sandbox, or the one `--source` names. A source that is a remote URL has
+no checkout to push from, and is **refreshed** instead (below). A directory
+that was not a repository when the box was made (`noLocalRepository`, `-i
+notes/`) has no commits to send, and is skipped unless `--source` names it.
+Nothing in the sandbox moves: it gains
 `discobox/<branch>` (`sandboxpush.PoolRemote` — `origin/<branch>` in a discobox
 created before pools cached Git), and whoever is working in it rebases when
 they choose. A sandbox no longer follows the developer's repository unattended
@@ -2689,6 +2691,28 @@ rewrites away routinely. Uncommitted changes are reported, never pushed.
 
 `--branch` pushes another local branch under its own name, which the sandbox sees
 as `origin/<that branch>`, leaving the branch it tracks alone.
+
+**A remote source is refreshed**
+([ADR 26-11-24-142](../docs/adr/26-11-24-142-a-push-refreshes-a-remote-sources-pool-copy-of-its-remote.md),
+`refreshOneSource`, `sandboxcreate.RefreshSource`). Its pool copy of the
+remote — the namespace's `refs/remotes/origin/*` and tags — is brought up to
+the remote; the namespace's branches, the delivery and the sandbox's state are
+not touched. The sandbox takes it in with
+`git fetch discobox '+refs/remotes/origin/*:refs/remotes/origin/*'`
+(`sandboxcreate.RefreshCommand`); its `discobox` remote's default refspec is
+unchanged, so a plain fetch of it never rewinds an `origin/*` fetched from the
+remote. The order is a first delivery's: the source's `pull` route, anonymous;
+on `needs_credential` the `git.credentials` policy — `lend` fills a credential
+and calls the route again with it, `local` fetches into this client's cache of
+the remote (negotiating against the pool's copy first) and pushes what moved
+with the `discobox-refresh` push option, `ask` asks, or with nobody to ask
+reports the source skipped (failed when `--source` names it); `unreachable`
+falls back to `local`. Inside a discobox it is always `local`. `--branch B`
+refreshes the remote's `B` and the tags; without it every branch is, and the
+ones the remote dropped are dropped. `--force` means nothing to a refresh: it
+is refused when `--source` names only a remote source. The console's
+automatic push never refreshes: a refresh reaches the remote and may need a
+credential decision, which only a person asking for it can make.
 
 **A discobox still waiting for its source is delivered instead.** A create can
 fail after the discobox is already provisioned — the push itself failed, or the

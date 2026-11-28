@@ -1527,3 +1527,27 @@ func (p *poolAgentClient) PullSource(ctx context.Context, ref sandbox.SandboxRef
 	}
 	return sourcecache.Delivery{Status: result.Status, Protocol: result.Protocol.Or(""), Host: result.Host.Or(""), Path: result.Path.Or("")}, nil
 }
+
+func (p *poolAgentClient) RefreshSource(ctx context.Context, ref sandbox.SandboxRef, request sourcecache.RefreshRequest) (sourcecache.Refresh, error) {
+	client, release, err := p.poolClient(ref, poolagentauth.ScopeSandboxWrite)
+	if err != nil {
+		return sourcecache.Refresh{}, err
+	}
+	defer release()
+	body := &poolapimodel.PoolSourceRefreshRequest{Key: request.Key, Remote: request.Remote}
+	if request.Branch != "" {
+		body.Branch = poolclient.NewOptString(request.Branch)
+	}
+	if c := request.Credential; c != nil {
+		body.Credential = poolclient.NewOptGitCredential(poolapimodel.GitCredential{Username: c.Username, Password: c.Password})
+	}
+	result, err := client.PoolRefreshSandboxSource(ctx, body, poolclient.PoolRefreshSandboxSourceParams{ProjectId: ref.ProjectID, PoolId: p.poolID, SandboxId: ref.SandboxID, Slug: request.Slug})
+	if err != nil {
+		return sourcecache.Refresh{}, mapPoolClientError(err)
+	}
+	out := sourcecache.Refresh{Delivery: sourcecache.Delivery{Status: result.Status, Protocol: result.Protocol.Or(""), Host: result.Host.Or(""), Path: result.Path.Or("")}}
+	for _, update := range result.Updates {
+		out.Updates = append(out.Updates, sourcecache.RefUpdate{Ref: update.Ref, Old: update.Old.Or(""), New: update.New.Or("")})
+	}
+	return out, nil
+}

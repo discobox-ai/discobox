@@ -409,6 +409,10 @@ func (p *powerProvider) PullSource(context.Context, sandbox.SandboxRef, sourceca
 	panic("unexpected source pull")
 }
 
+func (p *powerProvider) RefreshSource(context.Context, sandbox.SandboxRef, sourcecache.RefreshRequest) (sourcecache.Refresh, error) {
+	panic("unexpected source refresh")
+}
+
 // sleptWithDueWake has the fixture's sandbox stopped on its own request with a
 // wake that is now due, and its pool ready.
 func (f *powerFixture) sleptWithDueWake(t *testing.T) time.Time {

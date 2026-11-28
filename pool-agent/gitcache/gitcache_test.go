@@ -81,7 +81,12 @@ func (w *work) push(s *Store, path, sandboxID, slug, caller string, refspecs ...
 	config := ReceiveConfig()
 	env := []string{"GIT_NAMESPACE=" + Namespace(sandboxID, slug)}
 	if caller == "" {
-		config = append(config, MemberReceiveConfig()...)
+		extra, memberEnv, err := s.MemberReceiveConfig()
+		if err != nil {
+			w.t.Fatal(err)
+		}
+		config = append(config, extra...)
+		env = append(env, memberEnv...)
 	} else {
 		extra, hookEnv, err := s.SandboxReceiveConfig(path, caller, sandboxID, slug)
 		if err != nil {

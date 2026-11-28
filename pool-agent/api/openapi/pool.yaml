@@ -1066,6 +1066,51 @@ components:
                 workingPath: {type: string}
                 credential:
                     $ref: '#/components/schemas/GitCredential'
+        PoolSourceRefreshRequest:
+            additionalProperties: false
+            type: object
+            required: [key, remote]
+            properties:
+                key: {type: string}
+                remote: {type: string}
+                branch:
+                    type: string
+                    description: Refresh only this branch of the remote, and its tags. Absent refreshes every branch and tag, and drops the namespace's branches the remote no longer has.
+                credential:
+                    $ref: '#/components/schemas/GitCredential'
+        SourceRefresh:
+            additionalProperties: false
+            type: object
+            required: [status]
+            properties:
+                status:
+                    type: string
+                    description: refreshed, needs_credential, unreachable, or missing_branch.
+                protocol:
+                    type: string
+                host:
+                    type: string
+                path:
+                    type: string
+                updates:
+                    type: array
+                    description: The refs a refresh moved in the source's namespace.
+                    items:
+                        $ref: '#/components/schemas/SourceRefUpdate'
+        SourceRefUpdate:
+            additionalProperties: false
+            type: object
+            required: [ref]
+            properties:
+                ref:
+                    type: string
+                    description: The ref's name in the namespace, refs/remotes/origin/<branch> or refs/tags/<tag>.
+                old:
+                    type: string
+                    description: What it named before; absent for a ref the refresh created.
+                new:
+                    type: string
+                    description: What it names now; absent for a ref the refresh deleted.
         GitCredential:
             additionalProperties: false
             type: object
@@ -1974,6 +2019,37 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/SourceDelivery'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+
+    /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/sources/{slug}/refresh:
+        post:
+            operationId: pool-refresh-sandbox-source
+            description: Refresh a delivered source's namespace from its remote over HTTPS, its remote-tracking branches and tags only. A credential, when lent, is used inside this request and never persisted.
+            security:
+                - poolBearerAuth: []
+            parameters:
+                - {in: path, name: projectId, required: true, schema: {type: string}}
+                - {in: path, name: poolId, required: true, schema: {type: string}}
+                - {in: path, name: sandboxId, required: true, schema: {type: string}}
+                - {in: path, name: slug, required: true, schema: {type: string}}
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/PoolSourceRefreshRequest'
+            responses:
+                '200':
+                    description: The refresh's result
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SourceRefresh'
                 default:
                     description: Error
                     content:

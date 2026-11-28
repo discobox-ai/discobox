@@ -13,6 +13,7 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/pkg/auditid"
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
@@ -967,7 +968,7 @@ func (s *routerTestServices) OpenSandboxEvents(context.Context, string, *int64) 
 	return nil, errors.New("not implemented")
 }
 
-func (s *routerTestServices) PullSandboxSource(context.Context, string, string, string, services.PullSandboxSourceBody) (*model.Sandbox, error) {
+func (s *routerTestServices) PullSandboxSource(context.Context, string, string, string, services.PullSandboxSourceBody) (*model.Sandbox, *sourcecache.Refresh, error) {
 	panic("not implemented")
 }
 

@@ -48,6 +48,11 @@ const (
 	// is: a discobox delivering the source of another in its project, which a
 	// pool holds to what it sends and what its own sources hold (§7).
 	CallerHeader = "X-Discobox-Git-Cache-Caller"
+	// RefreshPushOption marks a client's push that refreshes a namespace's
+	// record of its remote (`git push -o discobox-refresh`, ADR 26-11-24-142
+	// §§3–4). The pool takes such a push only into refs/remotes/origin/* and
+	// refs/tags/*, and lets it drop the former.
+	RefreshPushOption = "discobox-refresh"
 )
 
 // PoolOriginsHost is the host a sandbox reaches its pool's origins at (ADR

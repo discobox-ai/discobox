@@ -2,11 +2,14 @@ package server
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/gitprogress"
+	"github.com/discobox-ai/discobox/pool-agent/gitcache"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 
 	"github.com/discobox-ai/discobox/pkg/sourcecache"
@@ -80,6 +83,41 @@ func (s *sandboxService) PoolPullSandboxSource(ctx context.Context, body *worker
 		return nil, mapRuntimeError(err)
 	}
 	return &workerapimodel.SourceDelivery{Status: result.Status, Protocol: workerapi.NewOptString(result.Protocol), Host: workerapi.NewOptString(result.Host), Path: workerapi.NewOptString(result.Path)}, nil
+}
+
+// PoolRefreshSandboxSource refreshes a delivered source's namespace from its
+// remote (ADR 26-11-24-142 §4). The control plane names the cache and the
+// remote, from the sandbox it holds; only the credential is the client's.
+func (s *sandboxService) PoolRefreshSandboxSource(ctx context.Context, body *workerapimodel.PoolSourceRefreshRequest, params workerapi.PoolRefreshSandboxSourceParams) (*workerapimodel.SourceRefresh, error) {
+	if err := s.authorize(params.ProjectId, params.PoolId); err != nil {
+		return nil, err
+	}
+	request := sourcecache.RefreshRequest{Key: body.Key, Remote: body.Remote, SandboxID: params.SandboxId, Slug: params.Slug, Branch: body.Branch.Or("")}
+	if c, ok := body.Credential.Get(); ok {
+		request.Credential = &sourcecache.Credential{Username: c.Username, Password: c.Password}
+	}
+	result, err := s.runtime.GitCache().Refresh(ctx, request, nil)
+	switch {
+	case errors.Is(err, gitcache.ErrInvalid):
+		return nil, newStatusError(http.StatusBadRequest, err.Error())
+	case errors.Is(err, gitcache.ErrNotDelivered):
+		return nil, newStatusError(http.StatusConflict, err.Error())
+	case err != nil:
+		return nil, mapRuntimeError(err)
+	}
+	out := &workerapimodel.SourceRefresh{Status: result.Status, Protocol: workerapi.NewOptString(result.Protocol), Host: workerapi.NewOptString(result.Host), Path: workerapi.NewOptString(result.Path)}
+	for _, update := range result.Updates {
+		out.Updates = append(out.Updates, workerapimodel.SourceRefUpdate{Ref: update.Ref, Old: optString(update.Old), New: optString(update.New)})
+	}
+	return out, nil
+}
+
+// optString is s, or nothing when it is empty.
+func optString(s string) workerapi.OptString {
+	if s == "" {
+		return workerapi.OptString{}
+	}
+	return workerapi.NewOptString(s)
 }
 
 func pullWorkingPath(source workerapimodel.GitSource) string {

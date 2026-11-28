@@ -26,22 +26,10 @@ import (
 // caller's private objects just because they share a cache key.
 func (s *Store) Pull(ctx context.Context, request sourcecache.PullRequest, report func(gitprogress.Progress)) (sourcecache.Delivery, error) {
 	key, remote, sandboxID, slug, commit, branch, snapshot, credential := request.Key, request.Remote, request.SandboxID, request.Slug, request.Commit, request.Branch, request.Snapshot, request.Credential
-	result := sourcecache.Delivery{Status: sourcecache.Unreachable}
-	normalized, ok := strings.CutPrefix(key, "remote/")
+	u, result, ok := remoteURL(key, remote)
 	if !ok {
 		return result, nil
 	}
-	u, err := url.Parse(remote)
-	if err != nil || u.Scheme != "https" {
-		u, err = url.Parse("https://" + normalized)
-	}
-	if err != nil || u.Host == "" || u.User != nil || sourcecache.RemoteKey(u.String()) != key {
-		return result, nil
-	}
-	if strings.IndexFunc(u.Host+u.Path, unicode.IsControl) >= 0 {
-		return result, nil
-	}
-	result.Protocol, result.Host, result.Path = "https", u.Host, strings.TrimPrefix(u.Path, "/")
 	if !validObjectID(commit) || !ValidRef("refs/heads/"+branch) {
 		return result, fmt.Errorf("%w: pull checkout", ErrInvalid)
 	}
@@ -50,72 +38,26 @@ func (s *Store) Pull(ctx context.Context, request sourcecache.PullRequest, repor
 		return result, err
 	}
 	defer release()
-	// A low-speed timeout bounds silence while allowing large histories to move.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	tmp, err := os.MkdirTemp(path, "pull-")
+	tmp, prefix, done, err := s.pullScratch(ctx, path)
 	if err != nil {
 		return result, err
 	}
-	defer os.RemoveAll(tmp)
-	prefix := "refs/discobox-pulls/" + filepath.Base(tmp) + "/"
-	defer func() {
-		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
-		defer cancel()
-		refs, _ := git(cleanup, path, nil, nil, "for-each-ref", "--format=%(refname)", prefix)
-		var deletes bytes.Buffer
-		for _, r := range strings.Fields(refs) {
-			fmt.Fprintf(&deletes, "delete %s\n", r)
-		}
-		if deletes.Len() > 0 {
-			// One transaction: a delete takes packed-refs.lock, which every
-			// user of the cache shares.
-			_ = s.writeShared(path, func() error {
-				_, err := git(cleanup, path, deletes.Bytes(), nil, "update-ref", "--stdin")
-				return err
-			})
-		}
-	}()
-	env := []string{"GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=" + os.DevNull}
-	if credential != nil {
-		helper := filepath.Join(tmp, "askpass")
-		//nolint:gosec // Non-secret askpass program must execute, inside a private directory.
-		if err := os.WriteFile(helper, []byte("#!/bin/sh\ncase \"$1\" in *sername*) printf '%s\\n' \"$DISCOBOX_PULL_USERNAME\";; *) printf '%s\\n' \"$DISCOBOX_PULL_PASSWORD\";; esac\n"), 0700); err != nil {
-			return result, err
-		}
-		env = []string{"GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=" + helper, "DISCOBOX_PULL_USERNAME=" + credential.Username, "DISCOBOX_PULL_PASSWORD=" + credential.Password}
-	}
-	args := []string{"-c", "credential.helper=", "-c", "http.followRedirects=false", "-c", "http.lowSpeedLimit=1", "-c", "http.lowSpeedTime=60", "-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "gc.auto=0", "fetch", "--progress", "--no-tags", "--no-write-fetch-head", u.String()}
-	if credential != nil {
-		args = append([]string{"-c", "http.proactiveAuth=basic"}, args...)
+	defer done()
+	env, args, err := pullArgs(tmp, u, credential)
+	if err != nil {
+		return result, err
 	}
 	challenged, err := fetch(ctx, path, env, report, append(args, "+refs/heads/*:"+prefix+"heads/*", "+refs/tags/*:"+prefix+"tags/*")...)
 	if err != nil {
-		// Git asks askpass for an HTTP credential only after an auth challenge.
-		message := err.Error()
-		if challenged || strings.Contains(message, "could not read Username") || strings.Contains(message, "Authentication failed") || strings.Contains(message, "401") {
+		if needsCredential(challenged, err) {
 			result.Status = sourcecache.NeedsCredential
 		}
 		return result, nil
 	}
-	fetched, err := git(ctx, path, nil, nil, "for-each-ref", "--format=%(refname) %(objectname)", prefix)
-	if err != nil {
+	if err := s.recordFetched(ctx, path, prefix); err != nil {
 		return result, err
-	}
-	var remoteUpdates bytes.Buffer
-	for _, line := range strings.Split(fetched, "\n") {
-		ref, object, ok := strings.Cut(line, " ")
-		if ok {
-			fmt.Fprintf(&remoteUpdates, "update %s %s\n", RemoteRefPrefix+strings.TrimPrefix(ref, prefix), object)
-		}
-	}
-	if remoteUpdates.Len() > 0 {
-		if err = s.writeShared(path, func() error {
-			_, err := git(ctx, path, remoteUpdates.Bytes(), nil, "update-ref", "--stdin")
-			return err
-		}); err != nil {
-			return result, err
-		}
 	}
 	if !reachable(ctx, path, commit, []string{prefix}) {
 		// Fetch an unadvertised commit into an empty repository first. Fetching
@@ -201,6 +143,111 @@ func (s *Store) Pull(ctx context.Context, request sourcecache.PullRequest, repor
 	}
 	result.Status = sourcecache.Delivered
 	return result, s.Delivered(ctx, path, sandboxID, slug, false, "")
+}
+
+// remoteURL is the HTTPS URL a cache keyed by key pulls from, and the
+// credential target a refusal names. ok is false for a key or remote that is
+// not one: the result then reads unreachable, which sends the client to
+// deliver it itself.
+func remoteURL(key, remote string) (*url.URL, sourcecache.Delivery, bool) {
+	result := sourcecache.Delivery{Status: sourcecache.Unreachable}
+	normalized, ok := strings.CutPrefix(key, "remote/")
+	if !ok {
+		return nil, result, false
+	}
+	u, err := url.Parse(remote)
+	if err != nil || u.Scheme != "https" {
+		u, err = url.Parse("https://" + normalized)
+	}
+	if err != nil || u.Host == "" || u.User != nil || sourcecache.RemoteKey(u.String()) != key {
+		return nil, result, false
+	}
+	if strings.IndexFunc(u.Host+u.Path, unicode.IsControl) >= 0 {
+		return nil, result, false
+	}
+	result.Protocol, result.Host, result.Path = "https", u.Host, strings.TrimPrefix(u.Path, "/")
+	return u, result, true
+}
+
+// pullScratch makes a pull's private directory inside the cache and the
+// prefix of its temporary refs, and done removes both. A pull fetches into
+// those refs first, so that it writes only what it fetched itself.
+func (s *Store) pullScratch(ctx context.Context, path string) (tmp, prefix string, done func(), err error) {
+	tmp, err = os.MkdirTemp(path, "pull-")
+	if err != nil {
+		return "", "", nil, err
+	}
+	prefix = "refs/discobox-pulls/" + filepath.Base(tmp) + "/"
+	return tmp, prefix, func() {
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		refs, _ := git(cleanup, path, nil, nil, "for-each-ref", "--format=%(refname)", prefix)
+		var deletes bytes.Buffer
+		for _, r := range strings.Fields(refs) {
+			fmt.Fprintf(&deletes, "delete %s\n", r)
+		}
+		if deletes.Len() > 0 {
+			// One transaction: a delete takes packed-refs.lock, which every
+			// user of the cache shares.
+			_ = s.writeShared(path, func() error {
+				_, err := git(cleanup, path, deletes.Bytes(), nil, "update-ref", "--stdin")
+				return err
+			})
+		}
+		_ = os.RemoveAll(tmp)
+	}, nil
+}
+
+// pullArgs are the environment and leading arguments of a fetch from u: no
+// prompt, no helper, HTTPS only, and a low-speed bound on silence that lets a
+// large history move. A lent credential reaches Git through an askpass
+// program in tmp, from this process's environment only.
+func pullArgs(tmp string, u *url.URL, credential *sourcecache.Credential) (env, args []string, err error) {
+	env = []string{"GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=" + os.DevNull}
+	if credential != nil {
+		helper := filepath.Join(tmp, "askpass")
+		//nolint:gosec // Non-secret askpass program must execute, inside a private directory.
+		if err := os.WriteFile(helper, []byte("#!/bin/sh\ncase \"$1\" in *sername*) printf '%s\\n' \"$DISCOBOX_PULL_USERNAME\";; *) printf '%s\\n' \"$DISCOBOX_PULL_PASSWORD\";; esac\n"), 0700); err != nil {
+			return nil, nil, err
+		}
+		env = []string{"GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=" + helper, "DISCOBOX_PULL_USERNAME=" + credential.Username, "DISCOBOX_PULL_PASSWORD=" + credential.Password}
+	}
+	args = []string{"-c", "credential.helper=", "-c", "http.followRedirects=false", "-c", "http.lowSpeedLimit=1", "-c", "http.lowSpeedTime=60", "-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "gc.auto=0", "fetch", "--progress", "--no-tags", "--no-write-fetch-head", u.String()}
+	if credential != nil {
+		args = append([]string{"-c", "http.proactiveAuth=basic"}, args...)
+	}
+	return env, args, nil
+}
+
+// needsCredential reports whether a failed fetch was refused for want of a
+// credential. Git asks askpass for an HTTP credential only after an auth
+// challenge.
+func needsCredential(challenged bool, err error) bool {
+	message := err.Error()
+	return challenged || strings.Contains(message, "could not read Username") || strings.Contains(message, "Authentication failed") || strings.Contains(message, "401")
+}
+
+// recordFetched points the cache's shared record of its remote at what the
+// fetch into prefix brought, as every pull does (ADR 26-10-23-948 §1).
+func (s *Store) recordFetched(ctx context.Context, path, prefix string) error {
+	fetched, err := git(ctx, path, nil, nil, "for-each-ref", "--format=%(refname) %(objectname)", prefix)
+	if err != nil {
+		return err
+	}
+	var remoteUpdates bytes.Buffer
+	for _, line := range strings.Split(fetched, "\n") {
+		ref, object, ok := strings.Cut(line, " ")
+		if ok {
+			fmt.Fprintf(&remoteUpdates, "update %s %s\n", RemoteRefPrefix+strings.TrimPrefix(ref, prefix), object)
+		}
+	}
+	if remoteUpdates.Len() == 0 {
+		return nil
+	}
+	return s.writeShared(path, func() error {
+		_, err := git(ctx, path, remoteUpdates.Bytes(), nil, "update-ref", "--stdin")
+		return err
+	})
 }
 
 // fetch reports Git's numeric meters without retaining remote-controlled prose.

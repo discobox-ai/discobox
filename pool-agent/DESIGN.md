@@ -1744,8 +1744,14 @@ flowchart TD
   a push's to move.
 - **Push.** Every push is received under `gitcache.ReceiveConfig`: never
   shallow (`receive.shallowUpdate=false` — a repository's `shallow` file is
-  not a namespace's), deletes refused, non-fast-forwards allowed, no
-  collection. After a pin or a push the namespace's `HEAD` is pointed at a
+  not a namespace's), non-fast-forwards allowed, no collection, push options
+  advertised. Every push, a project member's too, runs the pre-receive hook
+  (`git-cache-pre-receive`), which refuses deletes except a refresh's: a push
+  carrying the `discobox-refresh` push option writes only
+  `refs/remotes/origin/*` and `refs/tags/*`, and may drop the former
+  ([ADR 26-11-24-142](../docs/adr/26-11-24-142-a-push-refreshes-a-remote-sources-pool-copy-of-its-remote.md)
+  §4). A push that names neither a member (`DISCOBOX_GIT_CACHE_MEMBER`) nor a
+  sandbox caller cannot be checked, and is refused. After a pin or a push the namespace's `HEAD` is pointed at a
   branch it holds, and for a project member's delivery the namespace's
   `refs/remotes/origin/*` and tags are copied to `refs/cache/heads/` and
   `refs/cache/tags/` (`Delivered`). Every write of `refs/cache/*`, and every
@@ -1768,6 +1774,15 @@ flowchart TD
   neither arrived in the push's quarantine nor is reachable from its own
   namespaces. Git alone accepts a ref at any object the store holds. Its
   delivery does not move `refs/cache`, and it cannot fetch the remote view.
+- **Refresh** (`gitcache.Store.Refresh`, `POST …/sources/{slug}/refresh`,
+  ADR 26-11-24-142 §§1, 4). A pull's refresh form for a delivered namespace:
+  the same HTTPS fetch into temporary refs, anonymous or with a credential
+  lent for the request, then the cache's shared record of the remote and the
+  namespace's `refs/remotes/origin/*` and tags are written from what it
+  fetched — never `refs/heads/*`, never a delivery marker. Without a branch,
+  the namespace's remote-tracking branches the remote dropped are dropped;
+  with one, only it and the tags. It answers `refreshed` with the refs it
+  moved, `needs_credential`, `unreachable` or `missing_branch`.
 - **The remote view** (`git-cache-remotes`) serves `refs/cache/*` with every
   namespace hidden, fetch-only: what a client fetches before it fetches the
   remote itself.

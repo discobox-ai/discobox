@@ -1156,11 +1156,24 @@ arrived, whether by a pool pull or a client push. Until then the sandbox stays
 parked. The additive nullable JSON column needs no backfill: old sandboxes
 continue to use their existing `SourceDeliveredAt`.
 
-`POST …/sources/{slug}/pull` lends a user's credential for one request to the
-pool, after an anonymous pull reported `needs_credential`. The service reads
-the source from the sandbox and forwards it with the credential in memory;
-neither is accepted as source metadata from the caller. Sandbox callers may
-push, but cannot lend credentials.
+`POST …/sources/{slug}/pull` has the pool pull a remote source, anonymously
+or with a user's credential lent for that one request. The service reads the
+source from the sandbox and forwards it with the credential in memory; neither
+is accepted as source metadata from the caller. Sandbox callers may push and
+may pull anonymously, but cannot lend credentials. What the pull is depends on
+the source
+([ADR 26-11-24-142](../../../../docs/adr/26-11-24-142-a-push-refreshes-a-remote-sources-pool-copy-of-its-remote.md)
+§4):
+
+- **Owed** (after an anonymous pull reported `needs_credential`): the
+  delivery, answered `202` with the sandbox; a refused credential is `401`.
+- **Delivered**: a **refresh** (`Provider.RefreshSource`), answered `200`
+  with the pool's result — `refreshed` and the refs it moved,
+  `needs_credential`, `unreachable` or `missing_branch` — every one an
+  answer, not an error. `branch` narrows it to one of the remote's branches.
+  It writes only the namespace's `refs/remotes/origin/*` and tags, never its
+  branches or the delivery state. A source from a client's directory, one
+  delivered before pools cached Git, and an archived box are refused.
 
 Waiting is bounded (`sourcePushTimeout`, 30m): `StateChangedAt` anchors the
 deadline and the reconcile returns it as `reconcile.Result.RequeueAt`, which

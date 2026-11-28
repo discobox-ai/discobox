@@ -10213,6 +10213,44 @@ func (s SecretValueTokenRequestEncoding) Validate() error {
 	}
 }
 
+func (s *SourceRefresh) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.Status.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "status",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s SourceRefreshStatus) Validate() error {
+	switch s {
+	case "refreshed":
+		return nil
+	case "needs_credential":
+		return nil
+	case "unreachable":
+		return nil
+	case "missing_branch":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *TrustPin) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer

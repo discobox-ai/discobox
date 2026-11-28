@@ -38,3 +38,10 @@
   Keep their capture and measurement exclusions together, including copies of
   home/config ancestors, direct store paths, path aliases and .gitignore negations.
   A retained bare repository carries another directory's original private bytes.
+- **A remote that refuses the pool is answered by `chooseCredentialDelivery`
+  alone.** A create's delivery (`waitForPull`) and a push's refresh
+  (`RefreshSource`) both meet `needs_credential`, and both decide lend, local,
+  ask or refuse by that one function: the policy, a discobox never lending,
+  and the refusal's wording. A second copy of the decision is how two callers
+  drift apart — the refresh first shipped with its own, with different
+  refusal text (#1730).

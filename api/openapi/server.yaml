@@ -819,13 +819,51 @@ components:
         PullSandboxSourceBody:
             additionalProperties: false
             type: object
-            required: [username, password]
+            description: A credential to lend for this one pull - a password, with the username it goes with, if any - or none to pull anonymously. A username with no password is refused.
             properties:
                 username:
                     type: string
                 password:
                     type: string
                     writeOnly: true
+                branch:
+                    type: string
+                    description: For a refresh of a delivered source, the remote's one branch to refresh, with its tags. Absent refreshes every branch and tag, and drops the remote-tracking branches the remote no longer has. A source still awaiting delivery refuses it.
+        SourceRefresh:
+            additionalProperties: false
+            type: object
+            description: What a refresh of a delivered source did. Its remote-tracking branches and tags in the pool's cache were brought to what the remote has now; the sandbox's own branches and its checkout are untouched.
+            required: [status]
+            properties:
+                status:
+                    type: string
+                    enum: [refreshed, needs_credential, unreachable, missing_branch]
+                    description: refreshed when the pool reached the remote and wrote what it has; needs_credential when the remote refused an anonymous or lent pull, with protocol, host and path to fill a credential for; unreachable when the pool could not reach the remote, so the client fetches it and pushes instead; missing_branch when the remote has no such branch.
+                protocol:
+                    type: string
+                host:
+                    type: string
+                path:
+                    type: string
+                updates:
+                    type: array
+                    description: The refs the refresh moved, by their names in the source's Git namespace.
+                    items:
+                        $ref: '#/components/schemas/SourceRefUpdate'
+        SourceRefUpdate:
+            additionalProperties: false
+            type: object
+            required: [ref]
+            properties:
+                ref:
+                    type: string
+                    description: refs/remotes/origin/<branch> or refs/tags/<tag>.
+                old:
+                    type: string
+                    description: The commit or tag object it named before; absent for a ref the refresh created.
+                new:
+                    type: string
+                    description: What it names now; absent for a ref the refresh deleted.
         CompleteSandboxSourcePushBody:
             additionalProperties: false
             properties:
@@ -10892,7 +10930,7 @@ paths:
     /projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/pull:
         post:
             operationId: pull-sandbox-source
-            description: Lend credentials for one HTTPS pull of the recorded source. Credentials are used inside this request and never persisted. Sandbox callers cannot lend credentials.
+            description: Have the pool pull a remote source over HTTPS, anonymously or with a credential lent for this request only and never persisted. Sandbox callers cannot lend credentials. For a source still awaiting delivery the pull delivers it (202, the sandbox). For a delivered source it is a refresh (200) of the source's remote-tracking branches and tags in the pool's cache, which the sandbox fetches from its discobox remote; nothing in the sandbox moves.
             parameters:
                 - description: Project ID
                   in: path
@@ -10921,6 +10959,12 @@ paths:
                             $ref: '#/components/schemas/PullSandboxSourceBody'
                 required: true
             responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SourceRefresh'
+                    description: The refresh of a delivered source
                 202:
                     content:
                         application/json:

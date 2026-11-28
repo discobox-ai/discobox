@@ -156,6 +156,16 @@ func (UnimplementedHandler) PoolPullSandboxSource(ctx context.Context, req *Pool
 	return r, ht.ErrNotImplemented
 }
 
+// PoolRefreshSandboxSource implements pool-refresh-sandbox-source operation.
+//
+// Refresh a delivered source's namespace from its remote over HTTPS, its remote-tracking branches
+// and tags only. A credential, when lent, is used inside this request and never persisted.
+//
+// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/sources/{slug}/refresh
+func (UnimplementedHandler) PoolRefreshSandboxSource(ctx context.Context, req *PoolSourceRefreshRequest, params PoolRefreshSandboxSourceParams) (r *SourceRefresh, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // PoolRestartSandbox implements pool-restart-sandbox operation.
 //
 // Restart pool sandbox.

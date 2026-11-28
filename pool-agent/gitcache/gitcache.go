@@ -66,6 +66,13 @@ const (
 	pinLookups = 32
 )
 
+// packedRefsWait is how long every git process on a cache waits for
+// packed-refs.lock, which any ref delete takes. writeShared serializes this
+// process's own writes, but a refresh push's deletes run in receive-pack,
+// outside it (ADR 26-11-24-142 §4); the lock is held for milliseconds, and
+// git's own second is too short to share it with a busy cache.
+const packedRefsWait = "core.packedRefsTimeout=10000"
+
 // ErrInvalid is a request naming something a cache will not hold.
 var ErrInvalid = errors.New("invalid git cache request")
 
@@ -203,15 +210,19 @@ func (s *Store) ensure(ctx context.Context, path, key string) error {
 //
 // A cache is never shallow: a repository's shallow file is the repository's,
 // not a namespace's, and one shallow push would truncate every other
-// sandbox's clone of that remote. Deletes are refused and non-fast-forwards
-// allowed, as for the per-sandbox origin a namespace replaces (ADR 0058 §§1,
-// 6). Nothing is collected by a push: collecting is Sweep's, with the cache
-// to itself.
+// sandbox's clone of that remote. Non-fast-forwards are allowed, as for the
+// per-sandbox origin a namespace replaces (ADR 0058 §§1, 6). Deletes are
+// refused by the pre-receive hook every push runs (MemberReceiveConfig,
+// SandboxReceiveConfig), not by receive.denyDeletes: a refresh push drops the
+// remote's branches the remote no longer has, and only the hook can tell one
+// from any other push, by its push option (ADR 26-11-24-142 §4). Nothing is
+// collected by a push: collecting is Sweep's, with the cache to itself.
 func ReceiveConfig() []string {
 	return []string{
 		"-c", "http.receivepack=true",
 		"-c", "receive.shallowUpdate=false",
-		"-c", "receive.denyDeletes=true",
+		"-c", "receive.advertisePushOptions=true",
+		"-c", packedRefsWait,
 		"-c", "receive.denyNonFastForwards=false",
 		"-c", "receive.autogc=false",
 		"-c", "gc.auto=0",
@@ -765,7 +776,7 @@ func packImported(ctx context.Context, path, objects string, tips []byte) error 
 // beside a backend runs in, and returns what it printed.
 func git(ctx context.Context, dir string, stdin []byte, env []string, args ...string) (string, error) {
 	//nolint:gosec // The executable is fixed; refs and object ids are validated, paths are this pool's own.
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-c", packedRefsWait}, args...)...)
 	cmd.Env = append(gitbackend.BaseEnv(), env...)
 	if dir != "" {
 		cmd.Env = append(cmd.Env, "GIT_DIR="+dir)

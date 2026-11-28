@@ -42,7 +42,11 @@
   recorded failure is that text as well: `runtime.errorMessage` carries the
   provisioning's stderr, and `agentStatus.provision.error` is the agent's own
   words, so `sandboxFailureReason` escapes them for every caller that prints
-  it (#1198).
+  it (#1198). A Git remote's server is outside text as well: a fetch or push
+  this client runs against a source's remote carries the server's `remote:`
+  lines in its stderr, and a box may have chosen that remote, so `discobox
+  push`'s report escapes every line it writes (`printPushSource`) and its
+  JSON (#1730).
 - **A line built from several box values is escaped as it is written.**
   Escaping each field of a struct misses the error later built from another
   one: `discobox proxy` escaped a port's service name and ID, while a failed
