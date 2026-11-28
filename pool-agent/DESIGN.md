@@ -1182,16 +1182,14 @@ flowchart LR
   that fences on networks (boxd) it is placed on `MachineNetwork`; on one
   that fences at its provider's edge (archil) it is placed on no network and
   its fence closes DNS. While a data disk is mounted Archil also allows the
-  machine `mount.*.archil.com` and `data.*.archil.com`; the driver reads the
-  fence back without them (discobox-ai/vm#236), so `fenced` accepts them.
-  They are accepted because Archil adds them for the mount and discobox
-  cannot take them away, not because they are harmless: the guest holds no
-  mount token (discobox-ai/vm#216), which keeps it off this pool's disks, but
-  the hosts are wildcards, and whether a box can reach an Archil account of
-  its own through them, around the pool's proxy, is unverified. This departs
-  from ADR 26-11-16-619 §1, guarantee 2 (the pool host and nothing else), as
-  every start of a machine with a mounted disk already did; a superseding ADR
-  is #1828. Only a stripping driver is asked for `Bare` (ADR
+  machine `mount.*.archil.com` and `data.*.archil.com`, and discobox cannot
+  take them away; the driver names them and reads the fence back without
+  them (discobox-ai/vm#236), so `fenced` accepts them and refuses any other
+  difference (ADR 26-11-28-634 §1, narrowing 619 §1's guarantee 2). They
+  reach a disk only with a mount token, and none has been found in the
+  guest; whether the guest's root can read the one Archil's client mounts
+  with, and whether a token opens other disks, is still open (634 §2, Open).
+  Only a stripping driver is asked for `Bare` (ADR
   26-10-23-551 §4); one whose machines hold nothing of the account is not.
   It is fenced to
   what the pool's hop reaches (`Egress`; [The Hop](#the-hop)), which the

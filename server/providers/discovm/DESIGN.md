@@ -153,7 +153,7 @@ resolves the name itself and connects to the address it checked. A refused dial 
 A pool on a driver reached at its URLs is carried only if the driver fences
 its sandboxes one of two ways, decided from its capabilities alone by
 `sandboxruntime.PoolFencing`, the one rule the pool agent asks too (ADR
-26-11-11-963 §5, ADR 26-11-16-619 §1):
+26-11-11-963 §5, ADR 26-11-16-619 §1; the mount hosts, ADR 26-11-28-634 §1):
 
 | fencing | the driver reports | pool and sandbox machines |
 | --- | --- | --- |
