@@ -2110,6 +2110,16 @@ restarts its units as it did then (`poolruntime.unitsCommand`).
     of a socket the pool no longer has (`removeStale`), are refused, and
     nothing recorded, while a slot drains; the next apply after it has
     exited does both.
+  - The units from before slots are only stopped and disabled until that
+    first apply succeeds (`retireLegacy`). One that fails after they
+    stopped puts them back (`restoreLegacy`): every rendered socket is
+    closed and its file removed, the `units start` instances traffic began
+    are stopped, the slots are stopped and disabled, and the old units
+    enabled and started on the new binary, which binds what no socket
+    passes it. So a failed first upgrade leaves the pool served, and the
+    next apply renders the sockets anew, binds each (the mediator's
+    included) and retires the old units again.
+    Only a successful apply removes their files (`removeLegacy`).
   - **No downgrade across slots without a repair.** A bundle from before
     slots knows no slot units: its apply lays `discobox-pool-agent.service`
     and `discobox-proxy.service` beside the running slot, whose sockets

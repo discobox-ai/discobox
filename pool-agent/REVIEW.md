@@ -1083,6 +1083,15 @@ tracked in #1699, not a pattern to copy.
   `sandbox.ErrPoolTakeOverStalled` as the pool's failure, though nothing is
   replaced. Why: read as a drain, it showed a pool whose new connections
   find no agent as an upgrade held back on a drain.
+- **The first upgrade never leaves a pool with nothing serving.** The units
+  from before slots stay on disk until slot a serves, and a failure after
+  they stopped restores them (`restoreLegacy`), closing every rendered
+  socket, stopping the `units start` instances traffic began and removing
+  the socket files, so no slot starts beside them and the retry binds
+  every socket, the mediator's included. Why: every pool takes the first
+  upgrade once, unattended, and a failure part-way left nothing serving
+  its ports until the next reconcile. (A later rebind or `removeStale`
+  that fails does not restore what it stopped.)
 - **A check that reports a stuck state runs after the code that repairs
   it, never in front of it** (`takeOverVerdict` is deferred to the end of
   `apply`). Why: an early return on a pending takeover skipped

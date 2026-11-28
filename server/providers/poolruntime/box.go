@@ -87,8 +87,9 @@ func PlacementFingerprint(placement BoxPlacement) (string, error) {
 // BuildKit and the registry, their data and caches kept in place: an outbound
 // rotation, which they read only at start. The agent has rendered their new
 // configuration and restored egress before, in ProvisionBox's apply of the
-// pool's units.
-func RestartPoolBuilder(ctx context.Context, guest machine.Guest) error {
+// pool's units. Its failure is redacted with outbound, as the units step's
+// is: the guest's exec carries the outbound routing's environment.
+func RestartPoolBuilder(ctx context.Context, guest machine.Guest, outbound pooloutbound.Resolved) error {
 	argv := []string{"sh", "-ec", `
 resume=/run/discobox/pool-outbound-resume-mediator
 if [ -e "$resume" ] || systemctl is-active --quiet discobox-buildkit-mediator.service; then
@@ -111,7 +112,7 @@ fi
 		return err
 	}
 	if code != 0 {
-		return fmt.Errorf("pool builder restart exited with status %d: %s", code, strings.TrimSpace(stderr.String()))
+		return outbound.RedactError(fmt.Errorf("pool builder restart exited with status %d: %s", code, strings.TrimSpace(stderr.String())))
 	}
 	return nil
 }
@@ -321,7 +322,7 @@ func ProvisionBox(ctx context.Context, guest machine.Guest, maker PoolMaker, pla
 	}
 	units, err := provisioner.Run(ctx, guest, machine.ExecRequest{Argv: []string{"sh", "-ec", unitsCommand, "units", moved}, Env: placement.Environment()}, nil)
 	if err != nil {
-		return BoxRecord{}, unitsError(units, err)
+		return BoxRecord{}, unitsError(placement.Outbound, units, err)
 	}
 	if _, err := sandbox.ReportBootstrap(ctx, model.BootstrapEvidence{Operation: "provision_pool_box", Complete: true, Registration: true}); err != nil {
 		return BoxRecord{}, err
@@ -343,9 +344,11 @@ func PlaceBoxFiles(ctx context.Context, guest machine.Guest, files ...BoxFile) e
 // unitsError is the units step's failure: ErrPoolSlotDraining for a refusal
 // because a slot still drains (bundle.UnitsDrainingExitCode), which failed
 // nothing, and ErrPoolTakeOverStalled for a handover whose new agent has not
-// taken over (bundle.UnitsTakeOverStalledExitCode).
-func unitsError(result provisioner.Result, err error) error {
-	err = provisionError("start the pool's agent", result, err)
+// taken over (bundle.UnitsTakeOverStalledExitCode). It is redacted as the
+// apply's is: the step runs with the outbound routing's environment, whose
+// proxy credentials what it wrote may echo.
+func unitsError(outbound pooloutbound.Resolved, result provisioner.Result, err error) error {
+	err = outbound.RedactError(provisionError("start the pool's agent", result, err))
 	exit := (*provisioner.ExitError)(nil)
 	if !errors.As(err, &exit) {
 		return err
