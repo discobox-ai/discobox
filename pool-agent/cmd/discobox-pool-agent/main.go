@@ -41,8 +41,6 @@ func main() {
 
 	if len(os.Args) > 1 && os.Args[1] == poolagent.UnitsCommand {
 		if err := poolagent.RunUnits(ctx, logger, os.Args[2:]); err != nil {
-			// Before the drain: a stalled takeover also refuses to move a
-			// draining slot, and that is the failure to report.
 			if errors.Is(err, poolunits.ErrNotTakenOver) {
 				logger.Error("pool units: the new agent has not taken over", "error", err)
 				os.Exit(bundle.UnitsTakeOverStalledExitCode)

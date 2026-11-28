@@ -2091,8 +2091,11 @@ restarts its units as it did then (`poolruntime.unitsCommand`).
     left to finish its drain and the new is left running, which systemd
     restarts until it takes over; the apply fails, with the new slot
     recorded as not yet taken over (`ErrNotTakenOver`). Until that slot's
-    agent says `active`, every apply that moves nothing fails the same way,
-    and one refused for the old slot's drain says so in place of the drain:
+    agent and proxy both run and say `active`, every apply ends in the
+    same failure, judged once after all it repairs (a half-told handover,
+    a stopped slot, a socket not listening) has run, and in place of a
+    refusal for the old slot's drain; a failure of its own is reported as
+    it is, and a handover from it that fails keeps it recorded:
     `units apply` exits `bundle.UnitsTakeOverStalledExitCode` (76), which
     the maker reports as `sandbox.ErrPoolTakeOverStalled` and the server
     records as the pool's reconcile failure, replacing nothing. The old

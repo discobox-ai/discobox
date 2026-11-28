@@ -162,9 +162,9 @@ type state struct {
 	Fingerprint fingerprint `json:"fingerprint"`
 	// TakeOverPending is a handover whose new slot (Slot) did not say it
 	// took over within the wait while the old one drained: until its agent
-	// says it is active, every apply that moves nothing fails with
-	// ErrNotTakenOver, so the pool's maker reports it rather than a pool
-	// that serves.
+	// and proxy both say they are active, every apply ends in
+	// ErrNotTakenOver (takeOverVerdict), so the pool's maker reports it
+	// rather than a pool that serves.
 	TakeOverPending bool `json:"takeOverPending,omitempty"`
 }
 
@@ -192,15 +192,7 @@ func Apply(ctx context.Context, cfg Config) error {
 		return err
 	}
 	defer unlock()
-	err = a.apply(ctx)
-	if err != nil && errors.Is(err, ErrSlotDraining) {
-		// A drain that holds off this apply, while the slot it handed over
-		// to has not taken over, is that stall, not a drain to wait out.
-		if current, readErr := readState(a.cfg.StateFile); readErr == nil && current.TakeOverPending {
-			return fmt.Errorf("%w: slot %s has not taken over (%w)", ErrNotTakenOver, current.Slot, err)
-		}
-	}
-	return err
+	return a.apply(ctx)
 }
 
 // Start starts the slot the box runs, when it is not running: what a socket
@@ -248,6 +240,50 @@ var ErrSlotDraining = errors.New("a slot still drains from the last handover")
 // while the old one drained or has since exited: nothing new reaches the
 // pool until it does, or until an apply with a fixed bundle hands over.
 var ErrNotTakenOver = errors.New("the pool's new agent never took over")
+
+// takeOverVerdict is how an apply ends while a handover's new slot has not
+// taken over (state.TakeOverPending): ErrNotTakenOver, in place of a refusal
+// for the old slot's drain or of success, until that slot's agent and proxy
+// both run and say they are active, which clears it. Any other failure of the
+// apply is its own, and reported as it is.
+func (a *applier) takeOverVerdict(ctx context.Context, err error) error {
+	if err != nil && !errors.Is(err, ErrSlotDraining) {
+		return err
+	}
+	current, readErr := readState(a.cfg.StateFile)
+	if readErr != nil {
+		return errors.Join(err, readErr)
+	}
+	if !current.TakeOverPending {
+		return err
+	}
+	for _, unit := range []string{bundle.AgentUnit(current.Slot), bundle.ProxyUnit(current.Slot)} {
+		running, activeErr := a.active(ctx, unit)
+		if activeErr != nil {
+			return errors.Join(err, activeErr)
+		}
+		status, statusErr := a.status(ctx, unit)
+		if statusErr != nil {
+			return errors.Join(err, statusErr)
+		}
+		if !running || status != handover.StatusActive {
+			cause := fmt.Sprintf("%s says %q", unit, status)
+			if !running {
+				cause = unit + " is not running"
+			}
+			if err != nil {
+				cause += "; " + err.Error()
+			}
+			return fmt.Errorf("%w: slot %s has not taken over: %s", ErrNotTakenOver, current.Slot, cause)
+		}
+	}
+	current.TakeOverPending = false
+	if writeErr := writeState(a.cfg.StateFile, current); writeErr != nil {
+		return errors.Join(err, writeErr)
+	}
+	a.log.Info("the pool's new agent took over", "slot", current.Slot)
+	return err
+}
 
 // startWait bounds how long Start waits out an apply.
 const startWait = 15 * time.Minute
@@ -312,7 +348,7 @@ func (a *applier) awaitSystemd(ctx context.Context) error {
 	}
 }
 
-func (a *applier) apply(ctx context.Context) error {
+func (a *applier) apply(ctx context.Context) (err error) {
 	changed, stale, err := a.render()
 	if err != nil {
 		return err
@@ -338,23 +374,9 @@ func (a *applier) apply(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// A handover whose new slot never said it took over is reported until
-	// it does; one that has since is cleared. An apply that moved something
-	// (a fixed bundle) goes on, and hands over again once it can.
-	if current.TakeOverPending {
-		status, err := a.status(ctx, bundle.AgentUnit(current.Slot))
-		if err != nil {
-			return err
-		}
-		if status == handover.StatusActive {
-			current.TakeOverPending = false
-			if err := writeState(a.cfg.StateFile, current); err != nil {
-				return err
-			}
-		} else if current.Fingerprint == now {
-			return fmt.Errorf("%w: slot %s says %q", ErrNotTakenOver, current.Slot, status)
-		}
-	}
+	// Judged once, after all this apply repairs (a half-told handover, a
+	// stopped slot, a socket not listening) has run.
+	defer func() { err = a.takeOverVerdict(ctx, err) }()
 	// The slots' sockets are bound again when one moved, in this render or
 	// since the last apply recorded them (one refused below), or one is not
 	// listening.
@@ -404,8 +426,11 @@ func (a *applier) apply(ctx context.Context) error {
 	binaryMoved := current.Fingerprint.Binary != now.Binary
 	handedOver := false
 	// A handover that has not taken yet is reported once what the box runs
-	// is recorded: next, while the old slot drains.
+	// is recorded: next, while the old slot drains. A pending one stays
+	// pending while this apply runs that slot on; a restart in place or a
+	// handover that took ends it.
 	var notTakenOver error
+	pending := current.TakeOverPending
 	switch {
 	case stopped || !running:
 		if _, err := a.cfg.Systemctl(ctx, "start", bundle.AgentUnit(slot), bundle.ProxyUnit(slot)); err != nil {
@@ -419,12 +444,14 @@ func (a *applier) apply(ctx context.Context) error {
 		}
 	case a.cfg.HandOver && a.ingressHeld():
 		next := other(slot)
-		serving, err := a.handOver(ctx, slot, next, state{Slot: slot, Fingerprint: current.Fingerprint}, state{Slot: next, Fingerprint: now})
+		serving, err := a.handOver(ctx, slot, next, state{Slot: slot, Fingerprint: current.Fingerprint, TakeOverPending: current.TakeOverPending}, state{Slot: next, Fingerprint: now})
 		if serving == "" {
 			return err
 		}
 		slot, handedOver, notTakenOver = serving, serving == next, err
+		pending = errors.Is(err, ErrNotTakenOver)
 	default:
+		pending = false
 		// One transaction, as before slots: the proxy reads what the agent
 		// writes before it says it is ready.
 		if _, err := a.cfg.Systemctl(ctx, "restart", bundle.AgentUnit(slot), bundle.ProxyUnit(slot)); err != nil {
@@ -434,7 +461,7 @@ func (a *applier) apply(ctx context.Context) error {
 	if err := a.enableOnly(ctx, slot); err != nil {
 		return err
 	}
-	if err := writeState(a.cfg.StateFile, state{Slot: slot, Fingerprint: now, TakeOverPending: errors.Is(notTakenOver, ErrNotTakenOver)}); err != nil {
+	if err := writeState(a.cfg.StateFile, state{Slot: slot, Fingerprint: now, TakeOverPending: pending}); err != nil {
 		return err
 	}
 	mediatorRebound, err := a.rebind(ctx, a.byRole(changed, RoleMediator), []string{bundle.MediatorUnit})
