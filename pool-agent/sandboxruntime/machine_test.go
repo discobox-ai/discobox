@@ -264,7 +264,7 @@ func TestAMachinesFirstPlacementIsAppliedInPlace(t *testing.T) {
 	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_9")); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := f.driver.takeEvents("sbx-9"), []string{"boot", "apply in place"}; !slices.Equal(got, want) {
+	if got, want := f.driver.takeEvents("sbx-9"), []string{"boot", "stop agent", "apply in place"}; !slices.Equal(got, want) {
 		t.Fatalf("create = %v, want %v: one start, provisioned while it runs", got, want)
 	}
 	// Made running by its create (engine.CreateOptions.Start), and not
@@ -313,7 +313,7 @@ func TestARunningMachineMovedOntoANewAgentIsNotRestarted(t *testing.T) {
 	if err := r.EnsureSandboxRunning(ctx, "sbx_m"); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := f.driver.takeEvents("sbx-m"), []string{"apply in place"}; !slices.Equal(got, want) {
+	if got, want := f.driver.takeEvents("sbx-m"), []string{"stop agent", "apply in place"}; !slices.Equal(got, want) {
 		t.Fatalf("a request after the agent moved = %v, want %v: placed while it runs", got, want)
 	}
 	if got := f.agents.get(t, "sbx_m").layer; got != newer {
@@ -330,6 +330,58 @@ func TestARunningMachineMovedOntoANewAgentIsNotRestarted(t *testing.T) {
 	}
 }
 
+// A running machine moved onto a new agent layer stops the agent its earlier
+// placement left before it copies anything, the bootstrap included (ADR
+// 26-11-28-686 §§1, 3). Left running, that agent applies the pins it booted
+// with beside the copy, and its store's sweep removes the new layer while it
+// is extracted, as #1846's repair lost it; not yet started, the bootstrap
+// copied first would start it through its path unit, to the same end.
+func TestAMovedPlacementStopsTheAgentOnTheDiskBeforeItCopies(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// notStarted is a machine whose agent its boot has not started yet.
+		notStarted bool
+	}{
+		{name: "running"},
+		{name: "not started yet", notStarted: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newMachineFixture(t, nil)
+			ctx := context.Background()
+			r := f.runtime
+			if _, err := r.CreateSandbox(ctx, machineCreate("sbx_r")); err != nil {
+				t.Fatal(err)
+			}
+			f.driver.takeEvents("sbx-r")
+			if tc.notStarted {
+				f.agents.stop("sbx-r")
+			}
+			f.driver.oldAgentSweeps = true
+			newer := "sha256:" + strings.Repeat("e", 64)
+			r.agentLayers = &fakeAgentLayers{digest: newer, layer: gzippedAgentLayer(t, "agent-v2")}
+			if err := r.EnsureSandboxRunning(ctx, "sbx_r"); err != nil {
+				t.Fatal(err)
+			}
+			// The bootstrap's copy, then the agent layer's.
+			if got, want := f.driver.takeEvents("sbx-r"), []string{"stop agent", "copy", "copy", "apply in place"}; !slices.Equal(got, want) {
+				t.Fatalf("a placement that moved = %v, want %v: the agent stopped before the first copy, nothing started or swept beside them", got, want)
+			}
+			inst, err := f.owner.Instance(ctx, "sbx-r")
+			if err != nil {
+				t.Fatal(err)
+			}
+			guest, err := r.engine.Guest(ctx, inst)
+			if err != nil {
+				t.Fatal(err)
+			}
+			readMachineFile(t, guest, agentlayer.LayerDir(newer)+"/"+agentlayer.AgentFile)
+			if got := f.agents.get(t, "sbx_r").layer; got != newer {
+				t.Fatalf("the agent runs from %s, want %s", got, newer)
+			}
+		})
+	}
+}
+
 // An apply in place cut short fails the start, which stops the machine and
 // records no placement; the next start boots it and applies in place again,
 // which finishes it (ADR 26-11-23-458 §5): nothing needs a further restart.
@@ -341,7 +393,7 @@ func TestAnApplyInPlaceCutShortIsFinishedByTheNextStart(t *testing.T) {
 	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_c")); err == nil || !strings.Contains(err.Error(), "cut short") {
 		t.Fatalf("create = %v, want the apply's failure", err)
 	}
-	if got, want := f.driver.takeEvents("sbx-c"), []string{"boot", "apply in place"}; !slices.Equal(got, want) {
+	if got, want := f.driver.takeEvents("sbx-c"), []string{"boot", "stop agent", "apply in place"}; !slices.Equal(got, want) {
 		t.Fatalf("create = %v, want %v", got, want)
 	}
 	if _, ok, err := r.readPlaced("sbx_c"); err != nil || ok {
@@ -353,7 +405,7 @@ func TestAnApplyInPlaceCutShortIsFinishedByTheNextStart(t *testing.T) {
 	if err := r.StartSandbox(ctx, "sbx_c", nil); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := f.driver.takeEvents("sbx-c"), []string{"boot", "apply in place"}; !slices.Equal(got, want) {
+	if got, want := f.driver.takeEvents("sbx-c"), []string{"boot", "stop agent", "apply in place"}; !slices.Equal(got, want) {
 		t.Fatalf("the next start = %v, want %v", got, want)
 	}
 	if _, ok, err := r.readPlaced("sbx_c"); err != nil || !ok {
@@ -373,7 +425,7 @@ func TestAMachinePlacedAnAgentThatCannotMountInPlaceIsRestartedOntoIt(t *testing
 	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_o")); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := f.driver.takeEvents("sbx-o"), []string{"boot", "boot"}; !slices.Equal(got, want) {
+	if got, want := f.driver.takeEvents("sbx-o"), []string{"boot", "stop agent", "boot"}; !slices.Equal(got, want) {
 		t.Fatalf("create = %v, want %v: a restart before anything is applied", got, want)
 	}
 	if err := r.StopSandbox(ctx, "sbx_o", nil); err != nil {
@@ -430,7 +482,7 @@ func TestAMachineForcedOffOntoANewAgentLayerIsNotRecordedAsPlacedOnIt(t *testing
 	if err := r.StartSandbox(ctx, "sbx_6", nil); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := f.driver.takeEvents("sbx-6"), []string{"boot", "boot"}; !slices.Equal(got, want) {
+	if got, want := f.driver.takeEvents("sbx-6"), []string{"boot", "stop agent", "boot"}; !slices.Equal(got, want) {
 		t.Fatalf("start onto the newer layer = %v, want %v: a restart onto it", got, want)
 	}
 
@@ -448,7 +500,7 @@ func TestAMachineForcedOffOntoANewAgentLayerIsNotRecordedAsPlacedOnIt(t *testing
 	if err := r.EnsureSandboxRunning(ctx, "sbx_6"); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := f.driver.takeEvents("sbx-6"), []string{"boot"}; !slices.Equal(got, want) {
+	if got, want := f.driver.takeEvents("sbx-6"), []string{"stop agent", "boot"}; !slices.Equal(got, want) {
 		t.Fatalf("next request = %v, want %v: the newer layer placed again and restarted onto", got, want)
 	}
 	if got := f.agents.get(t, "sbx_6").layer; got != newer {
@@ -474,7 +526,7 @@ func TestAForcedFirstPlacementIsRecordedThoughItsAgentNamesNoLayer(t *testing.T)
 	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_8")); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := f.driver.takeEvents("sbx-8"), []string{"boot", "boot"}; !slices.Equal(got, want) {
+	if got, want := f.driver.takeEvents("sbx-8"), []string{"boot", "stop agent", "boot"}; !slices.Equal(got, want) {
 		t.Fatalf("create = %v, want %v", got, want)
 	}
 	if placed, ok, err := r.readPlaced("sbx_8"); err != nil || !ok || placed.Layer != r.agentLayers.(*fakeAgentLayers).digest {
@@ -733,7 +785,7 @@ func TestAMachineCreateNotAskedToStartMakesItStopped(t *testing.T) {
 	if err := r.StartSandbox(ctx, "sbx_s", nil); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := f.driver.takeEvents("sbx-s"), []string{"boot", "apply in place"}; !slices.Equal(got, want) {
+	if got, want := f.driver.takeEvents("sbx-s"), []string{"boot", "stop agent", "apply in place"}; !slices.Equal(got, want) {
 		t.Fatalf("start = %v, want %v", got, want)
 	}
 }
@@ -775,7 +827,7 @@ func TestAMachineMadeRunningWhoseCreateFailsIsStopped(t *testing.T) {
 	if sb.Status != StatusRunning {
 		t.Fatalf("sandbox = %+v after the create again, want running", sb)
 	}
-	if got, want := f.driver.takeEvents("sbx-f"), []string{"boot", "apply in place"}; !slices.Equal(got, want) {
+	if got, want := f.driver.takeEvents("sbx-f"), []string{"boot", "stop agent", "apply in place"}; !slices.Equal(got, want) {
 		t.Fatalf("create again = %v, want %v", got, want)
 	}
 }
@@ -1303,6 +1355,16 @@ type agentDriver struct {
 	// does not wire a running machine in place: asked, it answers its
 	// usage, and the pool restarts the machine onto it.
 	cannotMountInPlace bool
+	// oldAgentSweeps is the agent on a machine's disk applying the pins it
+	// booted with beside a copy, as #1846's did: while it runs, its store's
+	// sweep removes every layer but the one the current link named when the
+	// copy began (bundlestore.Store's collect, ADR 26-11-28-686). Each copy
+	// is recorded, and a bootstrap copied with the agent placed starts it, as
+	// its path unit does, unless that unit was stopped.
+	oldAgentSweeps bool
+	// pathStopped is the machines whose agent's path unit is stopped: by the
+	// pool's stop, until an apply or a boot starts it again.
+	pathStopped map[string]bool
 	// inPlaceFailures is how many applies in place to fail, as one cut short
 	// part way through its mounts fails.
 	inPlaceFailures atomic.Int32
@@ -1384,6 +1446,21 @@ func (d *agentDriver) Create(ctx context.Context, spec machine.InstanceSpec) (ma
 		return machine.Instance{}, errors.Join(err, d.Destroy(context.WithoutCancel(ctx), inst))
 	}
 	return inst, nil
+}
+
+func (d *agentDriver) setPathStopped(name string, stopped bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.pathStopped == nil {
+		d.pathStopped = map[string]bool{}
+	}
+	d.pathStopped[name] = stopped
+}
+
+func (d *agentDriver) isPathStopped(name string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.pathStopped[name]
 }
 
 func (d *agentDriver) record(name, event string) {
@@ -1483,6 +1560,7 @@ func (d *agentDriver) Start(ctx context.Context, inst machine.Instance, opts mac
 		return nil, err
 	}
 	d.record(inst.Name, "boot")
+	d.setPathStopped(inst.Name, false)
 	am := &agentMachine{Machine: m, driver: d, inst: inst}
 	// A machine its agent was placed in, with the link that has systemd start
 	// it, starts it at boot, as its units do.
@@ -1553,6 +1631,13 @@ func (m *agentMachine) Exec(ctx context.Context, req machine.ExecRequest) (machi
 		}
 		return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"true"}})
 	}
+	if slices.Equal(req.Argv, stopAgentCommand) {
+		// The guest's systemd stops the agent: the host's is not asked.
+		m.driver.record(m.inst.Name, "stop agent")
+		m.driver.setPathStopped(m.inst.Name, true)
+		m.driver.agents.stop(m.inst.Name)
+		return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"true"}})
+	}
 	if slices.Equal(req.Argv, mountsInPlaceCommand) {
 		if m.driver.cannotMountInPlace {
 			return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", "exit 2"}})
@@ -1563,8 +1648,10 @@ func (m *agentMachine) Exec(ctx context.Context, req machine.ExecRequest) (machi
 	// agent started below replaces the one running.
 	switch {
 	case slices.Equal(req.Argv, applyCommand):
+		m.driver.setPathStopped(m.inst.Name, false)
 		m.driver.record(m.inst.Name, "apply")
 	case slices.Equal(req.Argv, applyInPlaceCommand):
+		m.driver.setPathStopped(m.inst.Name, false)
 		m.driver.record(m.inst.Name, "apply in place")
 		if m.driver.inPlaceFailures.Add(-1) >= 0 {
 			return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", "echo 'wire sandbox in place: cut short' >&2; exit 1"}})
@@ -1577,6 +1664,52 @@ func (m *agentMachine) Exec(ctx context.Context, req machine.ExecRequest) (machi
 		return nil, err
 	}
 	return &applyProcess{Process: process, machine: m}, nil
+}
+
+// CopyTo copies tree into the guest. With oldAgentSweeps, an agent left
+// running sweeps the layers beside it as the copy lands.
+func (m *agentMachine) CopyTo(ctx context.Context, dst string, tree io.Reader) error {
+	if !m.driver.oldAgentSweeps {
+		return m.Machine.CopyTo(ctx, dst, tree)
+	}
+	process, err := m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", `readlink "$DISCO_VM_GUEST_ROOT` + agentlayer.CurrentLink + `" || true`}})
+	if err != nil {
+		return err
+	}
+	var current strings.Builder
+	if _, err := process.Wait(&current, io.Discard); err != nil {
+		return err
+	}
+	if err := m.Machine.CopyTo(ctx, dst, tree); err != nil {
+		return err
+	}
+	m.driver.record(m.inst.Name, "copy")
+	if !m.driver.agents.running(m.inst.Name) {
+		if m.driver.isPathStopped(m.inst.Name) {
+			return nil
+		}
+		// The path unit starts the agent once its bootstrap lands.
+		process, err := m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", m.agentCheck()}})
+		if err != nil {
+			return err
+		}
+		var bootstrap strings.Builder
+		if code, err := process.Wait(&bootstrap, io.Discard); err != nil || code != 0 || bootstrap.Len() == 0 {
+			return err
+		}
+		m.driver.record(m.inst.Name, "path unit started the agent")
+		return m.startAgent(bootstrap.String())
+	}
+	m.driver.record(m.inst.Name, "old agent swept")
+	sweep := `cd "$DISCO_VM_GUEST_ROOT` + agentlayer.LayersDir + `" 2>/dev/null || exit 0; for d in *; do [ "$d" = "$1" ] || rm -rf "$d"; done`
+	process, err = m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", sweep, "sh", path.Base(strings.TrimSpace(current.String()))}})
+	if err != nil {
+		return err
+	}
+	if code, err := process.Wait(io.Discard, io.Discard); err != nil || code != 0 {
+		return fmt.Errorf("the old agent's sweep: exit %d: %w", code, err)
+	}
+	return nil
 }
 
 func (m *agentMachine) Pause(ctx context.Context) error {
@@ -1660,11 +1793,11 @@ func (m *agentMachine) startAgent(bootstrap string) error {
 		// As the agent does: a token of this start in /run, and the line
 		// naming it on the volume.
 		token := fmt.Sprintf("start-%d", time.Now().UnixNano())
-		if err := m.CopyTo(context.Background(), "/run/discobox", fileTree(nil, "machine-wired", token+"\n")); err != nil {
+		if err := m.Machine.CopyTo(context.Background(), "/run/discobox", fileTree(nil, "machine-wired", token+"\n")); err != nil {
 			return err
 		}
 		line := sandboxconfig.MachineDataWiredLine(cfg.SandboxID, token, !m.driver.workingRootOnRoot) + "\n"
-		if err := m.CopyTo(context.Background(), "/.discobox/data", fileTree(nil, ".discobox-wired", line)); err != nil {
+		if err := m.Machine.CopyTo(context.Background(), "/.discobox/data", fileTree(nil, ".discobox-wired", line)); err != nil {
 			return err
 		}
 	}
@@ -1807,6 +1940,13 @@ func (a *fakeMachineAgents) stop(name string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	delete(a.servers, name)
+}
+
+// running reports whether the machine name's agent runs.
+func (a *fakeMachineAgents) running(name string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.servers[name] != nil
 }
 
 func (a *fakeMachineAgents) get(t *testing.T, sandboxID string) *fakeMachineAgent {
@@ -2246,7 +2386,7 @@ func TestAPlacementAfterAForcedRestartIsRecordedOnceItsAgentAnswers(t *testing.T
 	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_9")); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := f.driver.takeEvents("sbx-9"), []string{"boot", "boot"}; !slices.Equal(got, want) {
+	if got, want := f.driver.takeEvents("sbx-9"), []string{"boot", "stop agent", "boot"}; !slices.Equal(got, want) {
 		t.Fatalf("create = %v, want %v", got, want)
 	}
 	if _, ok, err := r.readPlaced("sbx_9"); err != nil || !ok {

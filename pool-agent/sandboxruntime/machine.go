@@ -1274,7 +1274,9 @@ func (r *MachineSandboxRuntime) agentListenAddress(ctx context.Context, inst mac
 // it was never placed in this instance, or was placed with something else, it
 // asks the agent it placed whether that agent wires a machine in place, and
 // applies with the agent restarted onto what was placed (§4): the machine is
-// started once, and provisioned while it runs.
+// started once, and provisioned while it runs. The agent its earlier
+// placement left running is stopped before anything is copied, so it applies
+// nothing beside the copy (ADR 26-11-28-686).
 //
 // An agent too old to wire in place (§6) would mount the machine's volumes
 // under the services already running on those paths, which only
@@ -1348,6 +1350,16 @@ func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, ins
 			return false, nil, fmt.Errorf("sandbox %s's machine: %w", sandboxID, err)
 		}
 	}
+	moved := !restarted && (!had || placed.Layer != agent.Digest || !samePins(placed.Pins, pins) || placed.Bootstrap != bootstrapDigest)
+	// The agent already on the machine's disk, started by its units at the
+	// boot or by the bootstrap copied below, applies the pins it booted
+	// with, and its store's sweep would remove the new layer while it is
+	// copied: a placement that moved stops it first (ADR 26-11-28-686 §1).
+	if moved {
+		if err := stopPlacedAgent(ctx, guest); err != nil {
+			return false, nil, fmt.Errorf("stop the agent on sandbox %s's machine before placing: %w", sandboxID, err)
+		}
+	}
 	if err := guest.CopyTo(ctx, "/", bootstrapTree(bootstrap, keypair)); err != nil {
 		return false, nil, fmt.Errorf("place sandbox %s's bootstrap: %w", sandboxID, err)
 	}
@@ -1358,7 +1370,6 @@ func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, ins
 		writer.CloseWithError(agentlayer.Archive(writer, agent, restarted || had && placed.Layer == agent.Digest, pins, agentlayer.MachineUnits))
 	}()
 	defer reader.Close()
-	moved := !restarted && (!had || placed.Layer != agent.Digest || !samePins(placed.Pins, pins) || placed.Bootstrap != bootstrapDigest)
 	var result provisioner.Result
 	switch {
 	case moved || restarted:
@@ -1416,6 +1427,49 @@ var applyCommand = []string{agentlayer.AgentPath, "provision", "apply"}
 // the running machine in place, and restarts an agent running on what was
 // placed before onto what was placed now (ADR 26-11-23-458 §§2, 4).
 var applyInPlaceCommand = []string{agentlayer.AgentPath, "provision", "apply", "--restart-agent"}
+
+// stopAgentCommand stops the agent's units in a machine, the two apply's
+// --restart-agent stops (ADR 26-11-28-686 §1). It is the guest's systemd's,
+// so it stops the agent whatever version the disk carries. It runs straight
+// after a start, which may land mid-boot, so it first waits until systemd's
+// bus answers, as awaitSystemdBus does in apply (pool-agent/REVIEW.md, "What
+// runs in a machine straight after engine.Start"). systemctl exits 5 where a
+// unit it was asked to stop is not loaded, and still stops the others: a
+// machine holding neither unit has nothing to stop.
+var stopAgentCommand = []string{"/bin/sh", "-c", `i=0
+until state=$(systemctl is-system-running 2>/dev/null); [ -n "$state" ] && [ "$state" != offline ]; do
+  i=$((i + 1)); [ "$i" -le 240 ] || { echo "systemd did not come up in the machine" >&2; exit 1; }
+  sleep 0.25
+done
+systemctl stop "$@"; code=$?
+[ "$code" -eq 5 ] && exit 0
+exit "$code"`, "sh", agentlayer.AgentStartUnit, agentlayer.AgentServiceUnit}
+
+// stopAgentTimeout bounds stopAgentCommand: a minute for systemd's bus, and
+// more than the agent service's stop timeout, systemd's default of 90s, so
+// systemd's own kill ends a stop that hangs before the pool gives up on it.
+const stopAgentTimeout = 3 * time.Minute
+
+// stopAgentStderrLimit bounds what the pool keeps of the stop's stderr: the
+// guest's binaries are the box's (pool-agent/REVIEW.md, "What the pool reads
+// from a guest is bounded").
+const stopAgentStderrLimit = 4 * 1024
+
+// stopPlacedAgent stops the agent placed in guest before, and the path unit
+// that would start it again once a bootstrap lands.
+func stopPlacedAgent(ctx context.Context, guest machine.Guest) error {
+	ctx, cancel := context.WithTimeout(ctx, stopAgentTimeout)
+	defer cancel()
+	stderr := &tailBuffer{limit: stopAgentStderrLimit}
+	code, err := machine.Run(ctx, guest, machine.ExecRequest{Argv: stopAgentCommand}, nil, io.Discard, stderr)
+	switch {
+	case err != nil:
+		return err
+	case code != 0:
+		return fmt.Errorf("systemctl stop %s %s: exit %d: %s", agentlayer.AgentStartUnit, agentlayer.AgentServiceUnit, code, stderr.message())
+	}
+	return nil
+}
 
 // mountsInPlaceCommand asks the placed agent whether its apply wires a
 // running machine in place (ADR 26-11-23-458 §6): it exits 0 where it does,

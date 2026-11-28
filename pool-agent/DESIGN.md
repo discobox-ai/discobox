@@ -1171,7 +1171,8 @@ flowchart LR
     upgrade --> start
     start --> place{"place: sandbox.json,\nagentlayer.Archive"}
     place -->|"placed as before"| apply["discobox-provision apply:\nnothing to mount"]
-    place -->|"never placed in this instance,\nor placed before with something else"| ask{"placed agent\ncan-mount-in-place?"}
+    place -->|"never placed in this instance,\nor placed before with something else"| stop["stop the agent's units\nbefore the first copy"]
+    stop --> ask{"placed agent\ncan-mount-in-place?"}
     ask -->|yes| inplace["apply --restart-agent:\nwire the running machine in place,\nrestart the agent onto it; recorded"]
     ask -->|"no (an older agent):\nnothing applied or recorded"| restart["restart the machine"]
     restart --> again["place again: nothing applied\n(its agent starts at boot), recorded;\nafter a forced stop, once its agent\nanswers on that layer"]
@@ -1241,7 +1242,17 @@ flowchart LR
   moved — the first placement in an instance (a new root's included), or its
   agent, pins or bootstrap — apply runs with `--restart-agent`: an agent
   running on the placement before is restarted onto this one, ending its
-  terminals, as the machine's restart did. No other service is stopped or
+  terminals, as the machine's restart did. **A placement that moved stops
+  the agent already on the disk before its first copy** ([ADR 26-11-28-686](../docs/adr/26-11-28-686-a-machine-placement-stops-the-agent-already-on-the-disk-before-it-copies.md)):
+  `systemctl stop` on its path unit and service, through the guest
+  (`stopPlacedAgent`, once systemd's bus answers, since it runs straight
+  after a start; neither loaded is nothing to stop). Left running — started
+  at the boot, or by the bootstrap copied first — that agent applies the pins
+  it booted with, and its store's sweep removes the new layer while tar
+  extracts it, since the current link names the old layer until the stream's
+  later entries re-point it (#1846). The stop is systemd's, so it holds for
+  every agent version a disk carries; apply then starts the agent on what was
+  placed. No other service is stopped or
   restarted: since container-runtime state left the declared volumes (ADR
   26-11-23-993), Docker and containerd hold no path the wiring mounts. A moved
   pin restarts the agent, never rebuilds (ADR 26-10-24-953 §1). An apply that

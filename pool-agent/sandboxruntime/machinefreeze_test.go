@@ -499,7 +499,7 @@ func TestAFrozenMachineWhosePlacementMovedIsToldItResumed(t *testing.T) {
 	if err := r.EnsureSandboxRunning(ctx, "sbx_34"); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := f.driver.takeEvents(inst.Name), []string{"resume", "apply in place"}; !slices.Equal(got, want) {
+	if got, want := f.driver.takeEvents(inst.Name), []string{"resume", "stop agent", "apply in place"}; !slices.Equal(got, want) {
 		t.Fatalf("what the use did = %v, want %v", got, want)
 	}
 	requireFrozenRecord(t, r, "sbx_34", false, "placed in place")
