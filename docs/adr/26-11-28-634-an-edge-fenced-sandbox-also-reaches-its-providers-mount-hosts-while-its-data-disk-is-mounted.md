@@ -1,9 +1,10 @@
 # 26-11-28-634 — An edge-fenced sandbox also reaches its provider's mount hosts while its data disk is mounted
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-28
+- Accepted by the owner by merging #1845, 2026-11-28
 - **Issue**: #1828 (found while working on #1754)
-- **Would supersede in part**
+- **Supersedes in part**
   [26-11-16-619](26-11-16-619-a-pool-on-a-driver-with-no-networks-fences-each-sandbox-at-the-providers-edge-and-starts-systemd-in-the-guest.md)
   (its implementation has shipped, so this supersedes rather than amends):
   - §1, guarantee 2's "The allow-list names the host the pool machine is
