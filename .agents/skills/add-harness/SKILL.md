@@ -23,7 +23,8 @@ settings as a harness change to save for every box on the harness
 whatever the CLI writes when it signs in has to be something the export can
 read and a sentinel can stand in for.
 
-Read `harness/DESIGN.md` first, and the closest existing harness end to end.
+Read `harness/DESIGN.md` first, then the closest existing harness end to end,
+starting from its own `harness/<id>/DESIGN.md`.
 `harness/copilot` and `harness/opencode` are the most recent and the most
 commented; `codex-cli` is the reference for an OAuth credential the control
 plane refreshes.
@@ -210,8 +211,11 @@ Every place the last harness touched (find them: `git grep -il <last-id> -- ':!h
 - `.env.example` (`DISCOBOX_HARNESS_<ID>_BUNDLE`).
 - `cli/internal/cli/audit_list.go` `hookPayload`/`hookSummary` if the CLI's
   tool-hook payload has a new shape, with a case in `audit_test.go`.
-- Docs: `harness/DESIGN.md` (driver list, managed layers, updater list,
-  memory, its save-back conversion), `README.md`,
+- Docs: a new `harness/<id>/DESIGN.md`, laid out as its siblings' (image:
+  egress hosts, updater; hooks and canonical names; memory; credentials and
+  settings; launcher), and a `harness/<id>/REVIEW.md` if it has pitfalls of
+  its own; `harness/DESIGN.md` (the driver list and the managed-layers table
+  only: what is particular to one harness never goes there), `README.md`,
   `sandbox-agent/DESIGN.md` (watcher's image list),
   `sandbox-agent/features/core/skills/discobox/SKILL.md` (harness row).
 
