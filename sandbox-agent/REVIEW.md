@@ -984,6 +984,11 @@ user waits on every single start.
   a `Remove` sends while it is serviced: the loop waits on the reply, the
   thread waits on the send, and capture stops for good. Linux's inotify can't
   hit it, so only the `windows` job shows it, as a flake (#1303).
+- **Drop fsnotify watches by path only for a directory renamed away**
+  (`terminal/capture_watch.go` `forwardCaptureEvents`). A removed directory's
+  watches go with it in every backend, and `Remove` resolves a path to
+  whatever directory is there now: handling a late `Remove` event that way
+  after the directory was recreated drops the replacement's watches (#1810).
 
 ## Clearing caches
 
