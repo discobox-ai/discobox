@@ -15507,6 +15507,52 @@ func (o OptSandboxRuntimeSourceDeliveries) Or(d SandboxRuntimeSourceDeliveries) 
 	return d
 }
 
+// NewOptSandboxServicePortProtocol returns new OptSandboxServicePortProtocol with value set to v.
+func NewOptSandboxServicePortProtocol(v SandboxServicePortProtocol) OptSandboxServicePortProtocol {
+	return OptSandboxServicePortProtocol{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxServicePortProtocol is optional SandboxServicePortProtocol.
+type OptSandboxServicePortProtocol struct {
+	Value SandboxServicePortProtocol
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxServicePortProtocol was set.
+func (o OptSandboxServicePortProtocol) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxServicePortProtocol) Reset() {
+	var v SandboxServicePortProtocol
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxServicePortProtocol) SetTo(v SandboxServicePortProtocol) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxServicePortProtocol) Get() (v SandboxServicePortProtocol, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxServicePortProtocol) Or(d SandboxServicePortProtocol) SandboxServicePortProtocol {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxStartedFrom returns new OptSandboxStartedFrom with value set to v.
 func NewOptSandboxStartedFrom(v SandboxStartedFrom) OptSandboxStartedFrom {
 	return OptSandboxStartedFrom{
@@ -29516,12 +29562,17 @@ type SandboxService struct {
 	// The declaring file's own name. It orders the listing, which is what the numeric prefix stripped
 	// from the ID is for.
 	FileName OptString `json:"fileName"`
-	// Ports the declaration says this service serves, in the order it names them - TCP ports, or UDP
-	// ones when the declaration states the udp protocol. A declared port is reported and forwarded
-	// whether or not anything observable is listening on it - it exists for the ports discovery cannot
-	// find, published by a nested container or bound by a socket-activated unit, since discovery only
-	// sees sockets the sandbox user owns.
+	// Each port number the declaration names, once, in the order it first names it, without its
+	// transport. Read declaredPorts, which says which of them are UDP. An answer without declaredPorts
+	// came from an older sandbox agent, which said nothing of its ports' transport; a reader takes them
+	// as TCP.
 	Ports []int64 `json:"ports"`
+	// Ports the declaration says this service serves, in the order it names them, each with its protocol.
+	//  A TCP port and a UDP port with the same number are two entries. A declared port is reported and
+	// forwarded whether or not anything observable is listening on it - it exists for the ports
+	// discovery cannot find, published by a nested container or bound by a socket-activated unit, since
+	// discovery only sees sockets the sandbox user owns.
+	DeclaredPorts []SandboxServicePort `json:"declaredPorts"`
 	// Why this declaration cannot run - a missing shebang, a missing executable bit, a duplicate ID. A
 	// service with a problem is listed rather than dropped, because one that silently fails to appear is
 	// indistinguishable from one nobody declared.
@@ -29577,6 +29628,11 @@ func (s *SandboxService) GetFileName() OptString {
 // GetPorts returns the value of Ports.
 func (s *SandboxService) GetPorts() []int64 {
 	return s.Ports
+}
+
+// GetDeclaredPorts returns the value of DeclaredPorts.
+func (s *SandboxService) GetDeclaredPorts() []SandboxServicePort {
+	return s.DeclaredPorts
 }
 
 // GetProblem returns the value of Problem.
@@ -29654,6 +29710,11 @@ func (s *SandboxService) SetPorts(val []int64) {
 	s.Ports = val
 }
 
+// SetDeclaredPorts sets the value of DeclaredPorts.
+func (s *SandboxService) SetDeclaredPorts(val []SandboxServicePort) {
+	s.DeclaredPorts = val
+}
+
 // SetProblem sets the value of Problem.
 func (s *SandboxService) SetProblem(val OptString) {
 	s.Problem = val
@@ -29698,6 +29759,94 @@ func (*SandboxService) getSandboxServiceRes()     {}
 func (*SandboxService) restartSandboxServiceRes() {}
 func (*SandboxService) startSandboxServiceRes()   {}
 func (*SandboxService) stopSandboxServiceRes()    {}
+
+// One port a service declaration names.
+// Ref: #/components/schemas/SandboxServicePort
+type SandboxServicePort struct {
+	Port int64 `json:"port"`
+	// What the declaration says the port speaks, absent when it states nothing for a TCP port, which is
+	// then probed. udp is a UDP port - named with a /udp suffix, or by a declaration whose protocol is
+	// udp - and every other value is a TCP port, the rule a listening port's protocol follows.
+	Protocol OptSandboxServicePortProtocol `json:"protocol"`
+}
+
+// GetPort returns the value of Port.
+func (s *SandboxServicePort) GetPort() int64 {
+	return s.Port
+}
+
+// GetProtocol returns the value of Protocol.
+func (s *SandboxServicePort) GetProtocol() OptSandboxServicePortProtocol {
+	return s.Protocol
+}
+
+// SetPort sets the value of Port.
+func (s *SandboxServicePort) SetPort(val int64) {
+	s.Port = val
+}
+
+// SetProtocol sets the value of Protocol.
+func (s *SandboxServicePort) SetProtocol(val OptSandboxServicePortProtocol) {
+	s.Protocol = val
+}
+
+// What the declaration says the port speaks, absent when it states nothing for a TCP port, which is
+// then probed. udp is a UDP port - named with a /udp suffix, or by a declaration whose protocol is
+// udp - and every other value is a TCP port, the rule a listening port's protocol follows.
+type SandboxServicePortProtocol string
+
+const (
+	SandboxServicePortProtocolHTTP  SandboxServicePortProtocol = "http"
+	SandboxServicePortProtocolHTTPS SandboxServicePortProtocol = "https"
+	SandboxServicePortProtocolTCP   SandboxServicePortProtocol = "tcp"
+	SandboxServicePortProtocolUDP   SandboxServicePortProtocol = "udp"
+)
+
+// AllValues returns all SandboxServicePortProtocol values.
+func (SandboxServicePortProtocol) AllValues() []SandboxServicePortProtocol {
+	return []SandboxServicePortProtocol{
+		SandboxServicePortProtocolHTTP,
+		SandboxServicePortProtocolHTTPS,
+		SandboxServicePortProtocolTCP,
+		SandboxServicePortProtocolUDP,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxServicePortProtocol) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxServicePortProtocolHTTP:
+		return []byte(s), nil
+	case SandboxServicePortProtocolHTTPS:
+		return []byte(s), nil
+	case SandboxServicePortProtocolTCP:
+		return []byte(s), nil
+	case SandboxServicePortProtocolUDP:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxServicePortProtocol) UnmarshalText(data []byte) error {
+	switch SandboxServicePortProtocol(data) {
+	case SandboxServicePortProtocolHTTP:
+		*s = SandboxServicePortProtocolHTTP
+		return nil
+	case SandboxServicePortProtocolHTTPS:
+		*s = SandboxServicePortProtocolHTTPS
+		return nil
+	case SandboxServicePortProtocolTCP:
+		*s = SandboxServicePortProtocolTCP
+		return nil
+	case SandboxServicePortProtocolUDP:
+		*s = SandboxServicePortProtocolUDP
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 // Service state, derived from the exec running it. stopped covers both a
 // service that has never run and one stopped on request; exited is a

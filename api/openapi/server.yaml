@@ -2718,10 +2718,15 @@ components:
                     description: The declaring file's own name. It orders the listing, which is what the numeric prefix stripped from the ID is for.
                     type: string
                 ports:
-                    description: Ports the declaration says this service serves, in the order it names them - TCP ports, or UDP ones when the declaration states the udp protocol. A declared port is reported and forwarded whether or not anything observable is listening on it - it exists for the ports discovery cannot find, published by a nested container or bound by a socket-activated unit, since discovery only sees sockets the sandbox user owns.
+                    description: Each port number the declaration names, once, in the order it first names it, without its transport. Read declaredPorts, which says which of them are UDP. An answer without declaredPorts came from an older sandbox agent, which said nothing of its ports' transport; a reader takes them as TCP.
                     items:
                         format: int64
                         type: integer
+                    type: array
+                declaredPorts:
+                    description: Ports the declaration says this service serves, in the order it names them, each with its protocol. A TCP port and a UDP port with the same number are two entries. A declared port is reported and forwarded whether or not anything observable is listening on it - it exists for the ports discovery cannot find, published by a nested container or bound by a socket-activated unit, since discovery only sees sockets the sandbox user owns.
+                    items:
+                        $ref: '#/components/schemas/SandboxServicePort'
                     type: array
                 problem:
                     description: Why this declaration cannot run - a missing shebang, a missing executable bit, a duplicate ID. A service with a problem is listed rather than dropped, because one that silently fails to appear is indistinguishable from one nobody declared.
@@ -2763,6 +2768,24 @@ components:
                 - id
                 - name
                 - status
+            type: object
+        SandboxServicePort:
+            additionalProperties: false
+            description: One port a service declaration names.
+            properties:
+                port:
+                    format: int64
+                    type: integer
+                protocol:
+                    description: What the declaration says the port speaks, absent when it states nothing for a TCP port, which is then probed. udp is a UDP port - named with a /udp suffix, or by a declaration whose protocol is udp - and every other value is a TCP port, the rule a listening port's protocol follows.
+                    enum:
+                        - http
+                        - https
+                        - tcp
+                        - udp
+                    type: string
+            required:
+                - port
             type: object
         SandboxServicesResponse:
             additionalProperties: false

@@ -492,6 +492,35 @@ func TestAUDPDeclarationDoesNotShadowTheTCPPortOfItsNumber(t *testing.T) {
 	}
 }
 
+// One declaration may name the TCP and the UDP port of one number, the way
+// `discobox proxy --port` spells it: a suffix sets that port's transport, and
+// protocol: stays the default for the ports without one.
+func TestOneDeclarationNamesTheTCPAndUDPPortOfANumber(t *testing.T) {
+	manager, _, root := newTestManager(t)
+	writeService(t, root, "10-dns.sh", "#!/bin/bash\n#---\n# ports: 53, 53/udp\n#---\nexec up\n", 0o755)
+
+	defs, err := manager.discover()
+	if err != nil {
+		t.Fatalf("discover: %v", err)
+	}
+	if len(defs) != 1 || defs[0].Problem != "" {
+		t.Fatalf("definitions = %+v, want one runnable dns declaration", defs)
+	}
+	declared, err := manager.Declarations()
+	if err != nil {
+		t.Fatalf("declared ports: %v", err)
+	}
+	if len(declared) != 2 {
+		t.Fatalf("declared = %+v, want tcp 53 and udp 53", declared)
+	}
+	if declared[0].Port != 53 || declared[0].Protocol != portspkg.ProtocolUnknown {
+		t.Errorf("first = %+v, want tcp 53, probed", declared[0])
+	}
+	if declared[1].Port != 53 || declared[1].Protocol != portspkg.ProtocolUDP {
+		t.Errorf("second = %+v, want udp 53", declared[1])
+	}
+}
+
 func TestDeclaredPortsWithNoDeclarations(t *testing.T) {
 	manager, _, _ := newTestManager(t)
 	ports, err := manager.Declarations()

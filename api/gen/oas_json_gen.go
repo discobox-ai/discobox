@@ -22862,6 +22862,39 @@ func (s *OptSandboxRuntimeSourceDeliveries) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes SandboxServicePortProtocol as json.
+func (o OptSandboxServicePortProtocol) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes SandboxServicePortProtocol from json.
+func (o *OptSandboxServicePortProtocol) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxServicePortProtocol to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxServicePortProtocol) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxServicePortProtocol) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SandboxStartedFrom as json.
 func (o OptSandboxStartedFrom) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -48877,6 +48910,16 @@ func (s *SandboxService) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.DeclaredPorts != nil {
+			e.FieldStart("declaredPorts")
+			e.ArrStart()
+			for _, elem := range s.DeclaredPorts {
+				elem.Encode(e)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
 		if s.Problem.Set {
 			e.FieldStart("problem")
 			s.Problem.Encode(e)
@@ -48924,7 +48967,7 @@ func (s *SandboxService) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxService = [15]string{
+var jsonFieldsNameOfSandboxService = [16]string{
 	0:  "observedAt",
 	1:  "id",
 	2:  "name",
@@ -48932,14 +48975,15 @@ var jsonFieldsNameOfSandboxService = [15]string{
 	4:  "path",
 	5:  "fileName",
 	6:  "ports",
-	7:  "problem",
-	8:  "status",
-	9:  "execId",
-	10: "pid",
-	11: "exitCode",
-	12: "startedAt",
-	13: "exitedAt",
-	14: "error",
+	7:  "declaredPorts",
+	8:  "problem",
+	9:  "status",
+	10: "execId",
+	11: "pid",
+	12: "exitCode",
+	13: "startedAt",
+	14: "exitedAt",
+	15: "error",
 }
 
 // Decode decodes SandboxService from json.
@@ -49034,6 +49078,23 @@ func (s *SandboxService) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"ports\"")
 			}
+		case "declaredPorts":
+			if err := func() error {
+				s.DeclaredPorts = make([]SandboxServicePort, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem SandboxServicePort
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.DeclaredPorts = append(s.DeclaredPorts, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"declaredPorts\"")
+			}
 		case "problem":
 			if err := func() error {
 				s.Problem.Reset()
@@ -49045,7 +49106,7 @@ func (s *SandboxService) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"problem\"")
 			}
 		case "status":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				if err := s.Status.Decode(d); err != nil {
 					return err
@@ -49125,7 +49186,7 @@ func (s *SandboxService) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b00000110,
-		0b00000001,
+		0b00000010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -49167,6 +49228,163 @@ func (s *SandboxService) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxService) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SandboxServicePort) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SandboxServicePort) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("port")
+		e.Int64(s.Port)
+	}
+	{
+		if s.Protocol.Set {
+			e.FieldStart("protocol")
+			s.Protocol.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSandboxServicePort = [2]string{
+	0: "port",
+	1: "protocol",
+}
+
+// Decode decodes SandboxServicePort from json.
+func (s *SandboxServicePort) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxServicePort to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "port":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Int64()
+				s.Port = int64(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"port\"")
+			}
+		case "protocol":
+			if err := func() error {
+				s.Protocol.Reset()
+				if err := s.Protocol.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"protocol\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxServicePort")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSandboxServicePort) {
+					name = jsonFieldsNameOfSandboxServicePort[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SandboxServicePort) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxServicePort) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SandboxServicePortProtocol as json.
+func (s SandboxServicePortProtocol) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SandboxServicePortProtocol from json.
+func (s *SandboxServicePortProtocol) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxServicePortProtocol to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SandboxServicePortProtocol(v) {
+	case SandboxServicePortProtocolHTTP:
+		*s = SandboxServicePortProtocolHTTP
+	case SandboxServicePortProtocolHTTPS:
+		*s = SandboxServicePortProtocolHTTPS
+	case SandboxServicePortProtocolTCP:
+		*s = SandboxServicePortProtocolTCP
+	case SandboxServicePortProtocolUDP:
+		*s = SandboxServicePortProtocolUDP
+	default:
+		*s = SandboxServicePortProtocol(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxServicePortProtocol) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxServicePortProtocol) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

@@ -3501,7 +3501,9 @@ The discobox starts them when it boots; these commands inspect and control them 
 A declaration may name the ports it serves (ports: 8080, 5432). Those are forwarded
 whether or not the discobox sees anything listening on them, which is what covers a port
 it cannot discover on its own: one published by a nested container, or bound by a
-socket-activated unit, is root's socket rather than your user's.
+socket-activated unit, is root's socket rather than your user's. A port is TCP
+unless it says 53/udp, or the declaration says protocol: udp; ports: 53, 53/udp
+names both of one number.
 ~~~~
 
 ```text

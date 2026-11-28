@@ -48,3 +48,36 @@ func TestServiceListingIsTerminalSafe(t *testing.T) {
 		t.Errorf("table should show the name and problem escaped:\n%s", table)
 	}
 }
+
+// The ports column writes a TCP port bare and a UDP one as N/udp, the
+// spelling it is declared and forwarded with. An answer without declaredPorts
+// came from an older agent, live or through a stopped box's inventory, which
+// said nothing of its ports' transport, so they are written bare.
+func TestServicePortsColumnNamesEachPortsTransport(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		service apimodel.SandboxService
+		want    string
+	}{
+		"declared": {
+			service: apimodel.SandboxService{
+				Ports: []int64{53, 8080},
+				DeclaredPorts: []apimodel.SandboxServicePort{
+					{Port: 53},
+					{Port: 53, Protocol: apiclientgen.NewOptSandboxServicePortProtocol(apiclientgen.SandboxServicePortProtocolUDP)},
+					{Port: 8080, Protocol: apiclientgen.NewOptSandboxServicePortProtocol(apiclientgen.SandboxServicePortProtocolHTTP)},
+				},
+			},
+			want: "53,53/udp,8080",
+		},
+		"older agent": {
+			service: apimodel.SandboxService{Ports: []int64{53, 8080}},
+			want:    "53,8080",
+		},
+		"none": {want: ""},
+	} {
+		if got := sandboxServicePorts(tc.service); got != tc.want {
+			t.Errorf("%s: ports column = %q, want %q", name, got, tc.want)
+		}
+	}
+}

@@ -1,13 +1,14 @@
 # 26-11-24-806 — A declared port may name its transport, and the services API reports each port's
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-24
+- Accepted by the owner by merging #1655, 2026-11-25
 - **Issue**: #23
-- **Would supersede in part**: [0109](0109-a-bound-udp-port-is-listed-and-forwarded-as-datagrams.md)
+- **Supersedes in part**: [0109](0109-a-bound-udp-port-is-listed-and-forwarded-as-datagrams.md)
   §2's "a declaration names one transport for all its ports, so a service
   serving both takes a second declaration, with `start: never`, for its UDP
   side". The rest of 0109 stands.
-- **Would narrow**: [26-09-05-409](26-09-05-409-an-image-declares-services-in-the-format-a-repository-does.md)
+- **Narrows**: [26-09-05-409](26-09-05-409-an-image-declares-services-in-the-format-a-repository-does.md)
   §2. `protocol:` becomes the declaration's default for the ports that do not
   name a transport, instead of a statement about every port it names.
 - **Relates to**: [0076](0076-a-service-may-declare-a-port-discovery-cannot-see.md)

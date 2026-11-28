@@ -102,6 +102,7 @@ var yamlOwnedEnums = map[string]string{
 	"SandboxTool.layer":                  "the sandbox's two declaration directories, owned by the root tools package; no model stores it (ADR 0125)",
 	"SandboxExec.status":                 "exec lifecycle is owned by the sandbox-agent",
 	"SandboxService.status":              "service state is derived by the sandbox-agent from the exec running a repository-declared service (ADR 0070); the server stores nothing about services",
+	"SandboxServicePort.protocol":        "a declaration's stated protocol, read by the sandbox-agent from the service's front matter (ADR 26-11-24-806); the server stores nothing about services",
 	"SandboxAgentProgramStatus.state":    "OSC 7501's vocabulary, owned by the root programstatus package and reported by the sandbox-agent (ADR 26-10-16-424); the server stores AgentStatus as opaque JSON",
 	"SandboxAgentProgramStatus.kind":     "OSC 7501's vocabulary, owned by the root programstatus package and reported by the sandbox-agent (ADR 26-10-16-424); the server stores AgentStatus as opaque JSON",
 	"SandboxExecWaitProgramState.state":  "OSC 7501's vocabulary, owned by the root programstatus package; a terminal wait the sandbox-agent serves and the server only proxies (ADR 26-11-04-204 §5)",

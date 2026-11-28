@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -186,7 +187,7 @@ func TestDiscoverReadsDeclaredPorts(t *testing.T) {
 	}
 	want := [][]int{{8080, 5432}, {9000, 9001, 9002}, {3000}, nil}
 	for i, def := range defs {
-		if !equalInts(def.Ports, want[i]) {
+		if !equalInts(portNumbers(def.Ports), want[i]) {
 			t.Errorf("%s ports = %v, want %v", def.FileName, def.Ports, want[i])
 		}
 		if !def.Runnable() {
@@ -213,6 +214,92 @@ func TestDiscoverRejectsAPortThatIsNotOne(t *testing.T) {
 		if len(def.Ports) != 0 {
 			t.Errorf("%s ports = %v, want none kept from a rejected list", def.FileName, def.Ports)
 		}
+	}
+}
+
+// portNumbers is the port numbers alone, in the order the file names them.
+func portNumbers(declared []Port) []int {
+	var out []int
+	for _, port := range declared {
+		out = append(out, port.Number)
+	}
+	return out
+}
+
+// A port may name its transport with a suffix, the spelling `discobox proxy
+// --port` takes, and protocol: is the default for the ports that do not
+// (ADR 26-11-24-806 §§1-2).
+func TestDiscoverReadsEachPortsTransport(t *testing.T) {
+	root := t.TempDir()
+	writeService(t, root, "10-dns.sh", "#!/bin/bash\n#---\n# ports: 53, 53/UDP 53/tcp\n#---\nexec up\n", 0o755)
+	writeService(t, root, "20-default-udp.sh", "#!/bin/bash\n#---\n# ports: [5353, 8053/tcp]\n# protocol: udp\n#---\nexec up\n", 0o755)
+	writeService(t, root, "30-stated.sh", "#!/bin/bash\n#---\n# ports: 8080, 8443/udp, 8081/tcp\n# protocol: http\n#---\nexec up\n", 0o755)
+
+	defs, err := Discover("", root)
+	if err != nil {
+		t.Fatalf("discover: %v", err)
+	}
+	want := [][]Port{
+		// 53 and 53/tcp are one port; 53/udp is another.
+		{{Number: 53}, {Number: 53, Protocol: "udp"}},
+		// protocol: udp makes an unsuffixed port UDP, and a /tcp port is a TCP
+		// port with nothing stated, so it is probed.
+		{{Number: 5353, Protocol: "udp"}, {Number: 8053}},
+		// A stated protocol is every TCP port's; a UDP port's is udp.
+		{{Number: 8080, Protocol: "http"}, {Number: 8443, Protocol: "udp"}, {Number: 8081, Protocol: "http"}},
+	}
+	if len(defs) != len(want) {
+		t.Fatalf("defs = %+v, want %d", defs, len(want))
+	}
+	for i, def := range defs {
+		if !def.Runnable() {
+			t.Errorf("%s problem = %q, want none", def.FileName, def.Problem)
+		}
+		if !slices.Equal(def.Ports, want[i]) {
+			t.Errorf("%s ports = %+v, want %+v", def.FileName, def.Ports, want[i])
+		}
+	}
+}
+
+// A suffix that is not a transport fails the declaration, as a non-number
+// does, rather than being read as TCP.
+func TestDiscoverRejectsASuffixThatIsNotATransport(t *testing.T) {
+	root := t.TempDir()
+	writeService(t, root, "10-typo.sh", "#!/bin/bash\n#---\n# ports: 53, 53/upd\n#---\nexec up\n", 0o755)
+	writeService(t, root, "20-protocol.sh", "#!/bin/bash\n#---\n# ports: 8080/http\n#---\nexec up\n", 0o755)
+	writeService(t, root, "30-bare.sh", "#!/bin/bash\n#---\n# ports: /udp\n#---\nexec up\n", 0o755)
+	writeService(t, root, "40-slash.sh", "#!/bin/bash\n#---\n# ports: 53/\n#---\nexec up\n", 0o755)
+
+	defs, err := Discover("", root)
+	if err != nil {
+		t.Fatalf("discover: %v", err)
+	}
+	for _, def := range defs {
+		if def.Runnable() || len(def.Ports) != 0 {
+			t.Errorf("%s = %+v, want a reported problem and no ports", def.FileName, def)
+		}
+	}
+	if !strings.Contains(defs[0].Problem, `"upd" is not tcp or udp`) {
+		t.Errorf("problem = %q, want it to name the suffix", defs[0].Problem)
+	}
+}
+
+// A protocol: that is not one fails the declaration, but its ports stand, as a
+// refused declaration's do: with no default to take, an unsuffixed port is a
+// TCP port that is probed, and a suffixed one keeps its transport.
+func TestAnUnknownProtocolKeepsTheDeclarationsPorts(t *testing.T) {
+	root := t.TempDir()
+	writeService(t, root, "10-typo.sh", "#!/bin/bash\n#---\n# ports: 53, 53/udp\n# protocol: upd\n#---\nexec up\n", 0o755)
+
+	defs, err := Discover("", root)
+	if err != nil {
+		t.Fatalf("discover: %v", err)
+	}
+	if len(defs) != 1 || defs[0].Runnable() || !strings.Contains(defs[0].Problem, `protocol: "upd"`) {
+		t.Fatalf("defs = %+v, want one declaration refused for its protocol", defs)
+	}
+	if want := []Port{{Number: 53}, {Number: 53, Protocol: "udp"}}; !slices.Equal(defs[0].Ports, want) {
+		t.Errorf("ports = %+v, want %+v", defs[0].Ports, want)
 	}
 }
 
@@ -265,7 +352,7 @@ func TestADeclarationThatStartsNothingIsNotBroken(t *testing.T) {
 	if def.Start != StartNever {
 		t.Fatalf("start = %q, want %q", def.Start, StartNever)
 	}
-	if def.Protocol != "http" || len(def.Ports) != 1 || def.Ports[0] != 6900 {
+	if def.Protocol != "http" || len(def.Ports) != 1 || def.Ports[0].Number != 6900 {
 		t.Fatalf("unexpected declaration: %+v", def)
 	}
 	if !def.Builtin {
@@ -292,7 +379,7 @@ func TestAYAMLDeclarationStartsNothing(t *testing.T) {
 	if desktop.ID != "desktop" || desktop.Problem != "" || desktop.Start != StartNever || desktop.Runnable() {
 		t.Fatalf("desktop = %+v, want a problem-free declaration that starts never", desktop)
 	}
-	if len(desktop.Ports) != 1 || desktop.Ports[0] != 6900 || desktop.Protocol != "http" {
+	if len(desktop.Ports) != 1 || desktop.Ports[0].Number != 6900 || desktop.Protocol != "http" {
 		t.Fatalf("desktop ports = %v, protocol %q", desktop.Ports, desktop.Protocol)
 	}
 	if api.ID != "api" || !strings.Contains(api.Problem, ".yaml") {
@@ -367,7 +454,7 @@ func TestBothDirectoriesAreReadAndTheRepositoryWinsOnAnID(t *testing.T) {
 		t.Fatalf("image declarations must come first, got %v", order)
 	}
 	shared := byID["shared"]
-	if shared.Builtin || len(shared.Ports) != 1 || shared.Ports[0] != 9999 {
+	if shared.Builtin || len(shared.Ports) != 1 || shared.Ports[0].Number != 9999 {
 		t.Fatalf("the repository declaration did not win on the shared id: %+v", shared)
 	}
 }
@@ -456,7 +543,7 @@ func TestTheDiscoboxNamespaceIsReservedForTheImage(t *testing.T) {
 	if !desktop.Builtin {
 		t.Fatalf("%q is the repository's declaration, not the image's: %+v", sandboxservices.DesktopID, *desktop)
 	}
-	if len(desktop.Ports) != 1 || desktop.Ports[0] != 6900 {
+	if len(desktop.Ports) != 1 || desktop.Ports[0].Number != 6900 {
 		t.Fatalf("the desktop's ports = %v, want the image's 6900", desktop.Ports)
 	}
 
@@ -526,7 +613,7 @@ func TestTheShippedDesktopDeclarationIsValid(t *testing.T) {
 	// The two fields the whole arrangement rests on: without the port it is
 	// invisible to discovery, and without the protocol it gets probed — and
 	// probing a socket-activated port is what starts it.
-	if len(desktop.Ports) != 1 || desktop.Ports[0] != 6900 {
+	if len(desktop.Ports) != 1 || desktop.Ports[0].Number != 6900 {
 		t.Fatalf("ports = %v, want [6900]", desktop.Ports)
 	}
 	if desktop.Protocol != "http" {
