@@ -2,7 +2,11 @@ package sandboxcreate
 
 import (
 	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -199,7 +203,7 @@ func TestAddSkillsSourcesFilesBesideTheGivenReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := AddSkillsSources(context.Background(), &config, args.Repositories); err != nil {
+	if err := AddSkillsSources(context.Background(), &config, args.Repositories, nil); err != nil {
 		t.Fatalf("add skills sources: %v", err)
 	}
 	references, _ := config.SourceCodeReferences.Get()
@@ -218,7 +222,7 @@ func TestAddSkillsSourcesFilesBesideTheGivenReferences(t *testing.T) {
 	config = apimodel.SandboxCreateConfig{Name: "box"}
 	config.SetSourceCodeReferences(apiclientgen.NewOptSandboxCreateConfigSourceCodeReferences(
 		apiclientgen.SandboxCreateConfigSourceCodeReferences{key: given}))
-	if err := AddSkillsSources(context.Background(), &config, args.Repositories); err == nil {
+	if err := AddSkillsSources(context.Background(), &config, args.Repositories, nil); err == nil {
 		t.Fatal("add skills sources onto an occupied directory: nil, want a refusal")
 	}
 }
@@ -318,5 +322,36 @@ func TestProjectSkillsRepositoryRefusesWhatTheServerShouldHave(t *testing.T) {
 		if _, err := ProjectSkillsRepository(tc.url, tc.ref, tc.dir); err == nil || !strings.Contains(err.Error(), "the project's skills source") {
 			t.Errorf("ProjectSkillsRepository(%q, %q, %q) = %v, want a refusal naming the project's entry", tc.url, tc.ref, tc.dir, err)
 		}
+	}
+}
+
+// `admin box create` has no window: a skills repository that git cannot look
+// up without asking runs through the handoff its caller gives, which there is
+// the terminal as it is.
+func TestAddSkillsSourcesHandsALookupThatMustAskToItsCaller(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	t.Setenv("GIT_ASKPASS", "")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	args, err := SplitSkills([]string{server.URL + "/o/skills.git//skills"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var handed int
+	runGit := func(_ context.Context, cmd *exec.Cmd) error {
+		handed++
+		_, _ = cmd.Stderr.Write([]byte("fatal: Authentication failed\n"))
+		return errors.New("exit status 128")
+	}
+	var config apimodel.SandboxCreateConfig
+	if err := AddSkillsSources(context.Background(), &config, args.Repositories, runGit); err == nil {
+		t.Fatal("a skills repository nobody gave a credential for was added")
+	}
+	if handed != 1 {
+		t.Fatalf("lookups handed to the caller = %d, want 1", handed)
 	}
 }

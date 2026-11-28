@@ -1285,6 +1285,12 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 	if err != nil {
 		return tui.Sandbox{}, err
 	}
+	// A remote source git cannot look up without asking gets the terminal the
+	// way lending's credential fill does: the window steps aside while git
+	// asks. Nobody is asked in an operation that asks nothing.
+	if !sandboxgit.Noninteractive(ctx) {
+		opts.RunGit = req.Credentials.Run
+	}
 	if opts.Bindings, err = sandboxcreate.ParseBindings(req.Bind, req.Delegate); err != nil {
 		return tui.Sandbox{}, err
 	}

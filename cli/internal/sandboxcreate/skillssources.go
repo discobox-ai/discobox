@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
@@ -213,7 +214,10 @@ func setSkillsSources(ctx context.Context, config *apimodel.SandboxCreateConfig,
 // the references already on it, refusing one that lands where one of them
 // is. A skills source is a remote URL, so nothing local is left to deliver
 // from.
-func AddSkillsSources(ctx context.Context, config *apimodel.SandboxCreateConfig, repos []SkillsRepository) error {
+//
+// runGit is as PromptOptions.RunGit: a skills repository's lookup that must
+// ask runs through it, and with none git's own prompt is off.
+func AddSkillsSources(ctx context.Context, config *apimodel.SandboxCreateConfig, repos []SkillsRepository, runGit func(context.Context, *exec.Cmd) error) error {
 	if len(repos) == 0 {
 		return nil
 	}
@@ -237,7 +241,7 @@ func AddSkillsSources(ctx context.Context, config *apimodel.SandboxCreateConfig,
 	defer local.Close()
 	lookupCtx, endLookups := context.WithCancel(ctx)
 	defer endLookups()
-	remote := newRemoteRefs(lookupCtx)
+	remote := newRemoteRefs(lookupCtx, runGit)
 	for _, repo := range repos {
 		remote.prefetch(repo.Source.String())
 	}

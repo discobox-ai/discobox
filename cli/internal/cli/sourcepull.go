@@ -15,11 +15,7 @@ func credentialDeliveryOptions(cmd *cobra.Command, status *statusLine) sandboxcr
 	policy, path := sandboxcreate.GitCredentialPolicy(cmd.Context())
 	options := sandboxcreate.DeliveryOptions{Credentials: policy, ConfigPath: path}
 	if canAskInline(cmd) && !sandboxgit.Noninteractive(cmd.Context()) {
-		options.RunCredential = func(_ context.Context, process *exec.Cmd) error {
-			defer status.suspend()()
-			process.Stderr = cmd.ErrOrStderr()
-			return process.Run()
-		}
+		options.RunCredential = inlineGitHandoff(cmd, status)
 		options.ConfirmCredential = func(_ context.Context, remote string) (bool, error) {
 			defer status.suspend()()
 			choice, err := pickOne(cmd, terminalSafe(remote)+" needs credentials to pull on the pool.", []pickerItem{{id: "lend", title: sandboxcreate.GitLendLabel, explanation: sandboxcreate.GitLendExplanation}, {id: "push", title: sandboxcreate.GitLocalLabel, explanation: sandboxcreate.GitLocalExplanation}}, pickerOptions{empty: "no choice to make", ambiguous: "choose --git-credentials=lend or --git-credentials=local"})
@@ -27,6 +23,20 @@ func credentialDeliveryOptions(cmd *cobra.Command, status *statusLine) sandboxcr
 		}
 	}
 	return options
+}
+
+// inlineGitHandoff runs a git command that may ask on the terminal with the
+// status line paused, so git's question and its answer are the only things on
+// it. Git asks on /dev/tty; its messages go to the command's stderr unless the
+// caller captures them.
+func inlineGitHandoff(cmd *cobra.Command, status *statusLine) func(context.Context, *exec.Cmd) error {
+	return func(_ context.Context, process *exec.Cmd) error {
+		defer status.suspend()()
+		if process.Stderr == nil {
+			process.Stderr = cmd.ErrOrStderr()
+		}
+		return process.Run()
+	}
 }
 
 // An explicit console choice lasts until exit; saved defaults are read again

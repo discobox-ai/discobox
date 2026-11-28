@@ -15,6 +15,7 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxgit"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
@@ -414,6 +415,13 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	// directory in no repository is copied.
 	if !opts.fromJSON {
 		opts.prompt.ConfirmCopyDirectory = confirmCopyDirectory(cmd, status)
+	}
+	// A remote source git cannot look up without asking is asked about on the
+	// terminal, with the status line out of the way; with no terminal to ask
+	// on, git asks nothing and the run fails naming how to give it a
+	// credential.
+	if canAskInline(cmd) && !sandboxgit.Noninteractive(cmd.Context()) {
+		opts.prompt.RunGit = inlineGitHandoff(cmd, status)
 	}
 	opts.prompt.SkipDeclaredSources = !opts.declaredSources
 	opts.prompt.ReportDeclaredSource = reportDeclaredSource(notes)
