@@ -12,8 +12,8 @@
     guarantee 2 (DNS closed, Archil's resolvers denied) and guarantees 1, 3
     and 4 stand.
   - Context's "A guest with a data disk holds that disk's mount token,
-    readable by root", and the Open item on replaying that token. The guest
-    holds no mount token (§2).
+    readable by root", and the Open item on replaying that token. No mount
+    token was found in the guest (§2).
 - **Relates to**:
   - [26-11-24-077](26-11-24-077-disco-vm-holds-a-pool-discobox-asks-for-its-host-and-members-and-the-driver-fences-them.md)
     (Proposed), whose archil row restates guarantee 2 as "the host's public
@@ -61,19 +61,31 @@ disks:
   nothing.
 - With a disk's own token, minted through Archil's API outside the guest and
   copied in by hand, the fenced guest mounted that disk read-write. The
-  token opens the one disk it was minted for. The mount host is regional
-  and names no account. Other regions' mount servers were reachable too, up
-  to their authorization refusal.
+  mount host is regional and names no account. Other regions' mount servers
+  were reachable too, up to their authorization refusal.
 - A `deny` of a host takes precedence over Archil's allows, so another
   region's mount host can be denied. Within a region, nothing narrower is
   possible.
-- Not tried: a token for a disk of another Archil account.
+- Not tried: one disk's token against another disk, and a token for a disk
+  of another Archil account. Whether a token is scoped to its disk is not
+  known. 619's spike saw a token taken from one sandbox fail authorization
+  in another, which suggests a binding but tests something else.
 
 **The mount token.** 619's Context says a guest with a data disk holds that
-disk's mount token, readable by root. Checked on 2026-11-23 and found false
-(discobox-ai/vm#216): Archil's client mounts the disk from outside the
-namespaces the guest runs in, and no token is visible in them. disco-vm's
-archil driver documents this under `Bare` (`docs/drivers/archil.md`).
+disk's mount token, readable by root. Checked on 2026-11-23 (discobox-ai/vm#216;
+Archil client version 1006, `debian:sid`, two VMs, as root) and not found:
+- no token in any file under `/run`, `/etc`, `/var/lib` or `/root`, nor in
+  the environment, and `archil status` and the CLI print none;
+- `archil mount` from inside the guest fails for want of a token, for its own
+  disk as for another VM's;
+- Archil's client mounts the disk from outside the namespaces guest
+  operations run in (systemd's, 619 §4), from a handshake its log says was
+  baked in.
+
+What was not checked: whether the guest's root can reach the client's
+process or namespace and read a token from it, and whether a later client
+version or another base differs. disco-vm's archil driver documents the
+finding under `Bare` (`docs/drivers/archil.md`).
 
 ## Decision
 
@@ -97,7 +109,7 @@ provider adds for that mount. On archil those are `mount.*.archil.com` and
 **Why it is accepted:**
 - The hosts are the provider's, needed to mount the disk, and cannot be
   removed.
-- The guest holds no credential they accept (§2). A guest reaches a disk
+- No credential they accept was found in the guest (§2). A guest reaches a disk
   through them only with a token someone copied into it, and a credential
   copied into a box is a risk on any pool and any driver, which no fence
   prevents (owner, 2026-11-28: "if a token of any type is manually copied to
@@ -109,13 +121,21 @@ provider adds for that mount. On archil those are `mount.*.archil.com` and
   in the sandbox's own region. It would also need keeping current as Archil
   adds regions.
 
-### 2. The guest holds no mount token
+### 2. The guest holds no mount token, as far as it has been checked
 
-619 §1.4's "archil's mount token for the guest's own data disk, is the
-guest's own" describes a credential the guest does not have. Guarantee 4
-holds with nothing of the account, and no mount token, in the guest. Whether
-such a token replays from outside Archil (619's Open item) decides nothing,
-and is closed.
+619's Context is corrected: no mount token was found in the guest, and the
+guest cannot mount its own disk itself (Context). Guarantee 4 stands on
+that.
+
+This ADR rests §1 on it, so what is unchecked matters:
+- **A token for the guest's own disk alone** would change nothing. It is the
+  guest's own (619 §1.4).
+- **A token that opens other disks of the account**, if the guest's root can
+  read one from Archil's client, would breach guarantee 4. Through the mount
+  hosts it would reach other sandboxes' data disks, around the pool's proxy.
+
+Both are open (below). The replay question in 619's Open is replaced by
+them.
 
 ## Alternatives rejected
 
@@ -131,7 +151,7 @@ and is closed.
   upkeep.
 - **Treat a disk token as something a fence must stop.** No fence stops a
   credential copied in from being used where its fence allows (§1). What a
-  fence keeps out is the account's own, and the guest holds none of it (§2).
+  fence keeps out is the account's own, and none of it was found in the guest (§2).
 
 ## Deferred
 
@@ -139,9 +159,19 @@ and is closed.
   mount traffic to the disks it mounts, or to its organization, the driver
   uses it. Revisit when Archil offers that.
 
-## Open, for implementation
+## Open, to check on Archil
 
-- None. The code and design docs already match §1 (Context).
+Each is a live run in discobox-ai/vm, and neither changes code unless it
+finds a token:
+- **Is a mount token scoped to its disk?** Mount disk B from a fenced guest
+  with disk A's token, both of one organization.
+- **Can the guest's root read the token Archil's client mounts with?** As
+  root in the guest, through the namespaces a guest operation runs in and
+  around them (a fresh `/proc`, `nsenter` to PID 1, the client's memory).
+
+If the guest's root can read a token that opens other disks, §1's acceptance
+no longer holds and this is revisited. The code and design docs otherwise
+match §1 already (Context).
 
 ## Consequences
 
