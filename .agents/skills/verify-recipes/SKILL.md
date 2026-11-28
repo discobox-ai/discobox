@@ -1621,6 +1621,18 @@ a small fake on loopback and watch what the server asks of it.
   pool stays `failed` in the loop's database. Use an isolated server (above)
   for it.
 
+- A placement onto a new agent layer (a machine box's `admin box repair`
+  after the agent bundle moved) runs live on an archil pool of an isolated
+  server: make the box on one agent bundle, restart the server with
+  `DISCOBOX_AGENT_BUNDLE` and a copy of the dev manifest
+  (`DISCOBOX_DEV_DOCKER_IMAGE_MANIFEST`) naming a repacked layout, and
+  repair. Move the layer's digest by bumping one entry's mtime in the
+  layer tar (re-gzip, then fix the config's `diff_ids`, manifest and
+  index digests). An added file is refused (`not the agent layer: it holds
+  …`): the agent layer's file set is fixed. The guest's `journalctl -b`
+  shows the old agent's units stopped before `/etc/discobox/sandbox.json`'s
+  ctime only on the first repair onto a layer: once the pool has the
+  bundle cached, the copy lands before boot starts the agent at all.
 - A machine's data volume (the sandbox agent wiring onto it, and a new root
   keeping it, ADR 26-11-03-782) runs here on disco-vm's docker driver, which
   the box's own Docker daemon carries: build `disco-vm` from the module
