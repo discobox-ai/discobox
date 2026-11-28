@@ -1445,6 +1445,27 @@ VM the server boots again after every restart, and an archive accepted just
 before a shutdown has been seen reset there with only "connection reset by
 peer" to say why.
 
+A teardown the agent takes and does not answer within
+`poolAgentTeardownDeadline` (5 minutes) is reported the same way, a remove of a
+sandbox with no state included: "pool P did not answer the archive of sandbox S
+within 5m0s"
+([ADR 26-11-24-783](../../docs/adr/26-11-24-783-a-teardown-the-pool-does-not-answer-in-time-is-not-answered-and-frees-its-reconcile.md)).
+The agent answers a teardown only when it is done, after the sandbox's power
+lock, and a start holding that lock and never finishing would otherwise keep
+the reconcile, and one of the node's sandbox reconcile slots, until the server
+stopped; with a few of those no box was created. A remove with no state is
+retried here too, not answered not-found as it is when the agent went away:
+this agent took it and may still finish the create it waits behind, which
+would leave a box running that nothing deletes. The deadline is told apart by
+its context cause, so a reconcile cancelled by its caller stays that, and no
+other timeout is read as the pool not answering (`poolAgentUnanswered` still
+excludes them, for a create the agent may still be working on). Cutting the
+call ends the agent handler's request, which is what abandons its wait for the
+lock: every lease transport in this repository closes the agent's connection
+when the server's request ends (Docker and DigitalOcean over TCP, libkrun's
+unix socket to vsock, vz's framed vsock, wslc's relay stream), while the
+discovm edge and an execvm endpoint are outside it.
+
 Only a driver whose acquire can see the pool container can refuse it. The
 local driver inspects the container for its port anyway, and refuses one that
 is not running or whose healthcheck is still starting

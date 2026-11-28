@@ -1,7 +1,8 @@
 # 26-11-24-783 — A teardown the pool does not answer in time is not answered, and frees its reconcile
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-24
+- Accepted by the owner by merging #1731, 2026-11-25
 - **Issue**: [#1728](https://github.com/discobox-ai/discobox/issues/1728)
 - **Relates to**: [0017](0017-resource-state-is-desired-and-observed-with-no-operations.md)
   §3 (a failure that is not the reconciler giving up does not settle the

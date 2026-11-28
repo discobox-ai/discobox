@@ -26,9 +26,12 @@ type Engine struct {
 	opt Options
 	log *slog.Logger
 
-	mu      sync.Mutex
-	regs    map[string]*registration
-	running map[string]int // in-flight reconciles per type on this node
+	mu   sync.Mutex
+	regs map[string]*registration
+	// running holds the rows this node is executing, by type then id: its
+	// size per type is that type's concurrency in use, and its rows are the
+	// only claims leaseLoop renews.
+	running map[string]map[string]struct{}
 	started bool
 
 	notify chan struct{}
@@ -60,7 +63,7 @@ func New(db *gorm.DB, opt Options) (*Engine, error) {
 		opt:     opt.withDefaults(),
 		log:     slog.Default().With("component", "reconcile"),
 		regs:    map[string]*registration{},
-		running: map[string]int{},
+		running: map[string]map[string]struct{}{},
 		notify:  make(chan struct{}, 1),
 	}, nil
 }
@@ -241,7 +244,10 @@ func (e *Engine) claimAvailable() {
 			return
 		}
 		e.mu.Lock()
-		e.running[row.ResourceType]++
+		if e.running[row.ResourceType] == nil {
+			e.running[row.ResourceType] = map[string]struct{}{}
+		}
+		e.running[row.ResourceType][row.ResourceID] = struct{}{}
 		e.mu.Unlock()
 		e.wg.Add(1)
 		go e.execute(row)
@@ -253,7 +259,7 @@ func (e *Engine) typesWithCapacity() []string {
 	defer e.mu.Unlock()
 	types := make([]string, 0, len(e.regs))
 	for t, reg := range e.regs {
-		if e.running[t] < reg.concurrency {
+		if len(e.running[t]) < reg.concurrency {
 			types = append(types, t)
 		}
 	}
@@ -280,6 +286,10 @@ func (e *Engine) claimOne(types []string) (dirtyRow, bool) {
 		lease := now.Add(e.opt.Lease)
 		res := e.db.WithContext(e.ctx).Model(&dirtyRow{}).
 			Where("resource_type = ? AND resource_id = ? AND seq = ?", c.ResourceType, c.ResourceID, c.Seq).
+			// Re-checked, not only selected on: a complete that armed the row
+			// for the future between the read and this write moved it out of
+			// reach, and claiming it now would run it ahead of its timer.
+			Where("not_before <= ?", now).
 			Where("claimed_by IS NULL OR lease_expires < ?", now).
 			Updates(map[string]any{"claimed_by": e.opt.WorkerID, "lease_expires": lease})
 		if res.Error == nil && res.RowsAffected == 1 {
@@ -293,12 +303,7 @@ func (e *Engine) claimOne(types []string) (dirtyRow, bool) {
 // re-marked mid-run), backoff on failure. Panics are failures.
 func (e *Engine) execute(row dirtyRow) {
 	defer e.wg.Done()
-	defer func() {
-		e.mu.Lock()
-		e.running[row.ResourceType]--
-		e.mu.Unlock()
-		e.wake() // capacity freed; look for more work
-	}()
+	defer e.wake() // capacity freed; look for more work
 
 	e.mu.Lock()
 	reg := e.regs[row.ResourceType]
@@ -314,6 +319,14 @@ func (e *Engine) execute(row dirtyRow) {
 		// call, however deep: MarkDirtyAtTx reads it off the context.
 		return reg.reconciler.Reconcile(withInFlight(e.ctx, row.ResourceType, row.ResourceID), row.ResourceID)
 	}()
+
+	// Out of flight before the settle, not after it: a settle that wakes the
+	// claim loop can see this row claimed again at once, and that run's entry
+	// must not be the one removed here. Until the settle clears it, this
+	// worker's unexpired claim keeps the row from being claimed again.
+	e.mu.Lock()
+	delete(e.running[row.ResourceType], row.ResourceID)
+	e.mu.Unlock()
 
 	if err != nil {
 		if e.ctx.Err() == nil {
@@ -367,10 +380,23 @@ func (e *Engine) complete(row dirtyRow, result Result) {
 
 	// Re-marked during the run (or a transient error): clear our claim and reset
 	// attempts — this run succeeded — and let the newer mark drive the re-run.
-	e.db.Model(&dirtyRow{}).
+	if err := e.db.Model(&dirtyRow{}).
 		Where("resource_type = ? AND resource_id = ? AND claimed_by = ?", row.ResourceType, row.ResourceID, e.opt.WorkerID).
-		Updates(settled)
+		Updates(settled).Error; err != nil {
+		e.logSettleFailure(row, err)
+	}
 	e.wake()
+}
+
+// logSettleFailure says why a row this node ran is left claimed: its settle
+// write failed. The claim is no longer renewed (leaseLoop renews only rows in
+// flight), so it lapses at its lease and the row is claimed again.
+func (e *Engine) logSettleFailure(row dirtyRow, err error) {
+	if e.ctx.Err() != nil {
+		return
+	}
+	e.log.Warn("reconcile settle failed; the claim lapses at its lease",
+		"type", row.ResourceType, "id", row.ResourceID, "err", err)
 }
 
 // release returns a failed row to the dirty set with exponential backoff and
@@ -378,7 +404,7 @@ func (e *Engine) complete(row dirtyRow, result Result) {
 // log.
 func (e *Engine) release(row dirtyRow, cause error) {
 	backoff := Backoff(e.opt.BackoffBase, e.opt.BackoffMax, row.Attempts)
-	e.db.Model(&dirtyRow{}).
+	if err := e.db.Model(&dirtyRow{}).
 		Where("resource_type = ? AND resource_id = ? AND claimed_by = ?", row.ResourceType, row.ResourceID, e.opt.WorkerID).
 		Updates(map[string]any{
 			"claimed_by":    nil,
@@ -386,11 +412,15 @@ func (e *Engine) release(row dirtyRow, cause error) {
 			"attempts":      gorm.Expr("attempts + 1"),
 			"last_error":    cause.Error(),
 			"not_before":    time.Now().Add(backoff),
-		})
+		}).Error; err != nil {
+		e.logSettleFailure(row, err)
+	}
 }
 
-// leaseLoop renews every claim held by this worker at a fraction of the lease,
-// so long-running reconciles are not stolen by other nodes.
+// leaseLoop renews this worker's claims on the rows it is executing at a
+// fraction of the lease, so long-running reconciles are not stolen by other
+// nodes. Only those: a claim whose settle write failed is no longer in flight,
+// and renewing it would keep the row claimed, reading running, until restart.
 func (e *Engine) leaseLoop() {
 	defer e.wg.Done()
 	interval := e.opt.Lease / 3
@@ -404,9 +434,27 @@ func (e *Engine) leaseLoop() {
 		case <-e.ctx.Done():
 			return
 		case <-ticker.C:
-			e.db.Model(&dirtyRow{}).
-				Where("claimed_by = ?", e.opt.WorkerID).
-				Update("lease_expires", time.Now().Add(e.opt.Lease))
+			e.renewLeases()
+		}
+	}
+}
+
+// renewLeases extends the lease of every row this worker has in flight.
+func (e *Engine) renewLeases() {
+	e.mu.Lock()
+	inFlight := make(map[string][]string, len(e.running))
+	for resourceType, ids := range e.running {
+		for id := range ids {
+			inFlight[resourceType] = append(inFlight[resourceType], id)
+		}
+	}
+	e.mu.Unlock()
+	lease := time.Now().Add(e.opt.Lease)
+	for resourceType, ids := range inFlight {
+		if err := e.db.Model(&dirtyRow{}).
+			Where("claimed_by = ? AND resource_type = ? AND resource_id IN ?", e.opt.WorkerID, resourceType, ids).
+			Update("lease_expires", lease).Error; err != nil && e.ctx.Err() == nil {
+			e.log.Warn("reconcile lease renewal failed", "type", resourceType, "err", err)
 		}
 	}
 }

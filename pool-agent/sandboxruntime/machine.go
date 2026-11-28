@@ -1755,7 +1755,9 @@ func (r *MachineSandboxRuntime) observedSandbox(ctx context.Context, sandboxID s
 // material, which the unarchiving create stages again.
 func (r *MachineSandboxRuntime) ArchiveSandbox(ctx context.Context, sandboxID string) error {
 	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
+	if err := lock.LockContext(ctx); err != nil {
+		return fmt.Errorf("archive sandbox %s: waiting for its power lock: %w", sandboxID, err)
+	}
 	defer lock.Unlock()
 	root := r.sandboxRoot(sandboxID)
 	if _, err := os.Stat(root); err != nil {
@@ -1807,7 +1809,9 @@ func (r *MachineSandboxRuntime) reapSandbox(ctx context.Context, sandboxID strin
 
 func (r *MachineSandboxRuntime) removeSandbox(ctx context.Context, sandboxID string, purge bool) error {
 	lock := r.sandboxLock(sandboxID)
-	lock.Lock()
+	if err := lock.LockContext(ctx); err != nil {
+		return fmt.Errorf("remove sandbox %s: waiting for its power lock: %w", sandboxID, err)
+	}
 	defer lock.Unlock()
 	if err := r.removeMachine(ctx, sandboxID); err != nil {
 		return err

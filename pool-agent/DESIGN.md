@@ -877,7 +877,12 @@ Archived sandboxes are exempt from that latch and fail those routes with 409.
 `archive` and `delete` take the same per-sandbox mutex, and both answer only once
 the work is done rather than accepting it: each is a destructive act on state
 only this agent can see, and for `delete` the control plane removes its row on
-the strength of the response (ADR 0022 §§3, 5-6).
+the strength of the response (ADR 0022 §§3, 5-6). They wait for that mutex
+only while their request lives (`powerLock.LockContext`): the server stops
+waiting for a teardown's answer after a deadline, and a teardown queued behind
+a start that never finishes would otherwise run later, unasked, once for every
+retry the server sent (ADR 26-11-24-783 §3). Every other holder waits as long
+as it takes.
 
 - `archive` removes the container and the sandbox's proxy material, keeps
   `data/config/secrets/sources`, and writes a `.discobox-archived` marker.
