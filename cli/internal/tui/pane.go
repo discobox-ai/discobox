@@ -699,7 +699,9 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		return m.copyText(msg.Text, "copied")
 
 	case paneActionMsg:
-		if m.hasScreen(p) {
+		// The request band is drawn over a tool's screen too, and it names its
+		// key there: the answer is the one action a tool does not hold back.
+		if m.hasScreen(p) && msg.key != credentialsKey {
 			return m.underScreen(p)
 		}
 		// On a service, stop and start are the service's. The pane you are

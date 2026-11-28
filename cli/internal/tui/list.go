@@ -779,6 +779,33 @@ func (l *sandboxList) toggleSelect() {
 
 func (l *sandboxList) clearSelection() { l.selected = map[boxRef]bool{} }
 
+// nextPending moves the cursor to the next row below it with a credential
+// request waiting, wrapping past the end, and reports whether there was one.
+// The cursor's own row counts last, so on a list whose one waiting row is the
+// cursor's it stays put.
+func (l *sandboxList) nextPending() bool {
+	rows := l.rows()
+	for step := 1; step <= len(rows); step++ {
+		i := (l.cursor + step) % len(rows)
+		if rows[i].PendingRequests > 0 {
+			l.moveTo(i)
+			return true
+		}
+	}
+	return false
+}
+
+// pendingElsewhere reports whether a row other than the cursor's has a request
+// waiting: where the next-request key would take the cursor somewhere.
+func (l *sandboxList) pendingElsewhere() bool {
+	for i, s := range l.rows() {
+		if i != l.cursor && s.PendingRequests > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func (l *sandboxList) move(delta int) {
 	l.cursor += delta
 	l.nameScroll = 0

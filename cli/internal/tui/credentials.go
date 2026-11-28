@@ -36,6 +36,10 @@ import (
 // credential is not a keystroke to hit by accident.
 const credentialsKey = "C"
 
+// nextRequestKey moves the list's cursor to the next row with a request
+// waiting. It is the mark itself: the row says !, and ! goes to the next one.
+const nextRequestKey = "!"
+
 // credentialsLeaderKey is the same thing behind the leader in the workspace,
 // where the banner names it.
 //

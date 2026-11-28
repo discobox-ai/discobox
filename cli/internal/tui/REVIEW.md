@@ -385,6 +385,20 @@
   covers the panes but still draws the band. The harness-changes band's H was
   added to the first and not the second, and over the audit it typed into the
   search.
+- **Moving a command into `actions()` moves its dispatch too.** An action's
+  leader key arrives as `paneActionMsg`, which a tool's screen holds back
+  (`underScreen`), not as `consoleCommandMsg`, which it does not; and the
+  list reaches it through `act`, on the selection. When the request answer
+  became an action, its band's leader key went dead over a tool, and its
+  old `updateList` case kept answering the cursor's row while the key line
+  and the menu, on the selection, refused it. Delete the special case, and
+  check every band that names the key.
+- **A key line's order is its priority.** It is cut whole offers from the
+  tail (`fitHints`), so where an offer sits decides at which widths it exists.
+  `! next request` sat behind every action and never showed at 140 columns;
+  moved ahead of them, it pushed `C answer request` off at about 100. Moving
+  an offer forward is checked against what it pushes out, on a rendered
+  frame at the width where they compete.
 - **Nothing unprompted that answers to single letters takes a key typed
   before it came up.** A card that opens unasked over a focused terminal or the
   composer holds its keys until the keyboard is quiet

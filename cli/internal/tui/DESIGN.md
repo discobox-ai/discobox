@@ -554,6 +554,12 @@ request can arrive at any moment, and a window that takes the screen mid
 sentence teaches you to answer without reading. `C` on the row opens the
 question; the key is capitalized because approving a credential is not a
 keystroke to hit by accident, and `g` is already the top of every list here.
+`C` is an action like attach (`actions()`), enabled on one box with a request
+waiting, so the key line and the `.` menu offer it on a marked row and nowhere
+else — a mark whose answer only F1 named was a mark people attached to the box
+to answer. `!`, the mark itself, moves the cursor to the next marked row and
+wraps, so several waiting boxes are answered one after another; the key line
+offers it while another row is waiting.
 
 **The workspace says it loudly, at both ends.** Looking at one discobox is the
 one place the window knows you are already attending to it, so the request gets
