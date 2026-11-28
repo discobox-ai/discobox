@@ -69,7 +69,7 @@ func Start(opts Options) (*Process, error) {
 	}
 	proc, err := start(cmd)
 	if err != nil {
-		return nil, err
+		return nil, notRunnable(opts, err)
 	}
 	// Taken now, before anyone can Wait: until then os/exec holds the process
 	// open, so its PID still names this child and nothing else.
@@ -83,6 +83,29 @@ func Start(opts Options) (*Process, error) {
 	proc.handle = handle
 	return proc, nil
 }
+
+// NotRunnableError is a start that failed because the program itself could
+// not be run: it is not there, or it is there and cannot be executed. Every
+// other start failure (the working directory, the terminal, the process
+// handle) is returned as it came.
+type NotRunnableError struct {
+	// Code is the exit status a shell gives a command it could not run: 127
+	// for one that is not there, 126 for one that cannot be executed.
+	Code int64
+	// Reason says why, as a shell's message does after the command's name.
+	Reason string
+	Err    error
+}
+
+func (e *NotRunnableError) Error() string { return e.Reason + ": " + e.Err.Error() }
+
+func (e *NotRunnableError) Unwrap() error { return e.Err }
+
+// The exit statuses of a NotRunnableError.
+const (
+	NotFoundExit      = 127
+	NotExecutableExit = 126
+)
 
 func startTTY(cmd *exec.Cmd, winsize *pty.Winsize) (*Process, error) {
 	tty, err := pty.StartWithSize(cmd, winsize)

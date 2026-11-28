@@ -7,8 +7,11 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
@@ -1221,5 +1224,104 @@ func TestDescribeExecNamesTheCommandAskedForAndItsTitle(t *testing.T) {
 				t.Fatalf("describeExec = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// inProcessShimUnits starts each exec's real shim in this process, so a
+// Manager test sees what a shim reports for its command.
+type inProcessShimUnits struct {
+	ctx context.Context
+}
+
+func (u *inProcessShimUnits) Start(_ context.Context, req StartRequest) (StartResult, error) {
+	go func() {
+		_ = RunShim(u.ctx, ShimConfig{
+			ExecID:      req.ID,
+			Unit:        req.Unit,
+			Command:     req.Command,
+			Workdir:     req.Workdir,
+			SocketPath:  req.SocketPath,
+			RuntimePath: req.RuntimePath,
+			Logs:        newFakeLogSink(),
+		})
+	}()
+	return StartResult{Unit: req.Unit}, nil
+}
+func (u *inProcessShimUnits) Stop(context.Context, string) error { return nil }
+func (u *inProcessShimUnits) Status(_ context.Context, unit string) (UnitStatus, error) {
+	return UnitStatus{Unit: unit, Loaded: true, Active: true}, nil
+}
+func (u *inProcessShimUnits) List(context.Context) ([]UnitStatus, error) { return nil, nil }
+func (u *inProcessShimUnits) Watch(ctx context.Context) (<-chan string, error) {
+	ch := make(chan string)
+	go func() {
+		<-ctx.Done()
+		close(ch)
+	}()
+	return ch, nil
+}
+
+// eventAudit is a recordingAudit that keeps the events it is given.
+type eventAudit struct {
+	*recordingAudit
+	mu     sync.Mutex
+	events []string
+}
+
+func (a *eventAudit) RecordExecEvent(_ context.Context, _, typ, message string, _ map[string]any) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.events = append(a.events, typ+": "+message)
+	return nil
+}
+
+// A command the shim could not run is not recorded as started: the exec's
+// trail says why it never ran, while the exec itself reports the command's
+// exit status (#1542).
+func TestManagerStartRecordsACommandThatCouldNotRunAsAFailedStart(t *testing.T) {
+	dir := shimDir(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	audit := &eventAudit{recordingAudit: newRecordingAudit()}
+	manager, err := NewManagerWithConfig(ManagerConfig{
+		WorkingRoot: dir,
+		RuntimeDir:  filepath.Join(dir, "rt"),
+		Units:       &inProcessShimUnits{ctx: ctx},
+		Audit:       audit,
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	created, err := manager.Create(ctx, CreateRequest{Command: []string{"nonexistent-cmd-xyz"}, Workdir: dir})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	var started Exec
+	for {
+		started, err = manager.Start(ctx, created.ID)
+		if err == nil || ctx.Err() != nil {
+			break
+		}
+		// The shim is still coming up.
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if started.StartedAt != nil || started.ExitCode == nil || *started.ExitCode != 127 || started.Error != "nonexistent-cmd-xyz: command not found" {
+		t.Fatalf("start = %+v, want exit 127, never started", started)
+	}
+	audit.mu.Lock()
+	events := slices.Clone(audit.events)
+	audit.mu.Unlock()
+	if !slices.ContainsFunc(events, func(event string) bool {
+		return strings.HasPrefix(event, "exec.start.failed: start failed (nonexistent-cmd-xyz: command not found)")
+	}) {
+		t.Fatalf("events = %q, want the start recorded as failed with why", events)
+	}
+	for _, event := range events {
+		if strings.HasPrefix(event, "exec.started") {
+			t.Fatalf("events = %q, want no exec.started for a command that never ran", events)
+		}
 	}
 }

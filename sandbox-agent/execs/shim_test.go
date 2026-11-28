@@ -1000,3 +1000,201 @@ func TestShimProcIsSynchronizedWithStart(t *testing.T) {
 	}()
 	wg.Wait()
 }
+
+func TestRunShimReportsAMissingCommandAsExit127(t *testing.T) {
+	dir := shimDir(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	socketPath := filepath.Join(dir, "shim.sock")
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- RunShim(ctx, ShimConfig{
+			ExecID:      "exec_missing",
+			Command:     []string{"nonexistent-cmd-xyz"},
+			Workdir:     dir,
+			SocketPath:  socketPath,
+			RuntimePath: filepath.Join(dir, "runtime.json"),
+			Logs:        newFakeLogSink(),
+		})
+	}()
+	// A command that is not there is the user's error, as a shell reports it:
+	// the exec starts, says so on stderr, and exits 127. It is not the shim
+	// failing to start.
+	exit := attachReadExit(ctx, t, socketPath, true)
+	if exit.ExitCode == nil || *exit.ExitCode != 127 {
+		t.Fatalf("exit = %+v, want 127 for a command that is not on the PATH", exit)
+	}
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("run shim: %v", err)
+	}
+}
+
+// A command the shim cannot run ends the exec with a shell's exit status for
+// it: the reason on the exec's stderr (its one stream, on a terminal), in the
+// log as well as live, and a non-zero exit. No process ran, so the record
+// carries no start time or PID, and a second start is a no-op. (The first case
+// is TestRunShimReportsAMissingCommandAsExit127, the issue's reproduction,
+// with its output checked too.)
+func TestRunShimEndsACommandItCannotRunWithTheShellsStatus(t *testing.T) {
+	dir := shimDir(t)
+	notExecutable := filepath.Join(dir, "not-executable")
+	if err := os.WriteFile(notExecutable, []byte("#!/bin/sh\nexit 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	badFormat := filepath.Join(dir, "bad-format")
+	if err := os.WriteFile(badFormat, []byte("\x00\x01not a program"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	badInterpreter := filepath.Join(dir, "bad-interpreter")
+	if err := os.WriteFile(badInterpreter, []byte("#!/nonexistent/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	missingPath := filepath.Join(dir, "missing")
+	cases := []struct {
+		name    string
+		command string
+		tty     bool
+		code    int64
+		output  string
+	}{
+		{"not on the PATH", "nonexistent-cmd-xyz", false, 127, "nonexistent-cmd-xyz: command not found\n"},
+		{"not on the PATH, on a terminal", "nonexistent-cmd-xyz", true, 127, "nonexistent-cmd-xyz: command not found\r\n"},
+		{"a path that is not there", missingPath, false, 127, missingPath + ": no such file or directory\n"},
+		{"not executable", notExecutable, false, 126, notExecutable + ": permission denied\n"},
+		{"not a program", badFormat, false, 126, badFormat + ": cannot execute: exec format error\n"},
+		{"a directory", dir, false, 126, dir + ": permission denied\n"},
+		{"an interpreter that is not there", badInterpreter, false, 126, badInterpreter + ": cannot execute: required file not found\n"},
+		{"relative to the working directory", "./missing", false, 127, "./missing: no such file or directory\n"},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			logs := newFakeLogSink()
+			execID := fmt.Sprintf("exec_not_runnable_%d", i)
+			socketPath := filepath.Join(dir, fmt.Sprintf("shim%d.sock", i))
+			runtimePath := filepath.Join(dir, fmt.Sprintf("runtime%d.json", i))
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- RunShim(ctx, ShimConfig{
+					ExecID:      execID,
+					Command:     []string{tc.command, "arg"},
+					Workdir:     dir,
+					SocketPath:  socketPath,
+					RuntimePath: runtimePath,
+					Logs:        logs,
+					Rows:        24,
+					Cols:        80,
+					TTY:         tc.tty,
+				})
+			}()
+			reader := attachShimForTest(ctx, t, socketPath)
+			started, err := shimproxy.StartJSON[Exec](ctx, socketPath)
+			if err != nil {
+				t.Fatalf("start shim: %v", err)
+			}
+			if started.Status != StatusFailed || started.ExitCode == nil || *started.ExitCode != tc.code {
+				t.Fatalf("start = %+v, want exit %d", started, tc.code)
+			}
+
+			want, other := frame.Stderr, frame.Stdout
+			if tc.tty {
+				want, other = frame.Stdout, frame.Stderr
+			}
+			var output []byte
+			for done := false; !done; {
+				next, err := frame.Read(reader)
+				if err != nil {
+					t.Fatalf("read frame: %v", err)
+				}
+				switch next.Type {
+				case want:
+					output = append(output, next.Payload...)
+				case other:
+					t.Fatalf("unexpected frame type %d: %q", next.Type, next.Payload)
+				case frame.Exit:
+					exit, err := frame.DecodeExit(next.Payload)
+					if err != nil {
+						t.Fatalf("decode exit: %v", err)
+					}
+					// Failed with the code, as a command that ran and exited
+					// non-zero is, and why as its error.
+					if exit.Status != string(StatusFailed) || exit.ExitCode == nil || *exit.ExitCode != tc.code || exit.Error != strings.TrimSpace(tc.output) {
+						t.Fatalf("exit = %+v, want exit %d with why", exit, tc.code)
+					}
+					done = true
+				}
+			}
+			if string(output) != tc.output {
+				t.Fatalf("output = %q, want %q", output, tc.output)
+			}
+
+			entries, err := ReadExecLog(ctx, logs, execID)
+			if err != nil {
+				t.Fatalf("read logs: %v", err)
+			}
+			var logged []byte
+			for _, entry := range entries {
+				logged = append(logged, entry.Data...)
+			}
+			if string(logged) != tc.output {
+				t.Fatalf("log = %q, want %q", logged, tc.output)
+			}
+
+			record, err := readRuntime(runtimePath)
+			if err != nil {
+				t.Fatalf("read runtime: %v", err)
+			}
+			if record.Status != StatusFailed || record.ExitCode == nil || *record.ExitCode != tc.code ||
+				record.ExitedAt == nil || record.StartedAt != nil || record.PID != 0 {
+				t.Fatalf("runtime = %+v, want exit %d, never started", record, tc.code)
+			}
+			again, err := shimproxy.StartJSON[Exec](ctx, socketPath)
+			if err != nil || again.Status != StatusFailed || again.ExitCode == nil || *again.ExitCode != tc.code {
+				t.Fatalf("second start = %+v, %v; want the exit it already had", again, err)
+			}
+
+			cancel()
+			if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+				t.Fatalf("run shim: %v", err)
+			}
+		})
+	}
+}
+
+// A working directory the command cannot be run in is the exec failing to
+// start, not the command: it stays an error, never a 127 that would blame the
+// command's name.
+func TestRunShimFailsToStartInAMissingWorkdir(t *testing.T) {
+	dir := shimDir(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	socketPath := filepath.Join(dir, "shim.sock")
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- RunShim(ctx, ShimConfig{
+			ExecID:      "exec_no_workdir",
+			Command:     []string{"true"},
+			Workdir:     filepath.Join(dir, "missing"),
+			SocketPath:  socketPath,
+			RuntimePath: filepath.Join(dir, "runtime.json"),
+			Logs:        newFakeLogSink(),
+		})
+	}()
+	attachShimForTest(ctx, t, socketPath)
+	if got, err := shimproxy.StartJSON[Exec](ctx, socketPath); err == nil {
+		t.Fatalf("start = %+v, want a failed start", got)
+	}
+	record, err := readRuntime(filepath.Join(dir, "runtime.json"))
+	if err != nil {
+		t.Fatalf("read runtime: %v", err)
+	}
+	if record.Status != StatusFailed || record.ExitCode != nil {
+		t.Fatalf("runtime = %+v, want a failed start", record)
+	}
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("run shim: %v", err)
+	}
+}
