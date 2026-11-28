@@ -2108,6 +2108,25 @@ restarts its units as it did then (`poolruntime.unitsCommand`).
     of a socket the pool no longer has (`removeStale`), are refused, and
     nothing recorded, while a slot drains; the next apply after it has
     exited does both.
+  - **No downgrade across slots without a repair.** A bundle from before
+    slots knows no slot units: its apply lays `discobox-pool-agent.service`
+    and `discobox-proxy.service` beside the running slot, whose sockets
+    systemd still holds, and the old agent crash-loops on `address already
+    in use` while the slot serves on with the old binary under it; so does
+    its `discobox-buildkit-mediator.service`, whose listeners systemd also
+    holds (`discobox-pool-buildkit.socket`,
+    `discobox-pool-registry-front.socket`). Nothing from this side can stop
+    it: the older server places the older bundle, and neither carries this
+    code. To go back, repair the pool (its machine is made anew), or by
+    hand in the box: stop every `discobox-pool-units@*.service` instance
+    (one waits up to 15 minutes on the units lock); stop and disable
+    `discobox-pool-agent@{a,b}`, `discobox-proxy@{a,b}` and every
+    `discobox-pool-*.socket`; remove those unit files, the
+    `discobox-pool-units@.service` template and the slot units' `.d`
+    drop-ins from `/etc/systemd/system`, and
+    `/var/lib/discobox/pool-units.json`; `daemon-reload`, then start the
+    two old units and restart the mediator. A later upgrade retires them
+    again, with its one cut.
   - Each socket starts its own `discobox-pool-units@<socket>.service`
     (`units start`) when traffic finds no slot serving it, which waits out
     an apply under way: systemd refuses to start a socket whose service is

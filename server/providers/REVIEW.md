@@ -309,3 +309,10 @@
   boot a second guest on the same `data.raw` and `cache.raw` (#1317). For the
   same reason a closed driver must refuse to start a VM: a reconcile can still
   hold the old provider, and `Close` stops only the VMs it found.
+- Every apply over a running pool's box checks
+  `poolruntime.HandOverFailure` on a `ProvisionBox` failure before its own
+  handling, a branch that keeps the box included (a new box has nothing
+  to hand over, and fails on any error). Why: the units step's handover outcomes (a slot
+  still draining, a new agent that never took over) reach the server only
+  through that failure; a maker that kept the box over them and settled
+  clean read a stalled takeover as success.

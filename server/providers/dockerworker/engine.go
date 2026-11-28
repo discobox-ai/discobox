@@ -1006,6 +1006,11 @@ func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, 
 	guest := provisioner.ContainerGuest{Client: cli, Container: containerID, Env: pool.RuntimeOutbound.Environment()}
 	record, err := poolruntime.ProvisionBox(ctx, guest, maker, placement, recorded)
 	if err != nil {
+		// A Docker pool does not hand over, but its units step's word on a
+		// handover is never kept and settled clean.
+		if handOver := poolruntime.HandOverFailure(err); handOver != nil {
+			return recorded, handOver
+		}
 		slog.WarnContext(ctx, "keeping the pool's box as it is: its moved bundles did not apply", "pool", pool.ID, "error", err)
 		sandbox.ReportBoxKept(ctx, fmt.Errorf("its moved bundles did not apply: %w", err))
 		if pool.OutboundStatus != nil && pool.OutboundAppliedRevision != pool.Outbound.Revision() {
