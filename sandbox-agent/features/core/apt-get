@@ -1,0 +1,12 @@
+#!/bin/sh
+# apt-get ARG... — apt-get with ARG, and, run by a provisioning step, apt's
+# machine-readable progress (APT::Status-Fd) appended to the step's progress
+# file (DISCOBOX_PROVISION_PROGRESS), whose reader takes apt's status lines
+# as they are: which package is downloading or installing, and how far apt
+# has got. Elsewhere it is apt-get. Every feature using it requires core.
+set -eu
+
+if [ -n "${DISCOBOX_PROVISION_PROGRESS:-}" ]; then
+  exec apt-get -o APT::Status-Fd=3 "$@" 3>>"$DISCOBOX_PROVISION_PROGRESS"
+fi
+exec apt-get "$@"

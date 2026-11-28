@@ -2502,6 +2502,52 @@ func (o OptSandboxAgentProvisionFeatureHow) Or(d SandboxAgentProvisionFeatureHow
 	return d
 }
 
+// NewOptSandboxAgentProvisionProgress returns new OptSandboxAgentProvisionProgress with value set to v.
+func NewOptSandboxAgentProvisionProgress(v SandboxAgentProvisionProgress) OptSandboxAgentProvisionProgress {
+	return OptSandboxAgentProvisionProgress{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxAgentProvisionProgress is optional SandboxAgentProvisionProgress.
+type OptSandboxAgentProvisionProgress struct {
+	Value SandboxAgentProvisionProgress
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxAgentProvisionProgress was set.
+func (o OptSandboxAgentProvisionProgress) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxAgentProvisionProgress) Reset() {
+	var v SandboxAgentProvisionProgress
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxAgentProvisionProgress) SetTo(v SandboxAgentProvisionProgress) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxAgentProvisionProgress) Get() (v SandboxAgentProvisionProgress, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxAgentProvisionProgress) Or(d SandboxAgentProvisionProgress) SandboxAgentProvisionProgress {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxAgentProvisionRetry returns new OptSandboxAgentProvisionRetry with value set to v.
 func NewOptSandboxAgentProvisionRetry(v SandboxAgentProvisionRetry) OptSandboxAgentProvisionRetry {
 	return OptSandboxAgentProvisionRetry{
@@ -4712,7 +4758,8 @@ type SandboxAgentProvisionFeature struct {
 	// the sandbox's own copy was usable and is wired; snapshot - all of it was already in place.
 	How OptSandboxAgentProvisionFeatureHow `json:"how"`
 	// The feature's log inside the sandbox.
-	Log OptString `json:"log"`
+	Log      OptString                        `json:"log"`
+	Progress OptSandboxAgentProvisionProgress `json:"progress"`
 	// Why the feature is off.
 	Reason OptString `json:"reason"`
 	// Pending, provisioning, ready, failed, or off - the project turned it off, and it is not to be
@@ -4742,6 +4789,11 @@ func (s *SandboxAgentProvisionFeature) GetHow() OptSandboxAgentProvisionFeatureH
 // GetLog returns the value of Log.
 func (s *SandboxAgentProvisionFeature) GetLog() OptString {
 	return s.Log
+}
+
+// GetProgress returns the value of Progress.
+func (s *SandboxAgentProvisionFeature) GetProgress() OptSandboxAgentProvisionProgress {
+	return s.Progress
 }
 
 // GetReason returns the value of Reason.
@@ -4782,6 +4834,11 @@ func (s *SandboxAgentProvisionFeature) SetHow(val OptSandboxAgentProvisionFeatur
 // SetLog sets the value of Log.
 func (s *SandboxAgentProvisionFeature) SetLog(val OptString) {
 	s.Log = val
+}
+
+// SetProgress sets the value of Progress.
+func (s *SandboxAgentProvisionFeature) SetProgress(val OptSandboxAgentProvisionProgress) {
+	s.Progress = val
 }
 
 // SetReason sets the value of Reason.
@@ -4916,6 +4973,88 @@ func (s *SandboxAgentProvisionFeatureState) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// How far the step being applied now has got, present only while the feature is provisioning. It
+// describes that step, and starts again with the next. It is the sandbox's own word, shown and never
+// acted on.
+// Ref: #/components/schemas/SandboxAgentProvisionProgress
+type SandboxAgentProvisionProgress struct {
+	// One line, at most 256 bytes, of what the step says it is doing now.
+	Detail OptString `json:"detail"`
+	// How many bytes the step says it has fetched.
+	Done OptInt64 `json:"done"`
+	// How far the step says it has got, 0 to 100, when it knows a fraction and no bytes.
+	Percent OptInt `json:"percent"`
+	// The bytes the sandbox's network interfaces received since the step started, by anything running in
+	// it, not only the step. It moves only with more traffic than the pool's own calls into the sandbox
+	// make.
+	Received OptInt64 `json:"received"`
+	// When received last moved, or when the step started if it has not. Absent, with received, when the
+	// sandbox cannot count what it receives.
+	ReceivedAt OptDateTime `json:"receivedAt"`
+	// How many bytes the step says it will fetch, when it knows.
+	Total OptInt64 `json:"total"`
+}
+
+// GetDetail returns the value of Detail.
+func (s *SandboxAgentProvisionProgress) GetDetail() OptString {
+	return s.Detail
+}
+
+// GetDone returns the value of Done.
+func (s *SandboxAgentProvisionProgress) GetDone() OptInt64 {
+	return s.Done
+}
+
+// GetPercent returns the value of Percent.
+func (s *SandboxAgentProvisionProgress) GetPercent() OptInt {
+	return s.Percent
+}
+
+// GetReceived returns the value of Received.
+func (s *SandboxAgentProvisionProgress) GetReceived() OptInt64 {
+	return s.Received
+}
+
+// GetReceivedAt returns the value of ReceivedAt.
+func (s *SandboxAgentProvisionProgress) GetReceivedAt() OptDateTime {
+	return s.ReceivedAt
+}
+
+// GetTotal returns the value of Total.
+func (s *SandboxAgentProvisionProgress) GetTotal() OptInt64 {
+	return s.Total
+}
+
+// SetDetail sets the value of Detail.
+func (s *SandboxAgentProvisionProgress) SetDetail(val OptString) {
+	s.Detail = val
+}
+
+// SetDone sets the value of Done.
+func (s *SandboxAgentProvisionProgress) SetDone(val OptInt64) {
+	s.Done = val
+}
+
+// SetPercent sets the value of Percent.
+func (s *SandboxAgentProvisionProgress) SetPercent(val OptInt) {
+	s.Percent = val
+}
+
+// SetReceived sets the value of Received.
+func (s *SandboxAgentProvisionProgress) SetReceived(val OptInt64) {
+	s.Received = val
+}
+
+// SetReceivedAt sets the value of ReceivedAt.
+func (s *SandboxAgentProvisionProgress) SetReceivedAt(val OptDateTime) {
+	s.ReceivedAt = val
+}
+
+// SetTotal sets the value of Total.
+func (s *SandboxAgentProvisionProgress) SetTotal(val OptInt64) {
+	s.Total = val
 }
 
 // The next automatic provisioning retry, present only until it starts.

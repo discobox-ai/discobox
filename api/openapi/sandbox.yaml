@@ -824,6 +824,8 @@ components:
                 log:
                     description: The feature's log inside the sandbox.
                     type: string
+                progress:
+                    $ref: '#/components/schemas/SandboxAgentProvisionProgress'
                 reason:
                     description: Why the feature is off.
                     type: string
@@ -844,6 +846,33 @@ components:
                     type: string
             required:
                 - state
+            type: object
+        SandboxAgentProvisionProgress:
+            additionalProperties: false
+            description: How far the step being applied now has got, present only while the feature is provisioning. It describes that step, and starts again with the next. It is the sandbox's own word, shown and never acted on.
+            properties:
+                detail:
+                    description: One line, at most 256 bytes, of what the step says it is doing now.
+                    type: string
+                done:
+                    description: How many bytes the step says it has fetched.
+                    format: int64
+                    type: integer
+                percent:
+                    description: How far the step says it has got, 0 to 100, when it knows a fraction and no bytes.
+                    type: integer
+                received:
+                    description: The bytes the sandbox's network interfaces received since the step started, by anything running in it, not only the step. It moves only with more traffic than the pool's own calls into the sandbox make.
+                    format: int64
+                    type: integer
+                receivedAt:
+                    description: When received last moved, or when the step started if it has not. Absent, with received, when the sandbox cannot count what it receives.
+                    format: date-time
+                    type: string
+                total:
+                    description: How many bytes the step says it will fetch, when it knows.
+                    format: int64
+                    type: integer
             type: object
         SandboxAgentProvisionRetry:
             additionalProperties: false

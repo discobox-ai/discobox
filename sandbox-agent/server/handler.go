@@ -1299,6 +1299,23 @@ func sandboxAgentProvisionStatus(status provisionspec.Status) sandboxapi.Sandbox
 		if feature.How != "" {
 			item.How = sandboxapi.NewOptSandboxAgentProvisionFeatureHow(sandboxapi.SandboxAgentProvisionFeatureHow(feature.How))
 		}
+		if progress := feature.Progress; progress != nil {
+			report := sandboxapi.SandboxAgentProvisionProgress{Detail: optStringNonEmpty(progress.Detail)}
+			if !progress.ReceivedAt.IsZero() {
+				report.Received = sandboxapi.NewOptInt64(progress.Received)
+				report.ReceivedAt = sandboxapi.NewOptDateTime(progress.ReceivedAt)
+			}
+			if progress.Done > 0 {
+				report.Done = sandboxapi.NewOptInt64(progress.Done)
+			}
+			if progress.Total > 0 {
+				report.Total = sandboxapi.NewOptInt64(progress.Total)
+			}
+			if progress.Percent > 0 {
+				report.Percent = sandboxapi.NewOptInt(progress.Percent)
+			}
+			item.Progress = sandboxapi.NewOptSandboxAgentProvisionProgress(report)
+		}
 		out.Features[name] = item
 	}
 	return out

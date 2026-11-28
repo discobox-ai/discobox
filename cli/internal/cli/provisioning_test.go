@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
@@ -43,5 +45,20 @@ func TestSandboxProvisioning(t *testing.T) {
 				t.Errorf("got (%q, %t), want (%q, %t)", got, failed, tc.want, tc.failed)
 			}
 		})
+	}
+}
+
+// One feature in progress says how far its step has got; several say only
+// their names, which is all a row has room for.
+func TestSandboxProvisioningShowsOneFeaturesProgress(t *testing.T) {
+	running := apiclientgen.SandboxRuntimeRuntimeStateRunning
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	one := fmt.Sprintf(`{"state":"provisioning","ready":true,"features":{"node":{"state":"ready"},"docker":{"state":"provisioning","step":"install","progress":{"detail":"installing docker-ce","percent":30,"received":2097152,"receivedAt":%q}}}}`, now)
+	if got, _ := sandboxProvisioning(provisioningSandbox(running, one)); got != "provisioning docker: installing docker-ce, 30% — 2.0 MiB received" {
+		t.Errorf("one feature: %q", got)
+	}
+	two := fmt.Sprintf(`{"state":"provisioning","ready":true,"features":{"desktop":{"state":"pending"},"docker":{"state":"provisioning","step":"install","progress":{"detail":"installing docker-ce","received":1,"receivedAt":%q}}}}`, now)
+	if got, _ := sandboxProvisioning(provisioningSandbox(running, two)); got != "provisioning desktop, docker" {
+		t.Errorf("two features: %q", got)
 	}
 }

@@ -6,7 +6,11 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strconv"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // StatusPath is the box's provisioning state, for this boot (ADR
@@ -85,6 +89,157 @@ type FeatureStatus struct {
 	Reason string `json:"reason,omitempty"`
 	// Error is why a feature failed.
 	Error string `json:"error,omitempty"`
+	// Progress is how far the step named by Step has got, present only
+	// while the feature is provisioning, and reset when its step changes
+	// (ADR 26-11-24-336 §1). It is shown, never acted on.
+	Progress *Progress `json:"progress,omitempty"`
+}
+
+// Progress is how far a running step has got: what the step says it is
+// doing, and what the box has received since it started (ADR 26-11-24-336
+// §§1–4). Every part of it is the box's word.
+type Progress struct {
+	// Detail is one line of what the step is doing now, at most
+	// MaxProgressDetail bytes.
+	Detail string `json:"detail,omitempty"`
+	// Done and Total are how far the step has got in bytes, Total only when
+	// the step knows it.
+	Done  int64 `json:"done,omitempty"`
+	Total int64 `json:"total,omitempty"`
+	// Percent is how far the step has got when it knows a fraction and no
+	// bytes (apt's install phase), 0 to 100.
+	Percent int `json:"percent,omitempty"`
+	// Received is the bytes the box received since the step started, by
+	// every program in it: the box's count, never the step's own. It moves
+	// only with traffic above what the pool's own calls into the box make.
+	Received int64 `json:"received,omitempty"`
+	// ReceivedAt is when Received last moved, or the step started when it
+	// has not; zero, with no Received, is a box that cannot count what it
+	// receives.
+	ReceivedAt time.Time `json:"receivedAt,omitzero"`
+}
+
+// ProgressEnv names the file a provisioning step's script reports its
+// progress on (ADR 26-11-24-336 §2). It is unset outside the agent's run.
+const ProgressEnv = "DISCOBOX_PROVISION_PROGRESS"
+
+// MaxProgressDetail bounds a step's detail line.
+const MaxProgressDetail = 256
+
+// ParseProgressLine reads one line a step wrote to its progress file, and
+// false when it says nothing. A line is the step's detail, after any of
+// these words, in any order:
+//
+//	bytes=DONE[/TOTAL]   how many bytes of how many it has fetched
+//	percent=N            how far it has got, 0 to 100
+//
+// so `percent=62 installing nodejs`. apt's own status lines
+// (`APT::Status-Fd`: `dlstatus:…`, `pmstatus:…`) are read too, so a step
+// can point apt at the file as it is. Only the detail, done, total and
+// percent of the result are set.
+func ParseProgressLine(line string) (Progress, bool) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return Progress{}, false
+	}
+	if kind, rest, ok := strings.Cut(line, ":"); ok && (kind == "dlstatus" || kind == "pmstatus") {
+		// KIND:PACKAGE:PERCENT:DESCRIPTION, the description free text.
+		parts := strings.SplitN(rest, ":", 3)
+		if len(parts) != 3 {
+			return Progress{}, false
+		}
+		var progress Progress
+		if percent, err := strconv.ParseFloat(parts[1], 64); err == nil {
+			progress.Percent = clampPercent(int(percent))
+		}
+		progress.Detail = BoundProgressDetail(lowerFirst(parts[2]))
+		return progress, progress.Detail != "" || progress.Percent > 0
+	}
+	if aptStatus(line) {
+		// Another of apt's lines (pmconffile, pmerror, media-change): not a
+		// detail to show.
+		return Progress{}, false
+	}
+	var progress Progress
+	words := line
+	for {
+		word, rest, _ := strings.Cut(words, " ")
+		key, value, ok := strings.Cut(word, "=")
+		if !ok {
+			break
+		}
+		switch key {
+		case "bytes":
+			doneText, totalText, hasTotal := strings.Cut(value, "/")
+			done, err := strconv.ParseInt(doneText, 10, 64)
+			var total int64
+			if err == nil && hasTotal {
+				total, err = strconv.ParseInt(totalText, 10, 64)
+			}
+			if err != nil || done < 0 || total < 0 {
+				ok = false
+				break
+			}
+			progress.Done, progress.Total = done, total
+		case "percent":
+			percent, err := strconv.Atoi(value)
+			if err != nil {
+				ok = false
+				break
+			}
+			progress.Percent = clampPercent(percent)
+		default:
+			ok = false
+		}
+		if !ok {
+			// Not a word of ours: the detail starts here.
+			progress.Detail = BoundProgressDetail(words)
+			return progress, true
+		}
+		words = strings.TrimLeft(rest, " ")
+		if words == "" {
+			break
+		}
+	}
+	progress.Detail = BoundProgressDetail(words)
+	return progress, true
+}
+
+// aptStatus reports whether line is one of apt's status lines.
+func aptStatus(line string) bool {
+	kind, _, _ := strings.Cut(line, ":")
+	switch kind {
+	case "pmconffile", "pmerror", "media-change", "dlstatus", "pmstatus":
+		return true
+	}
+	return false
+}
+
+func clampPercent(percent int) int {
+	return min(max(percent, 0), 100)
+}
+
+func lowerFirst(s string) string {
+	s = strings.TrimSpace(s)
+	r, size := utf8.DecodeRuneInString(s)
+	if size == 0 || r == utf8.RuneError {
+		return s
+	}
+	return string(unicode.ToLower(r)) + s[size:]
+}
+
+// BoundProgressDetail folds a detail onto one line of valid UTF-8, at most
+// MaxProgressDetail bytes. It is still the box's text: a reader escapes it.
+func BoundProgressDetail(detail string) string {
+	detail = strings.Join(strings.Fields(strings.ToValidUTF8(detail, "\ufffd")), " ")
+	if len(detail) <= MaxProgressDetail {
+		return detail
+	}
+	cut := MaxProgressDetail
+	for cut > 0 && !utf8.RuneStart(detail[cut]) {
+		cut--
+	}
+	return detail[:cut]
 }
 
 // Off reports whether the box reported feature off. A feature it does not

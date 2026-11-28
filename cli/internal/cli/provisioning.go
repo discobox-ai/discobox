@@ -5,6 +5,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
@@ -44,7 +45,13 @@ func sandboxProvisioning(sb apimodel.Sandbox) (text string, finalFailure bool) {
 		text = fmt.Sprintf("%s failed to provision: %s", failed[0], status.Features[failed[0]].Error)
 	case len(failed) > 1:
 		text = "failed to provision: " + strings.Join(failed, ", ")
-	case len(provisioning) > 0:
+	case len(provisioning) == 1:
+		text = "provisioning " + provisioning[0]
+		// One feature in progress has room for how far it has got.
+		if progress := sandboxcreate.ProgressText(status.Features[provisioning[0]].Progress, time.Now()); progress != "" {
+			text += ": " + progress
+		}
+	case len(provisioning) > 1:
 		text = "provisioning " + strings.Join(provisioning, ", ")
 	}
 	// Lead with the retry so it stays visible in a narrow console row.

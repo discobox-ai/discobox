@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"runtime"
 
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
@@ -61,12 +62,18 @@ func Apply(ctx context.Context, logger *slog.Logger, tracker *Tracker, trees []s
 		Records:      Records{Dir: RecordsDir},
 		LogDir:       LogDir,
 		Placeholders: PlaceholderDir,
+		ProgressDir:  ProgressDir,
 		Tracker:      tracker,
 		Logger:       logger,
 		Booted:       booted(),
 	}
 	if self, err := os.Executable(); err == nil {
 		runner.Self = self
+	}
+	if runtime.GOOS == "linux" {
+		// The kernel's interface counters: a box of another OS reports no
+		// received count, rather than one that never moves.
+		runner.NetDev = NetDev
 	}
 	if len(loaded) > 0 {
 		if runner.Platform, err = DetectPlatform("/"); err != nil {

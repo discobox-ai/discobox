@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
 	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 )
@@ -94,5 +95,29 @@ func TestStatusIncludesScheduledReprovision(t *testing.T) {
 	got := body.Provision.Retry
 	if resp.Code != http.StatusOK || got == nil || want == nil || got.Attempt != want.Attempt || got.Of != want.Of || !got.At.Equal(want.At.Truncate(time.Second)) {
 		t.Fatalf("status response %d: retry %+v, want %+v", resp.Code, got, want)
+	}
+}
+
+// A running step's progress is carried in the status report as the agent
+// holds it, its zero counts left out.
+func TestProvisionStatusCarriesProgress(t *testing.T) {
+	at := time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC)
+	out := sandboxAgentProvisionStatus(provisionspec.Status{State: provisionspec.StateProvisioning, Features: map[string]provisionspec.FeatureStatus{
+		"node": {State: provisionspec.StateProvisioning, Step: "install", Progress: &provisionspec.Progress{Detail: "installing nodejs", Percent: 62, Received: 4096, ReceivedAt: at}},
+		"go":   {State: provisionspec.StatePending},
+	}})
+	progress, ok := out.Features["node"].Progress.Get()
+	if !ok || progress.Detail.Or("") != "installing nodejs" || progress.Percent.Or(0) != 62 || progress.Received.Or(0) != 4096 || !progress.ReceivedAt.Or(time.Time{}).Equal(at) || progress.Done.IsSet() || progress.Total.IsSet() {
+		t.Fatalf("progress = %+v, %v", progress, ok)
+	}
+	if out.Features["go"].Progress.IsSet() {
+		t.Fatal("a pending feature carried progress")
+	}
+	// A box that cannot count what it receives reports no count.
+	out = sandboxAgentProvisionStatus(provisionspec.Status{State: provisionspec.StateProvisioning, Features: map[string]provisionspec.FeatureStatus{
+		"node": {State: provisionspec.StateProvisioning, Step: "install", Progress: &provisionspec.Progress{Detail: "installing"}},
+	}})
+	if progress := out.Features["node"].Progress.Or(sandboxapi.SandboxAgentProvisionProgress{}); progress.Received.IsSet() || progress.ReceivedAt.IsSet() {
+		t.Fatalf("progress = %+v, want no received count", progress)
 	}
 }

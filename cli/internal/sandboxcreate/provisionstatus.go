@@ -175,9 +175,9 @@ func agentPreparation(runtime apimodel.SandboxRuntime) Step {
 			continue
 		}
 		if feature.State == provisionspec.StateProvisioning && feature.Step != "" {
-			item := OneLine(name)
-			if feature.Step != "" {
-				item += " / " + OneLine(feature.Step)
+			item := OneLine(name) + " / " + OneLine(feature.Step)
+			if progress := ProgressText(feature.Progress, time.Now()); progress != "" {
+				item += ": " + progress
 			}
 			active = append(active, item)
 		}
@@ -190,6 +190,64 @@ func agentPreparation(runtime apimodel.SandboxRuntime) Step {
 		activity = "provisioning " + strings.Join(active, ", ")
 	}
 	return Step(activity)
+}
+
+// ProgressStalled is how long what a box receives may stand still before a
+// step's progress says nothing is arriving, rather than what has
+// (ADR 26-11-24-336 §7).
+const ProgressStalled = 30 * time.Second
+
+// ProgressText renders how far a running step has got, or "" when it says
+// nothing yet: what the step says it is doing, how far in bytes or percent,
+// and, for a step that counts no bytes of its own, what the box has received
+// since it started, or how long nothing has arrived:
+//
+//	installing @anthropic-ai/claude-code — 18.4 MiB received
+//	installing nodejs (amd64), 62%
+//	go1.25.4.linux-amd64.tar.gz from go.dev, 12.0 MiB of 70.1 MiB (17%)
+//	installing @anthropic-ai/claude-code — nothing received for 45s
+//
+// What the box received is the box's count, never the step's download, so it
+// carries no percentage; a box that cannot count it reports none, and no
+// stall is said of it. Every part is the box's word: the detail is escaped,
+// and a total smaller than what is done is shown as no total.
+func ProgressText(progress *provisionspec.Progress, now time.Time) string {
+	if progress == nil {
+		return ""
+	}
+	var parts []string
+	if detail := OneLine(progress.Detail); detail != "" {
+		parts = append(parts, detail)
+	}
+	done, total := max(progress.Done, 0), max(progress.Total, 0)
+	switch {
+	case total > 0 && done <= total:
+		parts = append(parts, fmt.Sprintf("%s of %s (%d%%)", humanBytes(done), humanBytes(total), done*100/total))
+	case done > 0:
+		parts = append(parts, humanBytes(done))
+	case progress.Percent > 0:
+		parts = append(parts, fmt.Sprintf("%d%%", min(progress.Percent, 100)))
+	}
+	line := strings.Join(parts, ", ")
+	if done > 0 || total > 0 {
+		return line
+	}
+	// A box that could not count what it received says neither.
+	var received string
+	if !progress.ReceivedAt.IsZero() {
+		if still := now.Sub(progress.ReceivedAt); still >= ProgressStalled {
+			received = "nothing received for " + still.Truncate(5*time.Second).String()
+		} else if progress.Received > 0 {
+			received = humanBytes(progress.Received) + " received"
+		}
+	}
+	switch {
+	case received == "":
+		return line
+	case line == "":
+		return received
+	}
+	return line + " — " + received
 }
 
 // StepRepairing is what a discobox says while a repair of it has been recorded

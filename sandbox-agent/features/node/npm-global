@@ -19,6 +19,10 @@
 # Provisioning also runs after boot, when ~/.npm may be a shared cache mount,
 # so the install uses a private cache it removes, and never that one.
 #
+# Run by a provisioning step, it says what it installs on the step's progress
+# file (DISCOBOX_PROVISION_PROGRESS): npm reports no fetch in flight, so how
+# much has arrived is the agent's count of what the box received.
+#
 # DISCOBOX_NODE_ENV and DISCOBOX_LINK_COMMAND move its fixed paths, for tests.
 set -eu
 
@@ -73,6 +77,13 @@ commands_of() {
 
 case $mode in
 install)
+  if [ -n "${DISCOBOX_PROVISION_PROGRESS:-}" ]; then
+    names=
+    for package in "$@"; do
+      names="$names${names:+ }$(name_of "$package")"
+    done
+    printf 'installing %s\n' "$names" >>"$DISCOBOX_PROVISION_PROGRESS" || :
+  fi
   npm_config_cache=$(mktemp -d)
   export npm_config_cache
   trap 'rm -rf "$npm_config_cache"' EXIT

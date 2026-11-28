@@ -231,7 +231,51 @@ explicit opt-out prevents launch; the default ignores opt-outs. Each feature's
 steps write to
 `/var/log/discobox/provision/<feature>.log`. `Tracker.Changes` moves when the
 document's state, its readiness or a feature's state does, never a step, and
-is what the agent's status wait holds the pool on.
+with a step's progress at most once per `ProgressSpacing` ([Progress](#progress)),
+and is what the agent's status wait holds the pool on.
+
+## Progress
+
+A provisioning feature's line carries `progress`, how far the step named by
+`step` has got
+([ADR 26-11-24-336](../../docs/adr/26-11-24-336-a-provisioning-step-reports-its-progress-and-the-agent-counts-what-the-box-receives.md)).
+It is shown, never acted on: readiness, a reprovision and the server read
+states alone.
+
+- **Per step.** `runSteps` starts a `stepProgress` for each step it applies,
+  with a `Runner.ProgressDir` or `Runner.NetDev` (`Apply` sets `ProgressDir`, and `NetDev` on Linux), and
+  ends it with the step: the tracker drops the step's progress as the next
+  starts or the feature finishes, and progress for a step the feature has
+  left is dropped.
+- **Said by the step.** Each step gets a file in `ProgressDir`
+  (`<feature>--<step>`, root's, truncated at the start, removed at the end),
+  named to its `run` and `check` scripts in `DISCOBOX_PROVISION_PROGRESS`.
+  The last whole line counts, in `provisionspec.ParseProgressLine`'s format:
+  a detail after optional `bytes=` and `percent=` words, or apt's
+  `APT::Status-Fd` lines as they are. core's `apt-get` helper
+  (`/usr/local/libexec/discobox/apt-get`) points apt at it; the node
+  feature's install uses it, and npm-global writes what it installs. The
+  agent's own `download` reports the bytes it copied of the response's
+  length, with the file's name and host, never the query; `packages` says
+  it updates the lists, then runs `apt-get install` with its status on the
+  file.
+- **Counted by the agent.** On Linux (`Apply` sets `NetDev` there alone),
+  every sample, once a second, also reads `/proc/net/dev`: the box's received
+  bytes since the step started, every interface but loopback, and when that
+  count last moved. A box of another OS, or one whose count cannot be read,
+  reports neither, never a count that does not move. It is the box's count,
+  not the step's: parallel features and the user's programs add to it. It
+  moves only once the box has received `receivedFloor` (32 KiB) within
+  `receivedWindow` (10 s), and reports the count as of that move: the pool's
+  own calls into the box cross the same interfaces, and counted they would
+  show a hung step as receiving, and wake the pool on each publish to call
+  again; whichever way a runtime brings the pool's calls in, over an
+  interface or not, they stay under the floor. An interface that goes keeps
+  what it had received.
+- **Coalesced.** `Tracker.progress` folds a sample into the document, which
+  `Status` reads at once, and writes `provision.json` and moves `Changes` at
+  most once per `ProgressSpacing` (5 s), the rest held for a timer. A step's
+  state and name still change the document at once.
 
 ## Reprovision
 
