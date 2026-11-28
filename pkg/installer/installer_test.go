@@ -958,3 +958,76 @@ func TestPowerShellSaysHowBigTheDownloadIs(t *testing.T) {
 		})
 	}
 }
+
+// An Application Control block cannot happen off Windows, so this lifts
+// install.ps1's message for one out of the script and calls it with the
+// exception PowerShell raises, the policy state and the signature stubbed: it
+// is what decides whether turning Smart App Control off is the advice.
+func TestPowerShellSaysWhatBlockedTheBinary(t *testing.T) {
+	const prelude = `
+$ast = [System.Management.Automation.Language.Parser]::ParseInput($env:SCRIPT, [ref]$null, [ref]$null)
+$fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-DiscoboxBlockedMessage' }, $true)
+. ([scriptblock]::Create($fn.Extent.Text))
+$release = 'v1.2.3'
+function Get-ItemProperty {
+    if ($env:SAC -ne 'on') { throw 'no such key' }
+    [pscustomobject]@{ VerifiedAndReputablePolicyState = 1 }
+}
+function Get-AuthenticodeSignature { [pscustomobject]@{ Status = $env:SIGNATURE } }
+$inner = if ($env:CODE) { [ComponentModel.Win32Exception]::new([int]$env:CODE) }
+$ex = [System.Management.Automation.ApplicationFailedException]::new($env:MESSAGE, $inner)
+$got = Get-DiscoboxBlockedMessage $ex 'discobox.exe'
+if ($got) { $got } else { '<none>' }
+`
+	const localized = "Das Programm discobox.exe konnte nicht ausgefuehrt werden"
+	for _, shell := range powerShells(t) {
+		t.Run(filepath.Base(shell), func(t *testing.T) {
+			for name, tc := range map[string]struct {
+				code, message, sac, signature string
+				want, not                     []string
+			}{
+				"smart app control and unsigned": {
+					"4551", localized, "on", "NotSigned",
+					[]string{"Smart App Control blocked discobox.exe", "not code-signed", "turn Smart App Control off", "removed it again"}, nil,
+				},
+				"matched by its text without the code": {
+					"", "Program 'discobox.exe' failed to run: An Application Control policy has blocked this file", "on", "NotSigned",
+					[]string{"turn Smart App Control off"}, nil,
+				},
+				"signed, so another policy": {
+					"4551", localized, "on", "Valid",
+					[]string{"an Application Control policy on this machine", "administrator", "v1.2.3"}, []string{"turn Smart App Control off"},
+				},
+				"smart app control off": {
+					"4551", localized, "off", "NotSigned",
+					[]string{"an Application Control policy on this machine"}, []string{"turn Smart App Control off"},
+				},
+				"any other failure": {
+					"2", localized, "on", "NotSigned",
+					[]string{"<none>"}, nil,
+				},
+			} {
+				t.Run(name, func(t *testing.T) {
+					//nolint:gosec // A PowerShell this test found on PATH, running the installer's own function.
+					cmd := exec.CommandContext(t.Context(), shell, "-NoProfile", "-NonInteractive", "-Command", prelude)
+					cmd.Env = append(clean(), "SCRIPT="+string(powerShellScript), "CODE="+tc.code,
+						"MESSAGE="+tc.message, "SAC="+tc.sac, "SIGNATURE="+tc.signature)
+					out, err := cmd.CombinedOutput()
+					if err != nil {
+						t.Fatalf("%v:\n%s", err, out)
+					}
+					for _, want := range tc.want {
+						if !strings.Contains(string(out), want) {
+							t.Errorf("says %q, which lacks %q", out, want)
+						}
+					}
+					for _, not := range tc.not {
+						if strings.Contains(string(out), not) {
+							t.Errorf("says %q, which should not contain %q", out, not)
+						}
+					}
+				})
+			}
+		})
+	}
+}

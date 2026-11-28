@@ -351,10 +351,20 @@ CI run of their own. Say so rather than sweeping them in.
 
 Pushing the tag triggers `.github/workflows/release.yml`: `vm-pins`
 (`release:check-vm-pins`, §3), which must pass before anything is built, then
-`binaries` (linux and
-darwin legs — darwin because cgo, the macOS SDK, and codesigning are
-native-only), `images` (multi-arch, pushed to ghcr), then `publish`, which
-creates the GitHub release and uploads `build/release/bin`.
+`binaries-linux` and `binaries-darwin` (darwin because cgo, the macOS SDK,
+and codesigning are native-only), `images` (multi-arch, pushed to ghcr), then
+`publish`, which creates the GitHub release and uploads `build/release/bin`.
+
+`binaries-linux` runs in the `windows-signing` environment and signs every
+Windows executable with Azure Trusted Signing before its digest is taken
+(`sign:windows`), and `release:verify` checks each signature. Without the
+`WINDOWS_SIGNING_*` repository variables it ships them unsigned, and the run
+carries an "Unsigned Windows executable" warning for each one. That is expected
+until the owner's Trusted Signing account is set up. Once it is, the warning on
+a release means the configuration has gone missing: tell the owner, because
+Windows 11 with Smart App Control on will refuse that release. A failed
+`sign:windows` or a `release:verify` "signed by …, not CN=…" is a broken
+release, not a flake.
 
 ```bash
 gh run list --repo discobox-ai/discobox --workflow release.yml --limit 1
@@ -362,7 +372,7 @@ gh run watch <run-id> --repo discobox-ai/discobox --exit-status
 ```
 
 Wait for it to complete rather than polling — about seven minutes, `images`
-being the long pole rather than the darwin leg of `binaries`. The next step
+being the long pole rather than `binaries-darwin`. The next step
 downloads the assets it uploads, so running early just fails.
 
 Do not write the release notes by hand. `release:publish` creates the release
@@ -634,7 +644,7 @@ wall clock is just the top row:
 | `build` | 1.0m | |
 | `verify` | 0.7m | |
 
-Release, same shape: `images` 4.7m and `binaries` (darwin) 3.5m in parallel,
+Release, same shape: `images` 4.7m and `binaries-darwin` 3.5m in parallel,
 then `publish` 1.0m.
 
 Still do not sit in a polling loop — arm a Monitor that exits when the run

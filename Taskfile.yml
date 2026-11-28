@@ -172,6 +172,38 @@ vars:
   # reaches what resolves the tagged channels (ADR 26-11-16-249 §4).
   MAIN_REPO: '{{.RELEASE_REPO}}-main'
   PUBLISH_REPO: '{{if .MAIN_BUILD}}{{.MAIN_REPO}}{{else}}{{.RELEASE_REPO}}{{end}}'
+  # The release a build is cut as: TAG when it is a v* tag, else empty. Empty for
+  # ci.yml's untagged release:build, `task build` and the dev loop, which pin
+  # nothing, assert no version and sign nothing. Resolved the way release:image
+  # and release:publish resolve theirs.
+  PIN_TAG:
+    sh: |
+      case "{{.TAG}}" in
+        v*) printf %s "{{.TAG}}" ;;
+      esac
+  # Whether Windows executables are Authenticode-signed with Azure Trusted
+  # Signing (ADR 26-11-24-185): "yes" when all four WINDOWS_SIGNING_* values
+  # are set, empty when none is, "partial" otherwise, which the targets that
+  # sign or verify refuse. The workflow passes them in from repository
+  # variables; anyone with them and an `az login` session can sign the same
+  # way. Pure shell, so it costs nothing in a task that never signs.
+  #
+  # WINDOWS_SIGNING_ENDPOINT  the account's regional endpoint host, e.g. eus.codesigning.azure.net
+  # WINDOWS_SIGNING_ACCOUNT   the Trusted Signing account
+  # WINDOWS_SIGNING_PROFILE   its public-trust certificate profile
+  # WINDOWS_SIGNING_SUBJECT   the CN release:verify expects on the signer's
+  #                           certificate, as osslsigncode prints it
+  WINDOWS_SIGNING:
+    sh: |
+      n=0
+      for v in "${WINDOWS_SIGNING_ENDPOINT:-}" "${WINDOWS_SIGNING_ACCOUNT:-}" "${WINDOWS_SIGNING_PROFILE:-}" "${WINDOWS_SIGNING_SUBJECT:-}"; do
+        [ -z "$v" ] || n=$((n + 1))
+      done
+      case $n in
+        0) ;;
+        4) printf yes ;;
+        *) printf partial ;;
+      esac
   # Multi-architecture and multi-output builds both need the docker-container
   # driver; the default docker driver supports neither.
   BUILDX_BUILDER: discobox
@@ -225,6 +257,67 @@ tasks:
           exit 1
         fi
         codesign --force --sign - --entitlements {{.ENTITLEMENTS}} "{{.SIGN_BINARY}}"
+
+  sign:windows:
+    desc: Authenticode-sign the Windows executable SIGN_BINARY with Azure Trusted Signing, for a published build
+    # ADR 26-11-24-185. Smart App Control, on by default on a new Windows 11,
+    # refuses an unsigned executable it has no reputation for, and a release
+    # every few days never earns any. So every Windows executable a published
+    # build ships is signed: the CLI, the server it stages, and the clipboard
+    # helper the Linux CLI runs on the Windows host from WSL.
+    #
+    # Called between a file's link and the first digest anyone takes of it
+    # (ADR 0066 §5): the server's goes into the manifest the CLI links, the
+    # CLI's into its own manifest and the installers, the helper's into the
+    # Linux CLI that embeds it. Signing rewrites the file, so a digest taken
+    # earlier would name bytes nobody ships.
+    #
+    # An untagged build is never signed and gains no Azure dependency. A
+    # published one with no WINDOWS_SIGNING_* configuration (a fork, or this
+    # repository until the owner's Trusted Signing account exists) ships the
+    # file unsigned and says so; with it, any failure to sign or timestamp
+    # fails the build. The access token comes from the Azure CLI session
+    # azure/login opened, and reaches jsign through its environment rather
+    # than its command line.
+    #
+    # Linux only (ADR 26-11-24-185 §2): the Windows executables a release ships
+    # are cross-compiled there, and only that job holds the identity. The
+    # darwin job builds the clipboard helper too, as a dependency, but neither
+    # ships nor embeds it, so it neither signs it nor warns about it.
+    #
+    # Every signature is timestamped: Trusted Signing's certificates last a
+    # few days, and only the timestamp keeps a signature valid after that.
+    #
+    # --replace because go build leaves an up-to-date output alone, signature
+    # and all, so a second build on the same machine would otherwise nest a
+    # second signature inside the first.
+    platforms: [linux]
+    requires:
+      vars: [SIGN_BINARY]
+    cmds:
+      - |
+        set -eu
+        [ -n "{{.PIN_TAG}}" ] && [ -n "{{.PUBLISH_REPO}}" ] || exit 0
+        case "{{.WINDOWS_SIGNING}}" in
+          yes) ;;
+          partial)
+            echo "sign:windows: set all of WINDOWS_SIGNING_ENDPOINT, _ACCOUNT, _PROFILE and _SUBJECT, or none of them" >&2
+            exit 1
+            ;;
+          *)
+            echo "::warning title=Unsigned Windows executable::{{.SIGN_BINARY}} is not Authenticode-signed: no WINDOWS_SIGNING_* configuration, so Smart App Control will refuse it"
+            exit 0
+            ;;
+        esac
+        WINDOWS_SIGNING_TOKEN=$(az account get-access-token --resource https://codesigning.azure.net --query accessToken --output tsv)
+        export WINDOWS_SIGNING_TOKEN
+        jsign --storetype TRUSTEDSIGNING \
+          --keystore "$WINDOWS_SIGNING_ENDPOINT" \
+          --storepass env:WINDOWS_SIGNING_TOKEN \
+          --alias "$WINDOWS_SIGNING_ACCOUNT/$WINDOWS_SIGNING_PROFILE" \
+          --tsaurl http://timestamp.acs.microsoft.com --tsmode RFC3161 \
+          --tsretries 3 --tsretrywait 10 --replace \
+          "{{.SIGN_BINARY}}"
 
   build:cli:
     desc: Compile discobox CLI
@@ -283,6 +376,10 @@ tasks:
       # CGO_ENABLED=0 for the reason build:cp-relay gives: a cross-compile with
       # cgo on builds runtime/cgo against the wrong SDK.
       - cd cli && CGO_ENABLED=0 GOOS=windows GOARCH={{.CLIPWATCH_ARCH}} go build -trimpath -ldflags="-s -w" -o ../{{.CLIPWATCH_BIN}} ./cmd/discobox-clipwatch
+      # Before it is compressed, so the Linux CLI embeds the signed helper: it
+      # runs on the Windows host, where Smart App Control applies to it too.
+      - task: sign:windows
+        vars: { SIGN_BINARY: '{{.CLIPWATCH_BIN}}' }
       - go run ./internal/cmd/discobox-gzip {{.CLIPWATCH_BIN}} {{.CLIPWATCH_OUT}}
 
   build:access:
@@ -1391,15 +1488,6 @@ tasks:
       - build:cp-relay
       - build:clipwatch
     vars:
-      # The tag the agent images are pinned to, resolved the way release:image
-      # and release:publish resolve theirs.
-      PIN_TAG:
-        sh: |
-          tag="{{.TAG}}"
-          case "$tag" in
-            v*) printf %s "$tag" ;;
-            *) printf %s "" ;;
-          esac
       EXT: '{{if eq .TARGET_OS "windows"}}.exe{{end}}'
       OUT: build/release/bin/discobox-{{.TARGET_OS}}-{{.TARGET_ARCH}}{{.EXT}}
       # The server is published as its own asset and staged by the CLI on the
@@ -1412,6 +1500,18 @@ tasks:
       # cgo only where the platform's hypervisor bindings need it: Code-Hex/vz
       # on darwin. Everywhere else a static binary is the better artifact.
       CGO: '{{if eq .TARGET_OS "darwin"}}1{{else}}0{{end}}'
+      # What discobox-server-manifest is told about the server, for both the
+      # manifest the CLI links and the external one written after it. The base
+      # URLs' order is the fallback order. The mirror is tried first because staging a server is
+      # the heaviest download we serve; the release URL is last because it is
+      # the one that outlives everything else. A main build is on GitHub alone:
+      # the mirror has no namespace for its repository (ADR 26-11-16-249 §4).
+      SERVER_MANIFEST_ARGS: >-
+        -version "{{.PIN_TAG}}" -os "{{.TARGET_OS}}" -arch "{{.TARGET_ARCH}}"
+        -command "{{.SERVER_NAME}}"
+        -asset "{{.SERVER_NAME}}={{.SERVER_OUT}}"
+        {{if eq .PUBLISH_REPO .ASSET_MIRROR_REPO}}-base-url "{{.ASSET_MIRROR_BASE}}/{{.PIN_TAG}}"{{end}}
+        -base-url "https://github.com/{{.PUBLISH_REPO}}/releases/download/{{.PIN_TAG}}"
       # Every image this release publishes is pinned to the release's own tag:
       # the two agent images, and the registry and tag the built-in harness
       # images resolve through. They reach the server's link and not the
@@ -1493,6 +1593,11 @@ tasks:
       # binary that needs the Virtualization entitlement (ADR 0099).
       - task: sign
         vars: { SIGN_BINARY: '{{.SERVER_OUT}}' }
+      # The same rule for Windows, where the signature is Authenticode's
+      # (ADR 26-11-24-185).
+      - task: sign:windows
+        vars: { SIGN_BINARY: '{{.SERVER_OUT}}' }
+        if: '[ "{{.TARGET_OS}}" = windows ]'
       # The manifest is generated here rather than in a var because it is a
       # digest of a file this target has only just written, and Task evaluates
       # vars before the first command runs.
@@ -1505,37 +1610,28 @@ tasks:
         set -eu
         manifest=""
         if [ -n "{{.PIN_TAG}}" ] && [ -n "{{.PUBLISH_REPO}}" ]; then
-          set -- -version "{{.PIN_TAG}}" -os "{{.TARGET_OS}}" -arch "{{.TARGET_ARCH}}" \
-            -command "{{.SERVER_NAME}}" \
-            -asset "{{.SERVER_NAME}}={{.SERVER_OUT}}"
-          # Order is the fallback order. The mirror is tried first because
-          # staging a server is the heaviest download we serve; the release URL
-          # is last because it is the one that outlives everything else.
-          # A main build is on GitHub alone: the mirror has no namespace for
-          # its repository (ADR 26-11-16-249 §4).
-          if [ "{{.PUBLISH_REPO}}" = "{{.ASSET_MIRROR_REPO}}" ]; then
-            set -- "$@" -base-url "{{.ASSET_MIRROR_BASE}}/{{.PIN_TAG}}"
-          fi
-          set -- "$@" -base-url "https://github.com/{{.PUBLISH_REPO}}/releases/download/{{.PIN_TAG}}"
           # Export from a host build even when the server asset targets Windows.
           go run -ldflags="{{.SERVER_LDFLAGS}} -X github.com/discobox-ai/discobox/pkg/version.Version={{.PIN_TAG}}" \
             ./server/cmd/discobox-server manifest > "build/release/images-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json"
-          manifest="$(go run ./internal/cmd/discobox-server-manifest "$@")"
+          manifest="$(go run ./internal/cmd/discobox-server-manifest {{.SERVER_MANIFEST_ARGS}})"
         fi
         cd cli && GOOS={{.TARGET_OS}} GOARCH={{.TARGET_ARCH}} CGO_ENABLED={{.CGO}} \
           go build -trimpath \
           -ldflags="{{.LDFLAGS}} {{.CLI_LDFLAGS}}${manifest:+ -X github.com/discobox-ai/discobox/pkg/serverstage.DefaultManifest=$manifest}" \
           -o "../{{.OUT}}" {{.CLI_MAIN}}
-        cd ..
-        if [ -n "$manifest" ]; then
-          # The full external manifest is written after the CLI's final link:
-          # embedding its own digest would be self-referential.
-          go run ./internal/cmd/discobox-server-manifest "$@" \
-            -revision "$(git rev-parse HEAD)" \
-            -client-asset "discobox{{.EXT}}={{.OUT}}" \
-            -release-images "build/release/images-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json" \
-            -release-output "build/release/bin/discobox-manifest-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json" >/dev/null
-        fi
+      # Before -client-asset below and the installers take the CLI's digest.
+      - task: sign:windows
+        vars: { SIGN_BINARY: '{{.OUT}}' }
+        if: '[ "{{.TARGET_OS}}" = windows ]'
+      # The full external manifest is written after the CLI's final link:
+      # embedding its own digest would be self-referential.
+      - cmd: >-
+          go run ./internal/cmd/discobox-server-manifest {{.SERVER_MANIFEST_ARGS}}
+          -revision "$(git rev-parse HEAD)"
+          -client-asset "discobox{{.EXT}}={{.OUT}}"
+          -release-images "build/release/images-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json"
+          -release-output "build/release/bin/discobox-manifest-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json" >/dev/null
+        if: '[ -n "{{.PIN_TAG}}" ] && [ -n "{{.PUBLISH_REPO}}" ]'
 
   release:windows-zip:
     desc: Package each Windows binary as the archive winget installs from
@@ -1576,16 +1672,6 @@ tasks:
   release:verify:
     desc: Check that the release binaries in build/release/bin are runnable anywhere
     vars:
-      # The tag the binaries should report, resolved the way release:binary
-      # resolves the one it links in. Empty for an untagged CI build, which
-      # has no version to assert.
-      PIN_TAG:
-        sh: |
-          tag="{{.TAG}}"
-          case "$tag" in
-            v*) printf %s "$tag" ;;
-            *) printf %s "" ;;
-          esac
     # A release went green publishing Linux binaries that could not start on any
     # machine but the builder: their ELF interpreter was a /nix/store path.
     # Everything downstream looked healthy — build, checksums, upload — because
@@ -1604,6 +1690,37 @@ tasks:
         host="$(go env GOOS)-$(go env GOARCH)"
         work="$(mktemp -d)"
         trap 'rm -rf "$work"' EXIT
+
+        # A Windows executable of a signed build carries an Authenticode
+        # signature that chains to Microsoft's code-signing root, a timestamp
+        # from Trusted Signing's authority, and the subject this repository
+        # validated (ADR 26-11-24-185 §5). osslsigncode checks it, not jsign,
+        # so the check is not the tool that signed. The root is committed
+        # because no Linux CA bundle carries a code-signing root; the signer's
+        # chain and the timestamp's both end at it.
+        case "{{.WINDOWS_SIGNING}}" in
+          partial) echo "release:verify: set all of WINDOWS_SIGNING_ENDPOINT, _ACCOUNT, _PROFILE and _SUBJECT, or none of them" >&2; exit 1 ;;
+        esac
+        signed=""
+        if [ -n "{{.PIN_TAG}}" ] && [ -n "{{.PUBLISH_REPO}}" ] && [ "{{.WINDOWS_SIGNING}}" = yes ]; then signed=yes; fi
+        verify_signature() {
+          [ -n "$signed" ] || return 0
+          root=scripts/microsoft-identity-verification-root-ca-2020.pem
+          if ! osslsigncode verify -CAfile "$root" -TSA-CAfile "$root" -in "$1" > "$work/signature" 2>&1; then
+            cat "$work/signature" >&2
+            echo "$2: no valid Authenticode signature" >&2
+            exit 1
+          fi
+          grep -q '^Timestamp Server Signature verification: ok' "$work/signature" ||
+            { cat "$work/signature" >&2; echo "$2: its signature is not timestamped, so it stops validating when the certificate expires" >&2; exit 1; }
+          # The signer's own certificate is the first subject printed.
+          subject=$(sed -n '/^Signer.s certificate:/,$ s/^[[:space:]]*Subject: //p' "$work/signature" | head -n 1)
+          case "$subject," in
+            *"CN=$WINDOWS_SIGNING_SUBJECT",*) ;;
+            *) echo "$2: signed by '$subject', not CN=$WINDOWS_SIGNING_SUBJECT" >&2; exit 1 ;;
+          esac
+          echo "$2: signed by $subject, timestamped"
+        }
         found=0
         for binary in build/release/bin/*; do
           [ -e "$binary" ] || continue
@@ -1645,6 +1762,10 @@ tasks:
               size=$(wc -c < "$helper")
               [ "$size" -gt 65536 ] || { echo "$name: clipboard helper for windows/$arch is $size bytes, not a real binary" >&2; exit 1; }
               echo "$name: clipboard helper windows/$arch ($size bytes)"
+              if [ -n "$signed" ]; then
+                gzip -dc "$helper" > "$work/clipwatch.exe"
+                verify_signature "$work/clipwatch.exe" "$name: clipboard helper windows/$arch"
+              fi
               ;;
           esac
 
@@ -1654,6 +1775,7 @@ tasks:
           case "$name" in
             *-windows-*.exe)
               go run ./internal/cmd/discobox-winres verify -version "{{.PIN_TAG}}" "$binary"
+              verify_signature "$binary" "$name"
               ;;
           esac
 

@@ -332,7 +332,16 @@ Release binaries are built on the platform they target — darwin has to be, sin
 [`server/providers/vz/DESIGN.md`](server/providers/vz/DESIGN.md)); it needs
 nothing of Nix but Go, so the macOS job sets up plain Go with
 `actions/setup-go`, as Windows does. Windows has no cgo, so its binary is
-cross-compiled from the Linux job. The macOS job lints only the packages darwin
+cross-compiled from the Linux job. That job, `binaries-linux`, also signs
+every Windows executable a published build ships (the CLI, the server, and the
+WSL clipboard helper) with Azure Trusted Signing through jsign, after its link
+and before any digest of it is taken. It's the only job that runs in the
+`windows-signing` environment and mints an OIDC token for that identity.
+`release:verify` checks each signature with osslsigncode against the committed
+code-signing root. A published build with no `WINDOWS_SIGNING_*`
+configuration ships those files unsigned with a warning
+([ADR 26-11-24-185](docs/adr/26-11-24-185-every-published-windows-executable-is-authenticode-signed-with-azure-trusted-signing-as-it-is-built.md)).
+The macOS job lints only the packages darwin
 builds from other files than Linux (`scripts/lint-darwin.sh`) and type-checks
 the rest; the Linux job already lints everything. Agent images are built once
 for both architectures by `depot build`, falling back to emulated `docker

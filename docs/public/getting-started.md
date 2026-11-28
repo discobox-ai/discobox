@@ -27,6 +27,16 @@ On Windows 11, run this in PowerShell:
 irm https://discobox.ai/install.ps1 | iex
 ```
 
+Windows 11's Smart App Control blocks a program that is neither code-signed
+nor already known to Microsoft. If it blocks `discobox.exe`, the installer says
+so and removes the file again. For a build that is not code-signed, the way to
+run it is to turn Smart App Control off in Windows Security > App & browser
+control > Smart App Control settings, then run the installer again. That turns
+it off for every program on the machine, and on some Windows builds it can't be
+turned back on without reinstalling Windows. If the installer says an
+Application Control policy blocked it instead, your organisation's policy is
+the cause: ask its administrator to allow Discobox.
+
 If `discobox.ai` does not resolve where you are (some network resolvers block
 newly registered domains), use Homebrew, which downloads from GitHub, or fetch
 the same stable installer from the GitHub release:
