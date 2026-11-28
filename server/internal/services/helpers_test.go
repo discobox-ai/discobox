@@ -230,6 +230,22 @@ func TestSandboxUserValidateAccountTakesTheGuestsIDs(t *testing.T) {
 	}
 }
 
+// A user naming its primary group by both gid and name is refused at create as
+// a bad request saying so, rather than stored for a sandbox whose boot refuses
+// it. macOS is not asked: its account check sets the ids aside before the
+// one-account rule, which then refuses the group name alone.
+func TestSandboxUserValidateAccountRefusesBothGIDAndGroupName(t *testing.T) {
+	name, uid, gid, group := "ada", 1000, 1000, "docker"
+	fields := SandboxUserFields{Name: &name, UID: &uid, GID: &gid, GroupName: &group}
+	for _, goos := range []string{"linux", "windows"} {
+		err := fields.ValidateAccount(goos)
+		var statusErr interface{ StatusCode() int }
+		if !errors.As(err, &statusErr) || statusErr.StatusCode() != http.StatusBadRequest || !strings.Contains(err.Error(), "mutually exclusive") {
+			t.Errorf("%s: ValidateAccount = %v, want a 400 naming gid and groupName as mutually exclusive", goos, err)
+		}
+	}
+}
+
 // The sandbox's own egress level is on its record: `box update` keeps the part
 // of a level its flags leave out by reading it back from here.
 func TestSandboxToAPIIncludesItsEgressLevel(t *testing.T) {

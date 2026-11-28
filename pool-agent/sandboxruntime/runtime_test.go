@@ -1017,6 +1017,24 @@ func TestValidateCreateRequestRefusesAnUnresolvedRequest(t *testing.T) {
 	}
 }
 
+// A create whose user names its primary group twice, by gid and by name, is a
+// malformed request no merge can settle. The pool agent refuses it before it
+// starts a container, rather than booting one that exits on it.
+func TestValidateCreateRequestRefusesAUserWithBothGIDAndGroupName(t *testing.T) {
+	req := &workerapimodel.PoolSandboxCreateRequest{
+		ResolvedHarnessConfig: workerclient.NewOptResolvedHarnessConfig(workerapimodel.ResolvedHarnessConfig{ID: "harness-1", Name: "Shell"}),
+	}
+	req.Config.User = workerclient.NewOptSandboxUser(workerclient.SandboxUser{
+		UID:       workerclient.NewOptInt64(1000),
+		Gid:       workerclient.NewOptInt64(1000),
+		GroupName: workerclient.NewOptString("docker"),
+	})
+	err := validateCreateRequest("sbx_test0000000001", req)
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("validate = %v, want a refusal naming gid and groupName as mutually exclusive", err)
+	}
+}
+
 func TestSandboxHostnameIsTheHyphenatedIDAsALegalLabel(t *testing.T) {
 	for _, tc := range []struct {
 		name      string

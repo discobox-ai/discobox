@@ -3772,17 +3772,30 @@ func sandboxSkills(in workerclient.SandboxConfigSkills) sandboxconfig.Skills {
 // made from outside the image. What the request did not say stays unset, and
 // the sandbox answers for it later.
 func resolveSandboxUser(paths sandboxpath.Paths, req *workerapimodel.PoolSandboxCreateRequest) sandboxuser.User {
-	if req == nil {
+	requested := requestedSandboxUser(req)
+	if requested == nil {
 		return sandboxuser.User{}
+	}
+	requested.HomeDirectory = paths.Rooted(requested.HomeDirectory)
+	return sandboxuser.Merge(sandboxuser.Layers{Request: requested})
+}
+
+// requestedSandboxUser is the request's user as the one layer the pool agent
+// knows, its home directory as the request spelled it, or nil when the request
+// names no user. validateCreateRequest checks it, and resolveSandboxUser roots
+// its home directory and merges it.
+func requestedSandboxUser(req *workerapimodel.PoolSandboxCreateRequest) *sandboxuser.User {
+	if req == nil {
+		return nil
 	}
 	user, ok := req.Config.User.Get()
 	if !ok {
-		return sandboxuser.User{}
+		return nil
 	}
 	requested := &sandboxuser.User{
 		Name:             strings.TrimSpace(optString(user.Name)),
 		GroupName:        strings.TrimSpace(optString(user.GroupName)),
-		HomeDirectory:    paths.Rooted(optString(user.HomeDirectory)),
+		HomeDirectory:    optString(user.HomeDirectory),
 		AdditionalGroups: append([]string(nil), user.AdditionalGroups...),
 	}
 	if uid, ok := user.UID.Get(); ok {
@@ -3791,7 +3804,7 @@ func resolveSandboxUser(paths sandboxpath.Paths, req *workerapimodel.PoolSandbox
 	if gid, ok := user.Gid.Get(); ok {
 		requested.GID = sandboxuser.ID(gid)
 	}
-	return sandboxuser.Merge(sandboxuser.Layers{Request: requested})
+	return requested
 }
 
 // normalizeSandboxConfig applies provider-owned path defaults before the
@@ -4418,6 +4431,11 @@ func delivery(req *workerapimodel.PoolSandboxCreateRequest) assetcache.Delivery 
 func validateCreateRequest(sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) error {
 	if _, ok := req.ResolvedHarnessConfig.Get(); !ok {
 		return fmt.Errorf("sandbox %s: create request has no resolved harness config", sandboxID)
+	}
+	// A user that contradicts itself would reach boot and stop the sandbox
+	// before systemd starts, so it is refused here, before a container exists.
+	if err := requestedSandboxUser(req).Validate(); err != nil {
+		return fmt.Errorf("sandbox %s: user: %w", sandboxID, err)
 	}
 	refs, _ := req.Config.SourceCodeReferences.Get()
 	skillsKeys := map[string]bool{}

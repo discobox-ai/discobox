@@ -200,9 +200,12 @@ func Named(u *User) bool {
 }
 
 // Validate reports contradictions inside a single layer, which no amount of
-// merging can settle. It needs no account database. runuser.Resolve checks
-// every layer with it before merging, and boot checks the manifest's user with
-// it as it reads it.
+// merging can settle. It needs no account database, so every edge a user
+// crosses checks it: the control plane refuses a sandbox create with it (as
+// part of the server's account validation), the pool agent refuses a create
+// request with it before starting anything, runuser.Resolve checks every layer
+// with it before merging, and boot checks the manifest's user with it as it
+// reads it.
 func (u *User) Validate() error {
 	if u == nil {
 		return nil

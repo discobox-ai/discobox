@@ -2889,7 +2889,9 @@ that names no base image is refused.
 The pool agent runs what the control plane tells it and invents nothing.
 `validateCreateRequest` refuses one that carries no resolved harness config —
 every sandbox has one (ADR 0025), so its absence is a control plane that failed
-to resolve it, not a sandbox asking for a bare shell. Validation runs before
+to resolve it, not a sandbox asking for a bare shell. It also refuses a user
+that contradicts itself (`sandboxuser.User.Validate`: both a gid and a group
+name), which boot would refuse after the container started. Validation runs before
 any container work, so a malformed request costs nothing.
 
 - `resolveImage` obtains the base image and returns the **image ID to
