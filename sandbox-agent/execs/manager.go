@@ -1098,8 +1098,16 @@ func (m *Manager) Attach(ctx context.Context, w http.ResponseWriter, r *http.Req
 		_ = m.recordEvent(context.Background(), exec, "exec.attach.closed", "attach closed after "+held.Round(time.Second).String(),
 			map[string]any{"unit": exec.Unit, "durationMs": held.Milliseconds()})
 	}()
-	return shimproxy.AttachWebSocket(ctx, w, r, exec.SocketPath, "discobox-sandbox-exec", replay)
+	return shimproxy.AttachWebSocket(ctx, w, r, exec.SocketPath, "discobox-sandbox-exec", replay, attachPingInterval, attachPingTimeout)
 }
+
+// attachPingInterval paces the keepalive pings on a websocket exec attach, and
+// attachPingTimeout is how long one waits, with the attach idle, before its
+// client is taken for gone (shimproxy.AttachWebSocket).
+const (
+	attachPingInterval = 30 * time.Second
+	attachPingTimeout  = 10 * time.Second
+)
 
 // ConnectOneShot opens a one-shot attach to an exec, for callers that want plain
 // request/response rather than a duplex stream (a `cat` in, a `cat` out). The

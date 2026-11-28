@@ -2,6 +2,7 @@ package shimproxy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/discobox-ai/x/shorttmp"
 )
 
@@ -270,5 +272,185 @@ func TestStatusBoundsTheWholeExchange(t *testing.T) {
 				t.Fatal("status exchange exceeded its timeout")
 			}
 		})
+	}
+}
+
+// testPingInterval and testPingTimeout are a keepalive fast enough that a
+// test's pause outlasts many unanswered pings in seconds rather than the
+// minutes the real timing takes.
+const (
+	testPingInterval = 300 * time.Millisecond
+	testPingTimeout  = 200 * time.Millisecond
+)
+
+// testKeepalivePause outlasts the test keepalive many times, and the five
+// seconds the websocket gives a ping or pong to take its writer and be
+// written, which a paused client holds behind a pending output write.
+const testKeepalivePause = 8 * time.Second
+
+// websocketAttach serves one websocket attach, with the test keepalive, of a shim
+// that runs shim once the attach is upgraded, and dials it. proxyErr has the
+// attach's result once it ends.
+func websocketAttach(t *testing.T, shim func(*net.UnixConn, *bufio.Reader)) (ws *websocket.Conn, proxyErr <-chan error) {
+	t.Helper()
+	requireUnixHalfClose(t)
+	socketPath := filepath.Join(shorttmp.Dir(t), "shim.sock")
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketPath, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	go func() {
+		conn, err := listener.AcceptUnix()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		reader := bufio.NewReader(conn)
+		req, err := http.ReadRequest(reader)
+		if err != nil {
+			return
+		}
+		_ = req.Body.Close()
+		_, _ = io.WriteString(conn, "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: test-exec\r\n\r\n")
+		shim(conn, reader)
+	}()
+
+	result := make(chan error, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		result <- AttachWebSocket(r.Context(), w, r, socketPath, "test-exec", false, testPingInterval, testPingTimeout)
+	}))
+	t.Cleanup(server.Close)
+
+	ws, response, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if response != nil && response.Body != nil {
+		_ = response.Body.Close()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws.SetReadLimit(-1)
+	t.Cleanup(func() { _ = ws.CloseNow() })
+	return ws, result
+}
+
+// A websocket attach whose client pauses reading, long enough for the agent's
+// output write to back up past a keepalive ping, must hold the exec back the
+// way a pipe does and deliver every byte once the client reads again, not
+// end the attach because the ping went unanswered (#1408).
+func TestAttachWebSocketHoldsAPausedClient(t *testing.T) {
+	const outputSize = 8 << 20
+	ws, _ := websocketAttach(t, func(conn *net.UnixConn, _ *bufio.Reader) {
+		_, _ = conn.Write(bytes.Repeat([]byte("x"), outputSize))
+		_, _ = io.WriteString(conn, "END")
+		_ = conn.CloseWrite()
+	})
+
+	// The client's consumer pauses: nothing reads the socket. Its own
+	// keepalive goes on pinging the agent, as the CLI's does, so the agent
+	// has pongs to answer behind its pending output.
+	pingClient(t, ws, testKeepalivePause)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	output, err := io.ReadAll(websocket.NetConn(ctx, ws, websocket.MessageBinary))
+	if len(output) != outputSize+len("END") || !bytes.HasSuffix(output, []byte("END")) {
+		t.Fatalf("read %d bytes (err %v) after a %s pause, want %d ending in END: the agent ended the attach",
+			len(output), err, testKeepalivePause, outputSize+len("END"))
+	}
+}
+
+// pingClient pings the agent from the client every testPingInterval for d,
+// as the CLI's keepalive does, without reading: the pongs are left unread.
+func pingClient(t *testing.T, ws *websocket.Conn, d time.Duration) {
+	t.Helper()
+	end := time.Now().Add(d)
+	for time.Now().Before(end) {
+		ctx, cancel := context.WithTimeout(t.Context(), testPingInterval)
+		_ = ws.Ping(ctx)
+		cancel()
+	}
+}
+
+// An attach whose shim is not reading its input, with the client's input
+// backed up behind it, leaves the agent not reading the client, so the
+// client's pongs go unread: that holds the attach back too, and is not a
+// dead client.
+func TestAttachWebSocketHoldsAnInputBackedUpBehindTheShim(t *testing.T) {
+	const inputSize = 8 << 20
+	ws, _ := websocketAttach(t, func(conn *net.UnixConn, reader *bufio.Reader) {
+		// The command reads no input until the pause is over.
+		time.Sleep(testKeepalivePause)
+		n, _ := io.Copy(io.Discard, io.LimitReader(reader, inputSize))
+		_, _ = fmt.Fprintf(conn, "read %d", n)
+		_ = conn.CloseWrite()
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	client := websocket.NetConn(ctx, ws, websocket.MessageBinary)
+	go func() { _, _ = client.Write(bytes.Repeat([]byte("i"), inputSize)) }()
+
+	output, err := io.ReadAll(client)
+	if want := fmt.Sprintf("read %d", inputSize); string(output) != want {
+		t.Fatalf("got %q (err %v), want %q: the agent ended the attach while its shim was not reading", output, err, want)
+	}
+}
+
+// A client that stops answering while its attach is idle (a dead peer: no
+// output is pending and the agent is waiting on the client) is found by the
+// keepalive, which ends the attach and closes the shim's end.
+func TestAttachWebSocketEndsAnIdleAttachWhoseClientIsGone(t *testing.T) {
+	shimEOF := make(chan struct{})
+	_, proxyErr := websocketAttach(t, func(_ *net.UnixConn, reader *bufio.Reader) {
+		// A command that is running and quiet; the attach is idle until the
+		// agent hangs up.
+		_, _ = io.Copy(io.Discard, reader)
+		close(shimEOF)
+	})
+	// The client never reads again, so it answers no ping: to the agent it
+	// is gone.
+	deadline := time.After(testPingInterval + testPingTimeout + 5*time.Second)
+	select {
+	case err := <-proxyErr:
+		if err != nil {
+			t.Fatalf("attach ended with %v", err)
+		}
+	case <-deadline:
+		t.Fatal("the attach of a client that answers no ping was not ended")
+	}
+	select {
+	case <-shimEOF:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the attach ended without closing the shim's end")
+	}
+}
+
+// A shim that stops taking input before it has sent the rest of its output
+// (its command's input closed, its exit frame still to come) fails the
+// agent's input copy on a write to the shim, not on a read of the client:
+// that must not end the attach, and the client still gets every byte the
+// shim sends after.
+func TestAttachWebSocketDeliversOutputAfterTheShimStopsTakingInput(t *testing.T) {
+	inputRefused := make(chan struct{})
+	ws, _ := websocketAttach(t, func(conn *net.UnixConn, _ *bufio.Reader) {
+		_ = conn.CloseRead()
+		<-inputRefused
+		_, _ = io.WriteString(conn, "END")
+		_ = conn.CloseWrite()
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	client := websocket.NetConn(ctx, ws, websocket.MessageBinary)
+	// Input the shim no longer takes, sent until the agent's write of it to
+	// the shim has had time to fail.
+	for range 20 {
+		_, _ = client.Write([]byte("input"))
+		time.Sleep(25 * time.Millisecond)
+	}
+	close(inputRefused)
+
+	output, err := io.ReadAll(client)
+	if string(output) != "END" {
+		t.Fatalf("got %q (err %v), want END: the attach ended when the shim stopped taking input", output, err)
 	}
 }

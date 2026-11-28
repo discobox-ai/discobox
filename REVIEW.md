@@ -46,9 +46,20 @@ Global review expectations:
   inside a `Read`, so a reader stopped behind a paused consumer (`| less`) holds
   the pong behind its data. Count a missing pong only while a read was
   waiting, as `websocketAttachFrames.keepalive` in `cli/internal/cli` does, or
-  never, as `pkg/wstunnel` does. Check both ends of the socket: the exec
-  attach's CLI end got this wrong (#1268) and its sandbox agent end still does
-  (#1408).
+  never, as `pkg/wstunnel` does. coder/websocket also gives every ping and
+  pong it writes five seconds to take the connection's one writer and be
+  written, and closes the connection when one that took it stalls that long:
+  behind a data write blocked on a peer that is not reading, a ping fails and
+  an automatic pong fails the `Read` that answered it. An end that writes data
+  as well sends no ping and answers none (`OnPingReceived`) while a write of
+  its own is pending, and counts a failed or missing pong only if no write was
+  pending or moving either, as `shimproxy.keepalive` in `sandbox-agent` does.
+  No write pending does not mean the next frame will not block: a write
+  returns once the kernel has its bytes, and a full send buffer stalls the
+  next ping or pong into that five-second close with nothing pending (#1695).
+  Check both ends of the socket: the exec attach's sandbox agent end got this
+  wrong (#1408), and its CLI end keeps only the read half (#1268): it still
+  pings, and answers pings, behind its own blocked input writes (#1680).
 - A file or tree something trusts after a hard stop (a record, a marker, a
   key, a cache entry, a harness's settings) is staged and renamed through
   `pkg/fsdurable`, in every module, and so is any staged write that syncs at

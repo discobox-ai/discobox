@@ -1692,9 +1692,12 @@ session, `pkg/execstream/client`.
   on the socket. The websocket reads pongs only inside a read, and the
   session's one reader stops while it writes output to a consumer that has
   paused (`| less`, a slow disk), so a pong missed then is unread, not
-  missing, and the CLI does not end the attach for it. This is the CLI's end
-  only: the sandbox agent pings the same socket and still ends an attach
-  whose consumer pauses long enough to block its output (#1408).
+  missing, and the CLI does not end the attach for it. It does not yet
+  account for its own input writes: stdin backed up behind a command that is
+  not reading holds the websocket's writer, behind which its pong, and its
+  ping, fail after five seconds (#1680). The sandbox agent's end of the
+  socket accounts for both directions, see
+  [`sandbox-agent`](../sandbox-agent/DESIGN.md) `shimproxy`.
 - Everything the session does to this machine goes through `client.Console`:
   raw mode, terminal size, signal delivery, stopping and resuming, and putting
   the display back. The real one is `client.OSConsole`; it is the seam that lets

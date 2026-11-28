@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/execstream/frame"
@@ -200,34 +201,38 @@ func AttachHTTPUpgrade(ctx context.Context, w http.ResponseWriter, socketPath, p
 	return nil
 }
 
-// attachPingInterval paces websocket keepalive pings on an attach. The pings
-// keep idle attach tunnels alive across NATs and intermediate proxies and
-// detect dead peers, which an idle raw-byte tunnel never would.
-const attachPingInterval = 30 * time.Second
-
-// attachPingTimeout bounds how long a ping waits for the peer's pong before
-// the connection is considered dead.
-const attachPingTimeout = 10 * time.Second
-
-func AttachWebSocket(ctx context.Context, w http.ResponseWriter, r *http.Request, socketPath, protocol string, replay bool) error {
+// AttachWebSocket bridges an exec attach to a websocket client, pinging the
+// client every pingInterval to keep an idle tunnel alive across NATs and
+// intermediate proxies and to find a client that is gone, which an idle
+// raw-byte tunnel never would. A ping is judged after pingTimeout (see
+// keepalive).
+func AttachWebSocket(ctx context.Context, w http.ResponseWriter, r *http.Request, socketPath, protocol string, replay bool, pingInterval, pingTimeout time.Duration) error {
 	shimConn, shimReader, err := attachShim(ctx, socketPath, protocol, replay)
 	if err != nil {
 		return err
 	}
 	defer shimConn.Close()
 
-	wsConn, err := websocket.Accept(w, r, nil)
+	clientConn := newWatchedConn()
+	wsConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		// The websocket gives a pong at most five seconds to take its writer
+		// and be written, and closes the connection when one taken stalls
+		// that long. While an output write is pending the writer is held
+		// behind a client that is not reading, so a pong could only fail;
+		// and a client that is not reading counts no pong missing.
+		OnPingReceived: func(context.Context, []byte) bool { return clientConn.writing.Load() == 0 },
+	})
 	if err != nil {
 		return err
 	}
 	defer wsConn.Close(websocket.StatusNormalClosure, "done")
-	clientConn := websocket.NetConn(ctx, wsConn, websocket.MessageBinary)
+	clientConn.Conn = websocket.NetConn(ctx, wsConn, websocket.MessageBinary)
 	defer clientConn.Close()
 
 	pingCtx, cancelPing := context.WithCancel(ctx)
 	defer cancelPing()
 	go func() {
-		if err := pingWebSocket(pingCtx, wsConn); err != nil {
+		if err := keepalive(pingCtx, wsConn, clientConn, pingInterval, pingTimeout); err != nil {
 			// The peer is gone; close the tunnel so both copy loops unblock.
 			_ = clientConn.Close()
 		}
@@ -239,6 +244,16 @@ func AttachWebSocket(ctx context.Context, w http.ResponseWriter, r *http.Request
 		defer wg.Done()
 		_, _ = io.Copy(shimConn, clientConn)
 		closeWrite(shimConn)
+		// A websocket whose reading has ended (the client closed it, or a
+		// read failed) ends the attach: nothing reads the client from here
+		// on, so no pong would ever be read, and the keepalive could not tell
+		// a live client from a dead one. A copy that ended on a write to the
+		// shim, which has stopped taking input, ends nothing: the shim's last
+		// output and its exit frame are still to come, and the output copy
+		// ends the attach once the shim has sent them.
+		if clientConn.readEnded.Load() {
+			_ = clientConn.Close()
+		}
 	}()
 	go func() {
 		defer wg.Done()
@@ -247,6 +262,141 @@ func AttachWebSocket(ctx context.Context, w http.ResponseWriter, r *http.Request
 	}()
 	wg.Wait()
 	return nil
+}
+
+// watchedConn is an attach's client end, recording what the keepalive needs to
+// judge an unanswered ping: whether a read is waiting on the client, and
+// whether an output write is pending or has moved since. Times are on the
+// monotonic clock, as offsets from epoch.
+type watchedConn struct {
+	net.Conn
+	epoch time.Time
+	// readingSince is when the Read now waiting on the client began, and zero
+	// while none is: the input copy is delivering what it read to a shim that
+	// is not reading it yet. The websocket reads a pong only inside a Read.
+	readingSince atomic.Int64
+	// writing is how many output writes are in progress; moves counts every
+	// one that began or ended. A write blocked on a client that is not reading
+	// holds the websocket's writer, and no ping or pong can be sent behind it.
+	writing atomic.Int32
+	moves   atomic.Int64
+	// readEnded is set once a Read of the client has failed: the websocket
+	// is closed or broken, and nothing more can be read from it.
+	readEnded atomic.Bool
+}
+
+func newWatchedConn() *watchedConn { return &watchedConn{epoch: time.Now()} }
+
+// now is the time since epoch, never zero.
+func (c *watchedConn) now() int64 { return int64(time.Since(c.epoch)) + 1 }
+
+// idle reports whether a read is waiting on the client and no output write is
+// pending: nothing is backed up either way.
+func (c *watchedConn) idle() bool {
+	return c.readingSince.Load() != 0 && c.writing.Load() == 0
+}
+
+func (c *watchedConn) Read(p []byte) (int, error) {
+	c.readingSince.Store(c.now())
+	defer c.readingSince.Store(0)
+	n, err := c.Conn.Read(p)
+	if err != nil {
+		c.readEnded.Store(true)
+	}
+	return n, err
+}
+
+func (c *watchedConn) Write(p []byte) (int, error) {
+	c.moves.Add(1)
+	c.writing.Add(1)
+	defer func() {
+		c.writing.Add(-1)
+		c.moves.Add(1)
+	}()
+	return c.Conn.Write(p)
+}
+
+// keepalive pings the client every interval until ctx is canceled, and returns
+// an error when the client is gone: the connection closed under a ping, or a
+// ping failed or went unanswered for timeout while the attach was idle the
+// whole time, a read waiting on the client and no output write pending, begun
+// or ended.
+//
+// A ping is sent only while the attach is idle. A client that paused reading
+// (`| less`, a slow disk) backs the output write up, and that write holds the
+// websocket's writer, which gives a ping five seconds to take it, so a ping
+// could only fail. Input backed up behind a shim that is not reading stops
+// this end's reads, so no pong would be read, and leaves the client's own
+// writer held by its input write, behind which a client on this websocket
+// library cannot write its pong for more than five seconds either. A ping
+// already out when the attach backs up is not answered yet rather than
+// missing, and waits on, judged again each timeout. Either way the attach is
+// held back as a pipe would hold it. A client that dies while the attach is
+// backed up is left to the transport to fail the blocked write (TCP's
+// retransmission timeout, where the agent's peer is the client's end); one
+// that dies while its input is backed up is not found until the command reads
+// its input or exits. Pending is all this end can see: a ping written into a
+// send buffer the client left full with no write pending still stalls, and
+// the websocket closes the connection five seconds into it (#1695).
+func keepalive(ctx context.Context, conn *websocket.Conn, client *watchedConn, interval, timeout time.Duration) error {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+		if !client.idle() {
+			continue
+		}
+		pingCtx, cancel := context.WithCancel(ctx)
+		result := make(chan error, 1)
+		go func() { result <- conn.Ping(pingCtx) }()
+		err := awaitPong(ctx, result, client, timeout)
+		cancel()
+		if err != nil {
+			return err
+		}
+		ticker.Reset(interval)
+	}
+}
+
+// awaitPong waits for a sent ping's result, giving up on the client only when
+// the connection closed or the attach stayed idle through a failed ping or a
+// whole timeout (see keepalive). A ping that failed while the attach was busy
+// is dropped, and the next one tries again.
+func awaitPong(ctx context.Context, result <-chan error, client *watchedConn, timeout time.Duration) error {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	start := client.now()
+	moves := client.moves.Load()
+	idleSinceStart := func() bool {
+		reading := client.readingSince.Load()
+		return reading != 0 && reading <= start &&
+			client.writing.Load() == 0 && client.moves.Load() == moves
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case err := <-result:
+			switch {
+			case err == nil, ctx.Err() != nil:
+				return nil
+			case errors.Is(err, net.ErrClosed), idleSinceStart():
+				return err
+			}
+			return nil
+		case <-timer.C:
+		}
+		if idleSinceStart() {
+			return errors.New("keepalive ping unanswered")
+		}
+		start = client.now()
+		moves = client.moves.Load()
+		timer.Reset(timeout)
+	}
 }
 
 // OneShot is a connected non-interactive attach. Connecting and running are
@@ -378,31 +528,6 @@ func Dial(ctx context.Context, socketPath string, timeout time.Duration) (net.Co
 		lastErr = fmt.Errorf("timed out waiting for shim socket")
 	}
 	return nil, lastErr
-}
-
-// pingWebSocket sends keepalive pings every attachPingInterval until ctx is
-// canceled, returning an error when a ping goes unanswered for
-// attachPingTimeout. The peer must be reading the connection for pongs to be
-// processed; both ends of an attach always are.
-func pingWebSocket(ctx context.Context, conn *websocket.Conn) error {
-	ticker := time.NewTicker(attachPingInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
-			pingCtx, cancel := context.WithTimeout(ctx, attachPingTimeout)
-			err := conn.Ping(pingCtx)
-			cancel()
-			if err != nil {
-				if ctx.Err() != nil {
-					return nil
-				}
-				return err
-			}
-		}
-	}
 }
 
 func closeWrite(conn net.Conn) {
