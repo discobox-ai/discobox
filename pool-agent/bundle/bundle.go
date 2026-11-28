@@ -98,6 +98,13 @@ func UnitsInstance(name string) string {
 // moved, and an apply after that slot has exited moves it. EX_TEMPFAIL.
 const UnitsDrainingExitCode = 75
 
+// UnitsTakeOverStalledExitCode is what `units apply` exits with when the
+// last handover's new slot has not said it took over (poolunits
+// ErrNotTakenOver): the pool serves with what the old slot keeps until it
+// drains, and nothing restores it on its own, so the maker reports it as the
+// pool's failure. Like UnitsDrainingExitCode, only with UnitsReportDraining.
+const UnitsTakeOverStalledExitCode = 76
+
 // UnitsReportDraining is the argument the pool's maker runs the units step
 // with, to have it exit UnitsDrainingExitCode on such a refusal; the
 // bundle's own apply runs it without, and the refusal is none of its

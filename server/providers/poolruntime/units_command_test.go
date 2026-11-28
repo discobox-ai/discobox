@@ -51,16 +51,21 @@ func TestABundleFromBeforeSlotsRestartsOnAMovedPlacementAlone(t *testing.T) {
 }
 
 // A units step that refused because a slot still drains failed nothing: it
-// is ErrPoolSlotDraining, which the reconciler asks again on, and any other
-// exit is the step's failure as before.
+// is ErrPoolSlotDraining, which the reconciler asks again on. One whose last
+// handover's new agent never took over is ErrPoolTakeOverStalled, and any
+// other exit is the step's failure as before.
 func TestAUnitsStepRefusedForADrainIsTryLater(t *testing.T) {
 	result := provisioner.Result{Stderr: []byte("a slot still drains from the last handover")}
 	draining := unitsError(result, &provisioner.ExitError{Argv: []string{"sh"}, ExitCode: bundle.UnitsDrainingExitCode})
 	if !errors.Is(draining, sandbox.ErrPoolSlotDraining) {
 		t.Fatalf("a refusal for a drain = %v, want ErrPoolSlotDraining", draining)
 	}
+	stalled := unitsError(provisioner.Result{}, &provisioner.ExitError{Argv: []string{"sh"}, ExitCode: bundle.UnitsTakeOverStalledExitCode})
+	if !errors.Is(stalled, sandbox.ErrPoolTakeOverStalled) || errors.Is(stalled, sandbox.ErrPoolSlotDraining) {
+		t.Fatalf("a handover whose new agent never took over = %v, want ErrPoolTakeOverStalled", stalled)
+	}
 	failed := unitsError(provisioner.Result{}, &provisioner.ExitError{Argv: []string{"sh"}, ExitCode: 1})
-	if errors.Is(failed, sandbox.ErrPoolSlotDraining) || failed == nil {
+	if errors.Is(failed, sandbox.ErrPoolSlotDraining) || errors.Is(failed, sandbox.ErrPoolTakeOverStalled) || failed == nil {
 		t.Fatalf("a failed units step = %v, want a failure", failed)
 	}
 }

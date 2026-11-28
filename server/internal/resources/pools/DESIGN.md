@@ -242,7 +242,9 @@ move while its last handover drains (`drainWaiting`, from
 `sandbox.ErrPoolSlotDraining`, which the reconciler requeues every 30s without
 recording a failure): until a pass settles, that pool waits "for its last
 handover to drain", counted apart (`PendingPool.Draining`) so health says a
-held-back upgrade from a stuck one. At startup, after `BeginPoolHealthChecks`, it
+held-back upgrade from a stuck one. A box whose last handover's new agent
+never took over is no drain: discovm returns `sandbox.ErrPoolTakeOverStalled`
+under `ErrPoolConfigApply`, a recorded failure that replaces nothing. At startup, after `BeginPoolHealthChecks`, it
 fixes the pools to wait on: every present pool already registered, each
 pending until a pass reads it. Startup then marks every pool for a reconcile.
 A watched pool is upgraded once `ReconciledAt` is at or after its

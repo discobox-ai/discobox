@@ -160,6 +160,12 @@ func ExecSystemctl(ctx context.Context, args ...string) (string, error) {
 type state struct {
 	Slot        string      `json:"slot,omitempty"`
 	Fingerprint fingerprint `json:"fingerprint"`
+	// TakeOverPending is a handover whose new slot (Slot) did not say it
+	// took over within the wait while the old one drained: until its agent
+	// says it is active, every apply that moves nothing fails with
+	// ErrNotTakenOver, so the pool's maker reports it rather than a pool
+	// that serves.
+	TakeOverPending bool `json:"takeOverPending,omitempty"`
 }
 
 // fingerprint is what the running slot started with.
@@ -186,7 +192,15 @@ func Apply(ctx context.Context, cfg Config) error {
 		return err
 	}
 	defer unlock()
-	return a.apply(ctx)
+	err = a.apply(ctx)
+	if err != nil && errors.Is(err, ErrSlotDraining) {
+		// A drain that holds off this apply, while the slot it handed over
+		// to has not taken over, is that stall, not a drain to wait out.
+		if current, readErr := readState(a.cfg.StateFile); readErr == nil && current.TakeOverPending {
+			return fmt.Errorf("%w: slot %s has not taken over (%w)", ErrNotTakenOver, current.Slot, err)
+		}
+	}
+	return err
 }
 
 // Start starts the slot the box runs, when it is not running: what a socket
@@ -229,6 +243,11 @@ func Start(ctx context.Context, cfg Config) error {
 // draining from the last handover refuses with: it moves nothing, and an
 // apply once that slot has exited does.
 var ErrSlotDraining = errors.New("a slot still drains from the last handover")
+
+// ErrNotTakenOver is a handover whose new slot has not said it took over,
+// while the old one drained or has since exited: nothing new reaches the
+// pool until it does, or until an apply with a fixed bundle hands over.
+var ErrNotTakenOver = errors.New("the pool's new agent never took over")
 
 // startWait bounds how long Start waits out an apply.
 const startWait = 15 * time.Minute
@@ -319,6 +338,23 @@ func (a *applier) apply(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// A handover whose new slot never said it took over is reported until
+	// it does; one that has since is cleared. An apply that moved something
+	// (a fixed bundle) goes on, and hands over again once it can.
+	if current.TakeOverPending {
+		status, err := a.status(ctx, bundle.AgentUnit(current.Slot))
+		if err != nil {
+			return err
+		}
+		if status == handover.StatusActive {
+			current.TakeOverPending = false
+			if err := writeState(a.cfg.StateFile, current); err != nil {
+				return err
+			}
+		} else if current.Fingerprint == now {
+			return fmt.Errorf("%w: slot %s says %q", ErrNotTakenOver, current.Slot, status)
+		}
+	}
 	// The slots' sockets are bound again when one moved, in this render or
 	// since the last apply recorded them (one refused below), or one is not
 	// listening.
@@ -398,7 +434,7 @@ func (a *applier) apply(ctx context.Context) error {
 	if err := a.enableOnly(ctx, slot); err != nil {
 		return err
 	}
-	if err := writeState(a.cfg.StateFile, state{Slot: slot, Fingerprint: now}); err != nil {
+	if err := writeState(a.cfg.StateFile, state{Slot: slot, Fingerprint: now, TakeOverPending: errors.Is(notTakenOver, ErrNotTakenOver)}); err != nil {
 		return err
 	}
 	mediatorRebound, err := a.rebind(ctx, a.byRole(changed, RoleMediator), []string{bundle.MediatorUnit})
@@ -673,12 +709,15 @@ func (a *applier) handOver(ctx context.Context, slot, next string, prev, now sta
 		signaled = true
 	}
 	if err := a.awaitTakeOver(ctx, nextUnits); err != nil {
-		err = fmt.Errorf("the pool's new agent in slot %s did not take over: %w", next, err)
+		err = fmt.Errorf("%w: slot %s did not say it took over: %w", ErrNotTakenOver, next, err)
 		draining, statusErr := a.anyDraining(ctx, bundle.AgentUnit(slot), bundle.ProxyUnit(slot))
 		if statusErr == nil && !draining {
 			return stopNext(err)
 		}
 		a.log.Warn("the pool's new agent has not taken over; the old one drains, and the new one is restarted until it does", "from", slot, "to", next, "error", err)
+		if recordErr := a.record(ctx, state{Slot: next, Fingerprint: now.Fingerprint, TakeOverPending: true}); recordErr != nil {
+			return next, errors.Join(err, recordErr)
+		}
 		return next, err
 	}
 	return next, nil

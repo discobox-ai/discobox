@@ -166,3 +166,10 @@ var ErrPoolConfigApply = errors.New("pool configuration apply failed")
 // failure, and nothing to repair. The pool serves as it was, and a reconcile
 // once that slot has exited moves it.
 var ErrPoolSlotDraining = errors.New("the pool's last handover still drains")
+
+// ErrPoolTakeOverStalled is a pool's box whose last handover's new agent has
+// not said it took over (poolunits): the old slot keeps serving what it held
+// until it drains, and new connections may find no agent. Nothing restores
+// that on its own, so it is the pool's failure, reported, though nothing in
+// the box is replaced over it.
+var ErrPoolTakeOverStalled = errors.New("the pool's new agent never took over")
