@@ -1083,6 +1083,13 @@ tracked in #1699, not a pattern to copy.
   `sandbox.ErrPoolTakeOverStalled` as the pool's failure, though nothing is
   replaced. Why: read as a drain, it showed a pool whose new connections
   find no agent as an upgrade held back on a drain.
+- **A check that reports a stuck state runs after the code that repairs
+  it, never in front of it** (`takeOverVerdict` is deferred to the end of
+  `apply`). Why: an early return on a pending takeover skipped
+  `finishHandOver`, the restart of a stopped slot and a socket's rebind, so
+  the stall it reported could not end. The stall also clears only once the
+  agent *and* the proxy say `active`, and every state written while it is
+  pending (a fallback `record` included) keeps it.
 - **A slot unit sets nothing that gives it its own `/run` or removes part
   of it** (`PrivateTmp=`, `ProtectSystem=`, `TemporaryFileSystem=`, … make a
   mount namespace of its own; `RuntimeDirectory=` deletes its directory as

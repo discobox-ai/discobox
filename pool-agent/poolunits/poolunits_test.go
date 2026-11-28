@@ -514,8 +514,8 @@ func TestANewSlotThatDoesNotTakeOverLeavesTheOldToDrain(t *testing.T) {
 	b.systemd.reset()
 	b.write(t, b.cfg.Binary, "agent v3")
 	err := Apply(context.Background(), b.cfg)
-	if !errors.Is(err, ErrSlotDraining) || !errors.Is(err, ErrNotTakenOver) {
-		t.Fatalf("an apply over a slot still draining, its successor not taken over = %v, want it refused as not taken over", err)
+	if !errors.Is(err, ErrNotTakenOver) || errors.Is(err, ErrSlotDraining) || !strings.Contains(err.Error(), "still drains") {
+		t.Fatalf("an apply over a slot still draining, its successor not taken over = %v, want ErrNotTakenOver alone, saying what drains", err)
 	}
 	if slices.ContainsFunc(b.systemd.commands, func(c []string) bool {
 		return (c[0] == "stop" || c[0] == "restart" || c[0] == "start") && (slices.Contains(c, bundle.AgentUnit("a")) || slices.Contains(c, bundle.ProxyUnit("a")))
@@ -558,6 +558,114 @@ func TestATakeOverThatStalledIsReportedUntilItTakes(t *testing.T) {
 	b.systemd.reset()
 	if err := Apply(context.Background(), b.cfg); err != nil {
 		t.Fatalf("the apply after that = %v", err)
+	}
+}
+
+// stall leaves b's new slot recorded as not taken over, the old slot a
+// draining.
+func (b *box) stall(t *testing.T) {
+	t.Helper()
+	b.cfg.TakeOver = 200 * time.Millisecond
+	b.apply(t)
+	b.systemd.noTakeOver = true
+	b.systemd.reset()
+	b.write(t, b.cfg.Binary, "agent v2")
+	if err := Apply(context.Background(), b.cfg); !errors.Is(err, ErrNotTakenOver) {
+		t.Fatalf("an apply whose new slot did not take over = %v, want ErrNotTakenOver", err)
+	}
+	b.systemd.noTakeOver = false
+}
+
+func (b *box) pending(t *testing.T) bool {
+	t.Helper()
+	current, err := readState(b.cfg.StateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return current.TakeOverPending
+}
+
+// A stalled takeover is judged after what the apply repairs: an old agent
+// found serving again is told to drain (finishHandOver), and once the new
+// slot takes over the same apply succeeds.
+func TestAStalledTakeOverStillFinishesAHandOver(t *testing.T) {
+	b := newBox(t, true)
+	b.stall(t)
+	// The old agent came back serving; the new proxy took over meanwhile.
+	b.systemd.status[bundle.AgentUnit("a")] = handover.StatusActive
+	b.systemd.status[bundle.ProxyUnit("b")] = handover.StatusActive
+	b.systemd.reset()
+	if err := Apply(context.Background(), b.cfg); err != nil {
+		t.Fatalf("an apply that finished the handover = %v", err)
+	}
+	if !slices.ContainsFunc(b.systemd.commands, func(c []string) bool { return c[0] == "kill" && slices.Contains(c, bundle.AgentUnit("a")) }) {
+		t.Fatalf("the old agent serving again was not told to drain: %q", b.systemd.commands)
+	}
+	if b.pending(t) {
+		t.Fatal("the takeover is still recorded pending once both took over")
+	}
+}
+
+// A new proxy that never took over is the stall too, though its agent did.
+func TestANewProxyThatDidNotTakeOverIsAStall(t *testing.T) {
+	b := newBox(t, true)
+	b.stall(t)
+	b.systemd.status[bundle.AgentUnit("b")] = handover.StatusActive
+	b.systemd.reset()
+	err := Apply(context.Background(), b.cfg)
+	if !errors.Is(err, ErrNotTakenOver) || !strings.Contains(err.Error(), bundle.ProxyUnit("b")) {
+		t.Fatalf("an apply whose new proxy is a standby = %v, want ErrNotTakenOver naming it", err)
+	}
+	if !b.pending(t) {
+		t.Fatal("the stall is no longer recorded")
+	}
+}
+
+// A moved bundle whose new slot fails to start leaves the stall recorded:
+// the slot it falls back to is the one that never took over.
+func TestAFailedHandOverFromAStallKeepsItRecorded(t *testing.T) {
+	b := newBox(t, true)
+	b.stall(t)
+	for _, unit := range []string{bundle.AgentUnit("a"), bundle.ProxyUnit("a")} {
+		b.systemd.active[unit] = false
+		b.systemd.status[unit] = ""
+	}
+	b.systemd.failStart = bundle.AgentUnit("a")
+	b.systemd.reset()
+	b.write(t, b.cfg.Binary, "agent v3")
+	if err := Apply(context.Background(), b.cfg); err == nil || errors.Is(err, ErrSlotDraining) {
+		t.Fatalf("an apply whose new slot failed to start = %v, want that failure", err)
+	}
+	if got := b.slot(t); got != "b" || !b.pending(t) {
+		t.Fatalf("recorded slot %q, pending %v; want b, still pending", got, b.pending(t))
+	}
+}
+
+// A box whose state names no slot (one recorded before slots) falls back,
+// when its new slot fails to start, to the slot it serves from, recorded and
+// enabled by name.
+func TestAFailedHandOverWithNoSlotRecordedFallsBackToTheServingSlot(t *testing.T) {
+	b := newBox(t, true)
+	b.apply(t)
+	current, err := readState(b.cfg.StateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current.Slot = ""
+	if err := writeState(b.cfg.StateFile, current); err != nil {
+		t.Fatal(err)
+	}
+	b.systemd.failStart = bundle.AgentUnit("b")
+	b.systemd.reset()
+	b.write(t, b.cfg.Binary, "agent v2")
+	if err := Apply(context.Background(), b.cfg); err == nil {
+		t.Fatal("an apply whose new slot failed to start succeeded")
+	}
+	if got := b.slot(t); got != "a" {
+		t.Fatalf("slot recorded = %q, want a", got)
+	}
+	if !b.systemd.ran("enable", bundle.AgentUnit("a"), bundle.ProxyUnit("a")) {
+		t.Fatalf("the serving slot is not run at boot again: %q", b.systemd.commands)
 	}
 }
 

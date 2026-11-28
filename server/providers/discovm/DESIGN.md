@@ -451,6 +451,12 @@ driver's machine limit), never against anything the machine reports (551 §1):
   keeps what it last provisioned and is tried again, as a Docker pool is
   (953 §5), and says so with `sandbox.ReportBoxKept`, since the reconcile
   still settles cleanly (26-11-14-624 §1); a new or restarted machine's failure fails the reconcile.
+  Two outcomes of the units step are neither: a refusal because a slot
+  still drains from the last handover (`sandbox.ErrPoolSlotDraining`) is
+  returned as it is, which the reconciler requeues with no failure, and a
+  handover whose new agent never took over
+  (`sandbox.ErrPoolTakeOverStalled`) is returned under
+  `ErrPoolConfigApply`, a recorded failure that keeps the machine.
   A created or started machine is reported with `sandbox.ReportAgentStarted`
   as a box start before the machine answers, as the pass that settles is a
   later one (26-11-15-294 §1); a machine the pass did not create, as an
