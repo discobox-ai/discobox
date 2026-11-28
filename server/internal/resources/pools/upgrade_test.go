@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/pool-agent/handover"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -446,5 +447,23 @@ func TestUpgradeWatchNamesAPoolWaitingOnADrain(t *testing.T) {
 	f.report("pool-1", true)
 	if got := f.pending(); len(got) != 0 {
 		t.Fatalf("pool still pending once its reconcile settled: %v", got)
+	}
+}
+
+// A drain is named only within its bound: a pool whose box still would not
+// move for one past it is stuck, and named so.
+func TestUpgradeWatchNamesADrainOutlastingItsBoundStuck(t *testing.T) {
+	f := newUpgradeFixture(t)
+	f.addPool("pool-1", true)
+	f.start()
+	f.watch.drainWaiting("pool-1", time.Now().Add(-handover.DrainBound-drainMargin-time.Second))
+	f.watch.drainWaiting("pool-1", time.Now())
+	pending := f.watch.Pending(context.Background())
+	if len(pending) != 1 || pending[0].WaitingOn != drainOutlasted || pending[0].Draining {
+		t.Fatalf("pending = %+v, want pool-1 stuck past its drain's bound", pending)
+	}
+	f.watch.drainEnded("pool-1")
+	if got := f.pending()["pool-1"]; got == drainOutlasted || got == waitingForDrain {
+		t.Fatalf("pool still named by an ended drain: %q", got)
 	}
 }

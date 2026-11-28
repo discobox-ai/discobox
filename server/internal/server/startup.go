@@ -15,6 +15,7 @@ import (
 	"github.com/discobox-ai/discobox/api/openapi"
 	"github.com/discobox-ai/discobox/pkg/health"
 	"github.com/discobox-ai/discobox/pkg/version"
+	"github.com/discobox-ai/discobox/pool-agent/handover"
 	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/go-faster/jx"
 	"gopkg.in/yaml.v3"
@@ -172,8 +173,8 @@ func (h *startupHandler) servingStatus(ctx context.Context) (int, health.Status)
 	}
 	if upgrades.Draining > 0 {
 		status.Warnings = append(status.Warnings, fmt.Sprintf(
-			"%s waiting for the last handover to drain before upgrading, up to 30 minutes; the server's log says which",
-			countPools(upgrades.Draining)))
+			"%s waiting for the last handover to drain before upgrading, up to %d minutes; the server's log says which",
+			countPools(upgrades.Draining), int(handover.DrainBound.Minutes())))
 	}
 	return http.StatusOK, status
 }

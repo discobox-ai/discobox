@@ -2094,9 +2094,10 @@ restarts its units as it did then (`poolruntime.unitsCommand`).
     listening) rebinds every slot socket: both stop the agent and proxy of
     every slot together, which cuts what they served. Every pool takes that
     once, at the upgrade that first brings slots, since its old units bound
-    their own ports and have nothing to hand over. A rebind is refused, and
+    their own ports and have nothing to hand over. A rebind, and the closing
+    of a socket the pool no longer has (`removeStale`), are refused, and
     nothing recorded, while a slot drains; the next apply after it has
-    exited binds them.
+    exited does both.
   - Each socket starts its own `discobox-pool-units@<socket>.service`
     (`units start`) when traffic finds no slot serving it, which waits out
     an apply under way: systemd refuses to start a socket whose service is

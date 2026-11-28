@@ -1026,8 +1026,9 @@ tracked in #1699, not a pattern to copy.
   which left the DNS and proxy-control sockets down under traffic on the
   dev pool.
 - **An apply binds the slots' sockets when one moved since the last apply
-  recorded them, or one is not listening** (`socketsToBind`), and never while
-  a slot drains. Why: a refused or failed bind left the socket files laid
+  recorded them, or one is not listening** (`socketsToBind`), and neither
+  binds them nor closes one the pool no longer has (`removeStale`) while a
+  slot drains. Why: a refused or failed bind left the socket files laid
   and the next apply saw nothing move, and a bind stops every slot, which
   would cut one draining.
 - **The pool's maker reaches a bundle from before slots too.** It runs the
