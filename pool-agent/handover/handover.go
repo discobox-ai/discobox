@@ -13,6 +13,13 @@
 // Nothing here decides whether a pool hands over or restarts. That is the
 // pool's units' (poolunits), which start the idle slot beside the running one
 // and signal the old one to drain, or restart the running one as before.
+//
+// Its locks, the active lock and a sandbox's power lock and boot mark
+// (sandboxruntime) among them, exclude processes of a pool from each other,
+// and are held within one too. A lock is an open file description lock
+// (fcntl(2) F_OFD_SETLK) on a file of the pool's own: each open of the file
+// is its own holder, in one process or several. A lock is asked about
+// without taking it (Held), so probes never see each other.
 package handover
 
 import (

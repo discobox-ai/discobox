@@ -629,6 +629,11 @@ func (r *PoolReconciler) reconcileDeleted(ctx context.Context, pool *model.Pool,
 // Agent health belongs to status reports. A lifecycle write never overwrites
 // one, even if a heartbeat arrived while the runtime operation was failing.
 func (r *PoolReconciler) failReconcile(pool *model.Pool, generation int64, message string) {
+	// A failed pass ends a streak of passes that waited on a drain: a drain
+	// after it is a streak of its own, timed from its own first pass.
+	if r.pools != nil {
+		r.pools.Upgrades().drainEnded(pool.ID)
+	}
 	settledAt := time.Now().UTC()
 	pool.ReconciledAt = &settledAt
 	pool.ObservedGeneration = generation
