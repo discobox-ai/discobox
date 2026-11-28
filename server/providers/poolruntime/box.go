@@ -359,6 +359,24 @@ func unitsError(result provisioner.Result, err error) error {
 	return err
 }
 
+// HandOverFailure is what a pool's maker returns for a ProvisionBox failure
+// that is the units step's word on a handover, not a failed apply: a refusal
+// because a slot still drains as it is, which the reconciler asks again on
+// recording nothing, and a handover whose new agent never took over under
+// sandbox.ErrPoolConfigApply, a recorded failure that replaces nothing. Nil
+// for any other failure, which is the maker's to judge. Every maker of a
+// pool's box checks it first, so no path keeps a box over a stall and
+// settles clean.
+func HandOverFailure(err error) error {
+	switch {
+	case errors.Is(err, sandbox.ErrPoolSlotDraining):
+		return err
+	case errors.Is(err, sandbox.ErrPoolTakeOverStalled):
+		return fmt.Errorf("%w: %w", sandbox.ErrPoolConfigApply, err)
+	}
+	return nil
+}
+
 // provisionError names what failed with what the command wrote last, which
 // is where it says why.
 func provisionError(what string, result provisioner.Result, err error) error {

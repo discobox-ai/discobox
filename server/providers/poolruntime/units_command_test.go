@@ -3,6 +3,7 @@ package poolruntime
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -74,5 +75,22 @@ func TestAUnitsStepRefusedForADrainIsTryLater(t *testing.T) {
 func TestTheMakerAsksTheUnitsStepToReportADrain(t *testing.T) {
 	if !strings.Contains(unitsCommand, `exec "$step" `+bundle.UnitsReportDraining) {
 		t.Fatalf("the units command does not pass %s to the step:\n%s", bundle.UnitsReportDraining, unitsCommand)
+	}
+}
+
+// A maker returns the units step's word on a handover as it is: a drain as
+// "try later", a stalled takeover as a recorded failure that replaces
+// nothing. Any other failure is left to the maker.
+func TestAHandOverFailureIsNeverKept(t *testing.T) {
+	draining := fmt.Errorf("start the pool's agent: %w", sandbox.ErrPoolSlotDraining)
+	if got := HandOverFailure(draining); !errors.Is(got, sandbox.ErrPoolSlotDraining) || errors.Is(got, sandbox.ErrPoolConfigApply) {
+		t.Fatalf("a drain = %v, want it as it is", got)
+	}
+	stalled := fmt.Errorf("start the pool's agent: %w", sandbox.ErrPoolTakeOverStalled)
+	if got := HandOverFailure(stalled); !errors.Is(got, sandbox.ErrPoolConfigApply) || !errors.Is(got, sandbox.ErrPoolTakeOverStalled) {
+		t.Fatalf("a stalled takeover = %v, want it under ErrPoolConfigApply", got)
+	}
+	if got := HandOverFailure(errors.New("registry unreachable")); got != nil {
+		t.Fatalf("another failure = %v, want it left to the maker", got)
 	}
 }
