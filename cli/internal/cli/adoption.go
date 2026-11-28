@@ -102,10 +102,12 @@ child. Adopting it again needs a person's approval.`,
 		}}
 }
 
-func ownSandboxID() (string, error) {
-	data, err := os.ReadFile("/etc/discobox/sandbox.json")
+// ownSandboxID is the ID of the discobox this CLI runs in, from its sandbox
+// config; an error when there is none, as there is outside a discobox.
+func (a *App) ownSandboxID() (string, error) {
+	data, err := os.ReadFile(a.sandboxConfigPath)
 	if err != nil {
-		return "", fmt.Errorf("--parent me needs this discobox's sandbox config: %w", err)
+		return "", err
 	}
 	var cfg sandboxconfig.Config
 	if err := json.Unmarshal(data, &cfg); err != nil {

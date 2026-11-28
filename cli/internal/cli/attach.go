@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -10,6 +12,8 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/internal/hostid"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
+	idpkg "github.com/discobox-ai/x/id"
 )
 
 // newAttachCommand implements `discobox attach`: open a discobox's own screen,
@@ -62,6 +66,9 @@ draw a window on, attach is raw whether or not the flag was given.`,
 			if len(args) > 0 {
 				sandboxArg = args[0]
 			}
+			if err := a.refuseOwnSandbox(sandboxArg); err != nil {
+				return err
+			}
 			// Everything below talks to the server the discobox is on.
 			a, projectID, sandboxID, client, err := a.selectSandbox(cmd, sandboxArg)
 			if err != nil {
@@ -95,4 +102,59 @@ draw a window on, attach is raw whether or not the flag was given.`,
 	}
 	cmd.Flags().BoolVar(&raw, "raw", false, "Attach this terminal straight to the discobox's primary terminal instead of opening the window on the discobox")
 	return cmd
+}
+
+// refuseOwnSandbox is the error for an attach, run inside a discobox, that
+// names that same discobox: its terminal is the one already in front of the
+// person, so there is nothing to attach. It is said before anything asks the
+// server, whose answer to a discobox without API access is a refusal that
+// advises turning that access on — the wrong advice here (#1631).
+//
+// Only what names the discobox for certain without the server is recognized:
+// its full ID (or the hostname's sbx- spelling of it), bare or in a
+// discobox:/// address, or in an address whose server is the one this
+// discobox's own address (DISCOBOX_ADDRESS) names. A short ID could as well be
+// another discobox's, a name or a pick needs the listing, and an address
+// naming another server names a discobox there, so those go on to the server
+// as before. Outside a discobox there is no sandbox config, and nothing is
+// refused.
+func (a *App) refuseOwnSandbox(sandboxArg string) error {
+	reference, ok := certainSandboxID(sandboxArg)
+	if !ok || !a.isOwnSandbox(reference) {
+		return nil
+	}
+	return fmt.Errorf("you are already in discobox %s: this terminal is in it; to attach to it, run `%s attach %s` on your own machine", reference, commandName(), reference)
+}
+
+// isOwnSandbox reports whether id is the discobox this CLI runs in. Outside a
+// discobox, or with a sandbox config it cannot read, it is none.
+func (a *App) isOwnSandbox(id string) bool {
+	self, err := a.ownSandboxID()
+	return err == nil && self == id
+}
+
+// certainSandboxID is the full discobox ID sandboxArg names without asking
+// the server, as refuseOwnSandbox reads it, and whether it names one. A
+// malformed address names none here; selectSandbox reports it.
+func certainSandboxID(sandboxArg string) (string, bool) {
+	reference := strings.TrimSpace(sandboxArg)
+	address, isAddress, err := endpoint.ParseSandboxAddress(reference)
+	if isAddress {
+		if err != nil || (address.Server != "" && address.Server != ownSandboxServer()) {
+			return "", false
+		}
+		reference = address.Sandbox
+	}
+	reference = idpkg.Canonical(idpkg.PrefixSandbox, reference)
+	return reference, allFullSandboxIDs([]string{reference})
+}
+
+// ownSandboxServer is the server half of this discobox's own address
+// (DISCOBOX_ADDRESS), or empty when it has none.
+func ownSandboxServer() string {
+	own, isAddress, err := endpoint.ParseSandboxAddress(os.Getenv(endpoint.EnvSandboxAddress))
+	if !isAddress || err != nil {
+		return ""
+	}
+	return own.Server
 }

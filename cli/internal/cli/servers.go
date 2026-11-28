@@ -418,6 +418,8 @@ func (a *App) forServer(address string) *App {
 		autoStart:     autoStartServerFalse,
 		errOut:        a.errOut,
 		leaderKey:     a.leaderKey,
+
+		sandboxConfigPath: a.sandboxConfigPath,
 	}
 }
 

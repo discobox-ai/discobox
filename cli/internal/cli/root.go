@@ -48,6 +48,10 @@ type App struct {
 	color          colorWhen
 	errOut         io.Writer
 
+	// sandboxConfigPath is where the discobox this CLI runs in, if any, keeps
+	// its sandbox config (see ownSandboxID). Only a test points it elsewhere.
+	sandboxConfigPath string
+
 	// serverSource is where the server binary comes from, as far as the flags
 	// say. `admin server` is what sets it; everything else, the autolaunch
 	// included, resolves from the environment and the machine.
@@ -137,7 +141,7 @@ func NewRootCommand() *cobra.Command {
 func newRootCommand(includeUserTools bool) (*cobra.Command, *App) {
 	cobra.EnableCommandSorting = false
 
-	app := &App{autoStart: autoStartServerAuto}
+	app := &App{autoStart: autoStartServerAuto, sandboxConfigPath: "/etc/discobox/sandbox.json"}
 	var showVersion bool
 	name := commandName()
 	cmd := &cobra.Command{

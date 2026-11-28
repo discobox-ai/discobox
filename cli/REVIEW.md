@@ -227,6 +227,16 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   Scripts and console launchers must put CLI flags before DISCOBOX; otherwise
   those flags become the remote command. Check callers outside Go tests too.
 
+- **A check that reads a discobox reference before `selectSandbox` keeps an
+  address's server half, and takes no short ID.** A full generated ID, bare or
+  in `discobox:///`, may be taken as itself: generated IDs do not collide. An
+  address that names a server names a box on that server, which independent
+  servers can reuse IDs across, so it is this box only when that server is the
+  one `DISCOBOX_ADDRESS` names. A short ID can be another box's, so it is never
+  taken without the server. `refuseOwnSandbox`'s
+  first draft dropped the server of `discobox://<server>/<id>` and matched any
+  prefix of its own ID, refusing attaches to other boxes.
+
 ## Secrets and bindings
 
 - **A person's binding verbs print sentences, not IDs.** `secret bind`,

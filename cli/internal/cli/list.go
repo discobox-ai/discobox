@@ -89,9 +89,9 @@ not answer is left out, and says so on stderr.`,
 				return fmt.Errorf("--source needs a value from the SOURCE column, or - for the discoboxes with no source")
 			}
 			if filter.parent == "me" {
-				id, err := ownSandboxID()
+				id, err := a.ownSandboxID()
 				if err != nil {
-					return err
+					return fmt.Errorf("--parent me needs this discobox's sandbox config: %w", err)
 				}
 				filter.parent = id
 			}
