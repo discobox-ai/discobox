@@ -722,6 +722,32 @@ func TestAFailedHandOverWithNoSlotRecordedFallsBackToTheServingSlot(t *testing.T
 	}
 }
 
+// A unit that runs but does not yet say it catches the drain signal (one
+// still starting, or a status a stopped process left) is never sent it: it
+// would drop it, and count as told without ever draining. Untold, the old
+// slot never drains, so the new one is stopped and the old serves on.
+func TestAUnitThatDoesNotYetCatchTheSignalIsNotTold(t *testing.T) {
+	b := newBox(t, true)
+	b.cfg.TakeOver = 200 * time.Millisecond
+	b.apply(t)
+	b.systemd.status[bundle.AgentUnit("a")] = ""
+	b.systemd.status[bundle.ProxyUnit("a")] = "starting"
+	b.systemd.reset()
+	b.write(t, b.cfg.Binary, "agent v2")
+	if err := Apply(context.Background(), b.cfg); err == nil {
+		t.Fatal("an apply whose old slot could not be told succeeded")
+	}
+	if len(b.systemd.ranAny("kill")) != 0 {
+		t.Fatalf("a unit that does not catch the drain signal was sent it: %q", b.systemd.commands)
+	}
+	if got := b.slot(t); got != "a" {
+		t.Fatalf("slot recorded = %q, want a", got)
+	}
+	if b.systemd.active[bundle.AgentUnit("b")] {
+		t.Fatalf("the new slot is left running beside an old one never told: %q", b.systemd.commands)
+	}
+}
+
 // A new slot that does not take over while the old one never began to drain
 // is stopped, and the old one serves on as it was.
 func TestANewSlotThatDoesNotTakeOverBeforeAnyDrainIsStopped(t *testing.T) {

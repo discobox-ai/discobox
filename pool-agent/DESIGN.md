@@ -2032,7 +2032,12 @@ restarts its units as it did then (`poolruntime.unitsCommand`).
   flight at once, and each other one once it has answered its query
   (`dnsforward.Server.Drain`): a sandbox's stub keeps its DNS connections
   open between queries, which would otherwise hold the drain to its bound.
-- **A drain** (`SIGUSR2`, which only `units apply` sends) is taken only once
+- **A drain** (`SIGUSR2`, which only `units apply` sends) is caught from
+  before the process says it is ready: the agent and proxy call
+  `handover.DrainRequested` before `READY=1`, and `units apply` signals
+  only a unit that runs and says `standby`, `active` or `draining`. One
+  that does not yet catch it drops it (Go's runtime ignores `SIGUSR2`
+  until `signal.Notify`), so it would count as told and never drain. It is taken only once
   the process holds its kind's draining mark (`handover.DrainRequested`); one
   it cannot mark is refused, and it serves on, holding its lock, so `units
   apply` finds it never began to drain. A drain taken: the process closes
