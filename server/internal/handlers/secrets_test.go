@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -456,13 +457,35 @@ func TestListSandboxCredentialsCarriesThePurpose(t *testing.T) {
 	if delegate.Purpose.Or("") != serverapi.SandboxCredentialPurposeDelegate || delegate.EnvVar != "" {
 		t.Fatalf("delegate = %+v", delegate)
 	}
+	// A rejection standing against the secret reaches the sandbox, with when
+	// it was last seen (#1745), and survives encoding.
+	encoded, err := body.MarshalJSON()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	var decoded struct {
+		Credentials []struct {
+			Rejections []map[string]string `json:"rejections"`
+		} `json:"credentials"`
+	}
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	want := map[string]string{"host": "api.github.com", "reason": "unrefreshable", "firstSeenAt": "2026-11-24T10:00:00Z", "lastSeenAt": "2026-11-24T11:00:00Z"}
+	if got := decoded.Credentials[0].Rejections; len(got) != 1 || !maps.Equal(got[0], want) {
+		t.Fatalf("use rejections = %v, want %v", got, want)
+	}
 }
 
 type listingSecretService struct{ fakeSecretService }
 
 func (listingSecretService) ListSandboxCredentials(context.Context, string, string) ([]svcapi.SandboxCredential, error) {
 	return []svcapi.SandboxCredential{
-		{Name: "github", EnvName: "GH_TOKEN", SecretID: "sec-1", BindingID: "b-1", Hosts: []string{"api.github.com"}, Purpose: model.SecretPurposeUse},
+		{Name: "github", EnvName: "GH_TOKEN", SecretID: "sec-1", BindingID: "b-1", Hosts: []string{"api.github.com"}, Purpose: model.SecretPurposeUse,
+			Rejections: []svcapi.SandboxCredentialRejection{{
+				Host: "api.github.com", Reason: model.SecretRejectionReasonUnrefreshable,
+				FirstSeenAt: time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC), LastSeenAt: time.Date(2026, 11, 24, 11, 0, 0, 0, time.UTC),
+			}}},
 		{Name: "github", SecretID: "sec-1", BindingID: "b-2", Hosts: []string{"github.com"}, Purpose: model.SecretPurposeDelegate},
 	}, nil
 }

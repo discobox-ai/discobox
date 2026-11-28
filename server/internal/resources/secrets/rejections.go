@@ -271,7 +271,7 @@ func (s *Service) recordRejection(ctx context.Context, projectID, secretID, host
 func (s *Service) dropStaleRejections(ctx context.Context, rejections []model.SecretRejection) ([]model.SecretRejection, error) {
 	live := rejections[:0]
 	for _, rejection := range rejections {
-		if time.Since(rejection.LastSeenAt) < rejectionStaleAfter {
+		if rejectionStanding(rejection) {
 			live = append(live, rejection)
 			continue
 		}
@@ -280,6 +280,12 @@ func (s *Service) dropStaleRejections(ctx context.Context, rejections []model.Se
 		}
 	}
 	return live, nil
+}
+
+// rejectionStanding is whether something has observed the rejection lately
+// enough for it still to be claimed (rejectionStaleAfter).
+func rejectionStanding(rejection model.SecretRejection) bool {
+	return time.Since(rejection.LastSeenAt) < rejectionStaleAfter
 }
 
 // ListSecretRejections returns the credentials this project is known to be

@@ -36,3 +36,4 @@
   not reopen the adopted-child binding privacy boundary. Build approval history
   from the secret reloaded under the final handoff locks, not the earlier
   preparation read: an intervening edit must record its current revision.
+- A rejection row is evidence any sandbox holding the secret can draw — a 401 on a good credential sent where the upstream does not read it — so it reaches another sandbox only as advice, and only at hosts that sandbox's own grants reach (`sandboxCredential`). Never hand it to a sandbox as a verdict, or with where, or by whom, it was seen.

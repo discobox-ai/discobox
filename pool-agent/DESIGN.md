@@ -2715,8 +2715,12 @@ The one exception is a raw binding's, on a route outside the protocol (below).
   reads the caller's own HTTP exchanges from the proxy's trail in process
   (`proxy.Server.ClientHTTPAudit`), narrowed to the certificate's sandbox — not
   through the loopback control API, which is the agent process's and needs a
-  token. It returns a summary (status, block and reason), never headers or
-  bodies. The URL is recorded before any swap, so a sentinel in it is the
+  token. It returns a summary (status, block and reason, and whether a
+  delivered credential was swapped in, never which), never headers or
+  bodies. What a 401 means for that credential is not judged here: that is
+  the rejection reporter's, and `list` carries the control plane's verdict
+  (the **list verb** reads each credential's standing rejections from
+  `sandbox-credentials`). The URL is recorded before any swap, so a sentinel in it is the
   sandbox's own, which it already holds. Each text field is cut to 2 KiB, and
   the page stops, newest first, before it outgrows
   `agentcreds.MaxResponseBytes`.

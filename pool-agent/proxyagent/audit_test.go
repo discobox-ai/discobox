@@ -2,6 +2,7 @@ package proxyagent
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -83,6 +84,30 @@ func TestAuditHTTPReadsOnlyTheCallersRefusals(t *testing.T) {
 	allowed := false
 	if passed, err := mine.AuditHTTP(ctx, agentcreds.AuditQuery{Blocked: &allowed, Limit: agentcreds.DefaultAuditLimit}); err != nil || len(passed) != 0 {
 		t.Fatalf("read %d let-through exchanges (err %v), want none", len(passed), err)
+	}
+}
+
+// An exchange says whether it was sent with a delivered credential (#1745),
+// and never which: one the proxy refused itself was not sent with one.
+func TestAuditSaysWhetherARequestCarriedACredential(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		row  proxy.AuditHTTPExchange
+		want bool
+	}{
+		{"carrying a credential", proxy.AuditHTTPExchange{Status: http.StatusUnauthorized, SwappedSecretIDs: "sec_1"}, true},
+		{"carrying none", proxy.AuditHTTPExchange{Status: http.StatusUnauthorized}, false},
+		{"refused by the proxy", proxy.AuditHTTPExchange{Status: http.StatusForbidden, SwappedSecretIDs: "sec_1", Blocked: true, BlockedReason: "route: …"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := auditExchange(tc.row)
+			if got.CredentialCarried != tc.want {
+				t.Fatalf("credentialCarried = %v, want %v", got.CredentialCarried, tc.want)
+			}
+			if encoded, _ := json.Marshal(got); strings.Contains(string(encoded), "sec_1") {
+				t.Fatalf("exchange %s names the secret", encoded)
+			}
+		})
 	}
 }
 

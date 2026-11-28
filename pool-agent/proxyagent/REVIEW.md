@@ -52,3 +52,4 @@
   and so reads as unavailable to a waiting client (#33). Redact there, not in
   `controlPlaneCredentials.do`: the pool's own callers (the host trusts loop)
   need the cause in their log, and each already filters its own shutdown.
+- What a 401 means for a credential is the rejection reporter's call (its retry, a harness's rejection scope, ADR 26-10-13-595), never re-derived from an audit row's status. The sandbox's audit read says only what the row records, such as that a delivered credential was carried.

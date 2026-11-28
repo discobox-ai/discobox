@@ -890,3 +890,76 @@ func TestARejectionOfTheSecretAVariableWasReboundFromIsNotJudged(t *testing.T) {
 		t.Fatalf("rejections = %v, want none for the old secret's value", rejections)
 	}
 }
+
+// A sandbox listing what it holds is told which of its credentials an upstream
+// refuses (#1745): holding a credential is not the same as it working, and the
+// agent holding it is the one that otherwise spends its time finding out. A
+// rejection nothing has seen lately is no longer claimed there either, nor one
+// at a host the sandbox's own grants do not reach.
+func TestASandboxsListSaysWhichCredentialsAreRefused(t *testing.T) {
+	ctx := context.Background()
+	svc, st, write := newResolveFixtureDB(t)
+	createSandbox(t, st, "sb-1", "pool-1")
+
+	dead := mustSecret(t, st, "gh", "dead-token")
+	mustBindAs(t, st, &model.SecretBinding{SecretID: dead.ID, TargetKind: model.SecretBindingTargetProject, TargetID: "project-1", Use: true, EnvName: "GH_TOKEN"})
+	mustAssign(t, st, "sb-1", dead.ID, "SENTINEL-A")
+	fixed := mustSecret(t, st, "npm", "old-token")
+	mustBindAs(t, st, &model.SecretBinding{SecretID: fixed.ID, TargetKind: model.SecretBindingTargetProject, TargetID: "project-1", Use: true, EnvName: "NPM_TOKEN"})
+	healthy := mustSecret(t, st, "pypi", "good-token")
+	mustBindAs(t, st, &model.SecretBinding{SecretID: healthy.ID, TargetKind: model.SecretBindingTargetProject, TargetID: "project-1", Use: true, EnvName: "PYPI_TOKEN"})
+	// A secret this sandbox may send to one host only: a refusal elsewhere,
+	// where another sandbox sends it, is not this sandbox's to be told.
+	narrowed := mustSecret(t, st, "registry", "some-token")
+	mustBindAs(t, st, &model.SecretBinding{SecretID: narrowed.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: "sb-1", Use: true, EnvName: "REGISTRY_TOKEN",
+		Routes: []model.SecretRoute{{Hosts: []string{"registry.example.com"}}}})
+	for _, host := range []string{"registry.example.com", "elsewhere.example.com"} {
+		if err := st.RecordSecretRejection(ctx, &model.SecretRejection{
+			ProjectID: "project-1", SecretID: narrowed.ID, Host: host,
+			Reason: model.SecretRejectionReasonUnrefreshable, SandboxID: "sb-other",
+		}); err != nil {
+			t.Fatalf("record rejection: %v", err)
+		}
+	}
+
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.github.com", resourcesecrets.SecretRejectedAfterRetryOutcome, ""); err != nil {
+		t.Fatalf("record rejection: %v", err)
+	}
+	if err := st.RecordSecretRejection(ctx, &model.SecretRejection{
+		ProjectID: "project-1", SecretID: fixed.ID, Host: "registry.npmjs.org",
+		Reason: model.SecretRejectionReasonUnrefreshable, SandboxID: "sb-other",
+	}); err != nil {
+		t.Fatalf("record rejection: %v", err)
+	}
+	if err := write.WithContext(ctx).Model(&model.SecretRejection{}).
+		Where("secret_id = ?", fixed.ID).
+		Update("last_seen_at", time.Now().Add(-2*time.Hour)).Error; err != nil {
+		t.Fatalf("age the rejection: %v", err)
+	}
+
+	credentials, err := svc.ListSandboxCredentials(ctx, "pool-1", "sb-1")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	byName := map[string]services.SandboxCredential{}
+	for _, credential := range credentials {
+		byName[credential.Name] = credential
+	}
+	if len(byName) != 4 {
+		t.Fatalf("credentials = %+v, want gh, npm, pypi and registry", credentials)
+	}
+	if got := byName["registry"].Rejections; len(got) != 1 || got[0].Host != "registry.example.com" {
+		t.Fatalf("registry rejections = %+v, want only the one at the host its binding reaches", got)
+	}
+	refused := byName["gh"].Rejections
+	if len(refused) != 1 || refused[0].Host != "api.github.com" || refused[0].Reason != model.SecretRejectionReasonUnrefreshable ||
+		time.Since(refused[0].LastSeenAt) > time.Minute || refused[0].FirstSeenAt.IsZero() {
+		t.Fatalf("gh rejections = %+v, want api.github.com refused just now, unrefreshable", refused)
+	}
+	if got := byName["npm"].Rejections; len(got) != 0 {
+		t.Fatalf("npm rejections = %+v, want none: nothing has seen it refused for two hours", got)
+	}
+	if got := byName["pypi"].Rejections; len(got) != 0 {
+		t.Fatalf("pypi rejections = %+v, want none", got)
+	}
+}

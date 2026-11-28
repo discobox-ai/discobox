@@ -306,6 +306,14 @@ func (h *Handler) ListSandboxCredentials(ctx context.Context, params serverapi.L
 			}
 			item.Grants = append(item.Grants, held)
 		}
+		for _, rejection := range credential.Rejections {
+			item.Rejections = append(item.Rejections, apimodel.SandboxCredentialRejection{
+				Host:        rejection.Host,
+				Reason:      serverapi.SandboxCredentialRejectionReason(rejection.Reason),
+				FirstSeenAt: rejection.FirstSeenAt,
+				LastSeenAt:  rejection.LastSeenAt,
+			})
+		}
 		resp.Credentials = append(resp.Credentials, item)
 	}
 	return &resp, nil

@@ -579,6 +579,21 @@ type SandboxCredential struct {
 	// Grants are, for a use, each grant its sentinel is held to: the
 	// binding's, then each addition stacking on it (ADR 26-11-03-329 §3).
 	Grants []SandboxCredentialGrant
+	// Rejections are the hosts that refused the secret's value and could not
+	// be answered by renewing it (ADR 0132), while they stand: what tells
+	// the sandbox that holding the credential is not the same as it working.
+	Rejections []SandboxCredentialRejection
+}
+
+// SandboxCredentialRejection is one standing rejection of a credential's
+// secret, as the sandbox holding it is told. Where it was last seen is left
+// out: the rejection is the secret's, and it may have been seen in another
+// sandbox.
+type SandboxCredentialRejection struct {
+	Host        string
+	Reason      string
+	FirstSeenAt time.Time
+	LastSeenAt  time.Time
 }
 
 // SandboxCredentialGrant is one grant a credential in a variable is held to.

@@ -67,6 +67,18 @@ it may be sent on. A host is exact: `github.com` is not `api.github.com`. The pe
 lifetime, often a different one than you asked for; `[never expires]` means
 exactly that, and `list` is the answer to whether something has lapsed.
 
+A credential you hold can still be dead. A host seen answering 401 to it in
+this project, where renewing it did not help, is listed under it:
+
+```
+github (GH_TOKEN → api.github.com) [never expires]
+  REFUSED by api.github.com (seen in this project, last 2026-10-09T17:58:00Z, since 2026-10-09T16:40:00Z): nothing to renew it by; if your requests there get 401 too, retrying will not help: a person has to replace it
+```
+
+It may have been seen by another discobox. If your own requests to that host
+get 401 too, don't retry, re-request, or log in again in the sandbox: tell the
+user which credential is refused and where, and that it needs replacing.
+
 If a command *already works*, the credential is already in your environment —
 nothing here is needed. Ask only when something actually failed for want of
 one.
@@ -434,7 +446,10 @@ discobox-access audit --blocked --since 10m
 
 A request the destination refused is not `BLOCKED`: a 401 or 403 for a
 missing or wrong credential is recorded with that status. Leave out
-`--blocked` to see those — then check what you have (§1) and ask (§2).
+`--blocked` to see those — then check what you have (§1) and ask (§2). A 401
+to a request sent with one of your credentials says so on the line under it
+(`sent with a delivered credential`): the credential was refused, not
+missing. `list` (§1) says whether it stands refused.
 `--host` narrows to one destination (any port when you name none), and
 `--json` gives the same fields structured. It shows only this sandbox's
 requests.
