@@ -7,6 +7,12 @@
   — its first bullet's "a sleep is a stop on archil, as on every machine
   pool" and "discobox never asks Archil for a pause": a machine pool freezes
   a sleep and a suspend where its driver can. The rest of §5 stands.
+- **§1 and Context superseded in part by**: [26-11-28-634](26-11-28-634-an-edge-fenced-sandbox-also-reaches-its-providers-mount-hosts-while-its-data-disk-is-mounted.md)
+  — guarantee 2's "names the host the pool machine is reached at and
+  nothing else": while the sandbox's data disk is mounted it also names the
+  mount hosts its provider adds. Context's "A guest with a data disk holds
+  that disk's mount token, readable by root" and the Open item on replaying
+  it: no mount token was found in the guest. The rest of §1 stands.
 - **Issue**: #1053 (row A0 of the remote-drivers plan, #947)
 - **Supersedes in part** (implementation of each has shipped, so these are
   superseded, not amended):
