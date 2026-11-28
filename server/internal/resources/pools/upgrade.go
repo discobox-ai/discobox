@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/discobox-ai/discobox/pool-agent/handover"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -161,10 +162,23 @@ func (w *UpgradeWatch) settled(poolID string, settledAt time.Time, kept error) {
 
 // drainWaiting records that a reconcile at at found the pool's box would not
 // move while a slot still drains from its last handover.
+//
+// The first such pass of a streak is kept, so the drain's age is measured
+// from it (drainingNow).
 func (w *UpgradeWatch) drainWaiting(poolID string, at time.Time) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.draining[poolID] = at
+	if _, ok := w.draining[poolID]; !ok {
+		w.draining[poolID] = at
+	}
+}
+
+// drainEnded records that a reconcile of the pool waited on something other
+// than a drain (its host coming up): the streak drainWaiting began is over.
+func (w *UpgradeWatch) drainEnded(poolID string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	delete(w.draining, poolID)
 }
 
 // agentStarted records that a reconcile started the pool's agent at at, as
@@ -309,8 +323,11 @@ func (w *UpgradeWatch) waitingOn(ctx context.Context, id string, kept keptBox, s
 	if provider == nil {
 		return nil, nil
 	}
-	if drainingNow(pool, drainAt) {
+	if drainingNow(pool, drainAt, now) {
 		return &PendingPool{ID: pool.ID, Name: pool.Name, WaitingOn: waitingForDrain, Draining: true}, nil
+	}
+	if drainStuck(pool, drainAt, now) {
+		return &PendingPool{ID: pool.ID, Name: pool.Name, WaitingOn: drainOutlasted}, nil
 	}
 	reason := upgradeWaitingOn(pool, kept, started, first, now)
 	if reason == "" {
@@ -323,12 +340,30 @@ const waitingForReconcile = "waiting for its reconcile"
 
 // waitingForDrain is a pool whose box moves once its last handover's old slot
 // has drained, within that slot's drain bound (30 minutes).
-const waitingForDrain = "waiting for its last handover to drain, up to 30 minutes"
+var waitingForDrain = fmt.Sprintf("waiting for its last handover to drain, up to %d minutes", int(handover.DrainBound.Minutes()))
 
-// drainingNow is whether pool's upgrade waits on a drain: a reconcile at
-// drainAt found its box would not move for one, and none has settled since.
-func drainingNow(pool *model.Pool, drainAt time.Time) bool {
-	return !drainAt.IsZero() && (pool.ReconciledAt == nil || !pool.ReconciledAt.After(drainAt))
+// drainOutlasted is a pool whose box still would not move for a drain past
+// the drain's bound: a drain ends there, so the pool is stuck, not draining.
+const drainOutlasted = "its last handover's drain outlasted its bound"
+
+// drainMargin is how long past handover.DrainBound a drain streak still
+// counts as one: the bound's process exits at it, and the next reconcile
+// needs a pass to see so.
+const drainMargin = 5 * time.Minute
+
+// drainingNow is whether pool's upgrade waits on a drain: a reconcile streak
+// that began at drainAt found its box would not move for one, none has
+// settled since, and the streak is within the drain's bound.
+func drainingNow(pool *model.Pool, drainAt, now time.Time) bool {
+	return !drainAt.IsZero() && (pool.ReconciledAt == nil || !pool.ReconciledAt.After(drainAt)) &&
+		now.Sub(drainAt) < handover.DrainBound+drainMargin
+}
+
+// drainStuck is whether pool's streak of passes that would not move for a
+// drain has outlasted the drain's bound.
+func drainStuck(pool *model.Pool, drainAt, now time.Time) bool {
+	return !drainAt.IsZero() && (pool.ReconciledAt == nil || !pool.ReconciledAt.After(drainAt)) &&
+		now.Sub(drainAt) >= handover.DrainBound+drainMargin
 }
 
 // upgradeWaitingOn is what pool has yet to do in this run, empty once it is

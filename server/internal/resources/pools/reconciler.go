@@ -339,6 +339,9 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 		// the state it had, and this generation is not marked observed over a
 		// runtime the reconcile never reached.
 		if errors.Is(err, sandbox.ErrPoolNotReachable) {
+			if r.pools != nil {
+				r.pools.Upgrades().drainEnded(pool.ID)
+			}
 			waitingOnHost = true
 			r.beginHostWait(ctx, pool.ID, err)
 			r.noteWaiting(ctx, pool, generation, err.Error())
