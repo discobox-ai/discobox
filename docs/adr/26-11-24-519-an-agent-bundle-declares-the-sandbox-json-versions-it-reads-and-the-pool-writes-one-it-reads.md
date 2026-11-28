@@ -1,7 +1,8 @@
 # 26-11-24-519 — An agent bundle declares the sandbox.json versions it reads, and the pool writes one it reads
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-24
+- Accepted by the owner by merging #1654, 2026-11-25
 - **Issue**: #1409
 - **Relates to**: [0012](0012-sandbox-config-is-three-attribute-owned-layers.md)
   (`sandbox.json` and its `apiVersion`),
@@ -174,6 +175,20 @@ in this ADR changes that. Revisit only with an `image/v2`.
   writes, or be a file of its own.
 - Whether the label is read once per digest and memoised, as manifests are
   (`Cache.manifests`), or each time.
+
+## Amendments
+
+Amended from its implementation's review, before anything shipped against it.
+§2 said an error reading the label fails the render. The pool now reads a
+bundle's config only for an agent layer new to the sandbox: beside the tree,
+`sandbox-config.json` records the value the file holds, an agent layer known
+to read it, and the newest that layer reads, so a routine create or start
+asks no registry. A sandbox whose file was written before that record, and
+whose bundle can no longer be read, gets the legacy value again when its layer
+is the one last placed in it: that agent booted on the legacy file. Without
+this, a box on `manual` pinned to a main build that its registry has pruned
+(after fourteen days) would stop booting at its next create or start, which
+the Consequences rule out. Any other unreadable bundle still fails the render.
 
 ## Alternatives rejected
 

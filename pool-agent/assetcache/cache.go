@@ -6,6 +6,7 @@ package assetcache
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/discobox-ai/discobox/pkg/imagecache"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
 // Fetch reads path, beneath the pool's asset prefix on the control plane
@@ -53,7 +55,10 @@ type Cache struct {
 	// manifests holds manifests already read, by digest: a digest names its
 	// content, so an entry never goes stale.
 	manifests sync.Map
-	now       func() time.Time
+	// agentReads holds what each agent bundle config already read declares it
+	// reads, by the config's digest, which names its content.
+	agentReads sync.Map
+	now        func() time.Time
 }
 
 // fetchTimeout bounds a fetch shared among reads, which runs past any one
@@ -209,23 +214,84 @@ var ErrNoAgentLayer = errors.New("the agent bundle is not one layer for this poo
 // 26-10-24-953 §2; agentlayer.ExtractAgent checks what it holds). False is a
 // sandbox whose pool places no agent in it (Delivery.PlacesAgent).
 func (c *Cache) AgentLayer(ctx context.Context, sandboxID string) (string, bool, error) {
+	read, ok, err := c.agentManifest(ctx, sandboxID)
+	if err != nil || !ok {
+		return "", ok, err
+	}
+	return read.Layers[0].Digest, true, nil
+}
+
+// AgentReads is the sandbox.json apiVersion values the sandbox's agent bundle
+// declares its agent reads, from the config of its manifest for the pool's
+// platform (sandboxconfig.AgentReads; ADR 26-11-24-519 §2). False is a
+// sandbox whose pool places no agent in it, as AgentLayer's is.
+func (c *Cache) AgentReads(ctx context.Context, sandboxID string) ([]string, bool, error) {
+	read, ok, err := c.agentManifest(ctx, sandboxID)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+	digest := read.Config.Digest
+	if cached, ok := c.agentReads.Load(digest); ok {
+		if reads, ok := cached.([]string); ok {
+			return reads, true, nil
+		}
+	}
+	data, err := c.readConfig(ctx, digest)
+	if errors.Is(err, imagecache.ErrDamaged) {
+		if removeErr := c.blobs.RemoveBlob(digest); removeErr != nil {
+			return nil, true, errors.Join(err, removeErr)
+		}
+		data, err = c.readConfig(ctx, digest)
+	}
+	if err != nil {
+		return nil, true, fmt.Errorf("the agent bundle's config %s: %w", digest, err)
+	}
+	var config struct {
+		Config struct {
+			Labels map[string]string `json:"Labels"`
+		} `json:"config"`
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, true, fmt.Errorf("the agent bundle's config %s: %w", digest, err)
+	}
+	reads, err := sandboxconfig.AgentReads(config.Config.Labels)
+	if err != nil {
+		return nil, true, err
+	}
+	c.agentReads.Store(digest, reads)
+	return reads, true, nil
+}
+
+// readConfig reads the image config blob digest, fetching it into the store
+// when it is not there. It is no larger than a manifest is read to.
+func (c *Cache) readConfig(ctx context.Context, digest string) ([]byte, error) {
+	if err := c.ensure(ctx, blobPath(digest), digest); err != nil {
+		return nil, err
+	}
+	return c.blobs.ReadManifestBlob(digest)
+}
+
+// agentManifest is the sandbox's agent bundle's image manifest for the pool's
+// platform, refused unless it is one layer, and false for a sandbox whose
+// pool places no agent in it (Delivery.PlacesAgent).
+func (c *Cache) agentManifest(ctx context.Context, sandboxID string) (imagecache.Manifest, bool, error) {
 	d, err := c.delivery(sandboxID)
 	if err != nil {
-		return "", false, err
+		return imagecache.Manifest{}, false, err
 	}
 	if !d.PlacesAgent() {
-		return "", false, nil
+		return imagecache.Manifest{}, false, nil
 	}
 	read, _, err := imagecache.ImageManifest(d.Agent.Digest, imagecache.PoolPlatform(), func(digest string) (imagecache.Manifest, error) {
 		return c.manifest(ctx, d.Agent.Name, digest)
 	})
 	if err != nil {
-		return "", true, err
+		return imagecache.Manifest{}, true, err
 	}
 	if len(read.Layers) != 1 {
-		return "", true, fmt.Errorf("%w: its manifest has %d layers", ErrNoAgentLayer, len(read.Layers))
+		return imagecache.Manifest{}, true, fmt.Errorf("%w: its manifest has %d layers", ErrNoAgentLayer, len(read.Layers))
 	}
-	return read.Layers[0].Digest, true, nil
+	return read, true, nil
 }
 
 // OpenAgentLayer opens digest, the layer of the sandbox's agent bundle

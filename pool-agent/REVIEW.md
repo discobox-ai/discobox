@@ -879,9 +879,23 @@ linux, since an agent that is given none declares linux (#1010).
 The same holds one level down, for what a pool agent writes into a sandbox:
 `sandbox.json` is read by the sandbox's own pinned agent (ADR 0114), which can
 be older than the pool agent writing it. A value a sandbox agent checks
-strictly, such as `apiVersion`, changes on the writer only after every agent
-a pool may still write for reads the new value; until then the writer keeps
-the old one (`sandboxconfig.LegacyAPIVersion`, #250).
+strictly, such as `apiVersion`, is written only as the pinned agent's bundle
+declares it reads (`sandboxconfig.AgentReadsLabel`, read through
+`assetcache.Cache.AgentReads`), never by a release floor that a `manual`
+box's pin never reaches (ADR 26-11-24-519). A Docker container keeps the file
+it was built with, so a create whose agent does not read the recorded value
+(`sandbox-config.json`) rebuilds the container; never drop a value from the
+agent's reader while a container can still hold it.
+
+A new read the pool makes of a bundle's content must keep working for a box
+whose bundle its registry no longer holds: main builds are pruned after
+fourteen days, and a box on `manual` keeps its pin. The pool already holds
+what it placed (the agent's manifest and its extracted layer), so anything
+more is read once, while the bundle is new to the sandbox, and remembered
+beside the tree, never asked for at every create or start. `sandbox-config.json`
+is that record for what the agent reads. A box from before it is asked once;
+where its bundle cannot be read, the layer last placed in it booted on the
+legacy file, which is recorded in its place.
 
 The pool API's request bodies are just as strict: their schemas in
 `api/openapi/pool.yaml`, `GitSource` among them, are `additionalProperties:

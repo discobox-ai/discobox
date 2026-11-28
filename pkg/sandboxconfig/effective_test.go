@@ -20,7 +20,7 @@ func TestEffective_SingleWriterFields(t *testing.T) {
 		},
 		Image: ImageLayer{HarnessID: "h1", HarnessName: "Harness One"},
 	}
-	cfg, prov := Effective(doc)
+	cfg, prov := Effective(doc, LegacyAPIVersion)
 
 	if cfg.Git != (GitIdentity{UserName: "Ada Lovelace", UserEmail: "ada@example.com"}) {
 		t.Errorf("Git = %+v, want the runtime layer's identity copied through", cfg.Git)
@@ -41,8 +41,7 @@ func TestEffective_SingleWriterFields(t *testing.T) {
 	if cfg.Harness.ID != "h1" || cfg.Harness.Name != "Harness One" {
 		t.Errorf("Harness = %+v", cfg.Harness)
 	}
-	// Written under the legacy namespace until every sandbox agent a pool
-	// agent may write for reads APIVersion (LegacyAPIVersion).
+	// Written as the caller chose it for the sandbox's agent.
 	if cfg.APIVersion != LegacyAPIVersion {
 		t.Errorf("APIVersion = %q, want %q", cfg.APIVersion, LegacyAPIVersion)
 	}
@@ -70,7 +69,7 @@ func TestEffective_RunCommandOverrideGrant(t *testing.T) {
 				Image:   ImageLayer{RunCommand: []string{"image-cmd"}},
 				Project: tc.project,
 			}
-			cfg, _ := Effective(doc)
+			cfg, _ := Effective(doc, APIVersion)
 			if !reflect.DeepEqual(cfg.Harness.RunCommand, tc.want) {
 				t.Errorf("RunCommand = %v, want %v", cfg.Harness.RunCommand, tc.want)
 			}
@@ -83,7 +82,7 @@ func TestEffective_RelaunchCommandOverrideGrant(t *testing.T) {
 		Image:   ImageLayer{RelaunchCommand: []string{"image-relaunch"}},
 		Project: &ProjectLayer{RelaunchCommand: []string{"project-relaunch"}},
 	}
-	cfg, _ := Effective(doc)
+	cfg, _ := Effective(doc, APIVersion)
 	if !reflect.DeepEqual(cfg.Harness.RelaunchCommand, []string{"project-relaunch"}) {
 		t.Errorf("RelaunchCommand = %v", cfg.Harness.RelaunchCommand)
 	}
@@ -99,7 +98,7 @@ func TestDocumentFromBeforeConfigureWasRemovedStillDecodes(t *testing.T) {
 	if err := json.Unmarshal([]byte(legacy), &doc); err != nil {
 		t.Fatalf("decode legacy document: %v", err)
 	}
-	cfg, _ := Effective(doc)
+	cfg, _ := Effective(doc, APIVersion)
 	if !reflect.DeepEqual(cfg.Harness.RunCommand, []string{"claude"}) {
 		t.Errorf("RunCommand = %v, want the legacy document's", cfg.Harness.RunCommand)
 	}
@@ -110,7 +109,7 @@ func TestEffective_EnvAdditiveDefault(t *testing.T) {
 		Image:   ImageLayer{Env: map[string]string{"A": "image-a", "B": "image-b"}},
 		Runtime: RuntimeLayer{Env: map[string]string{"A": "runtime-a", "C": "runtime-c"}},
 	}
-	cfg, _ := Effective(doc)
+	cfg, _ := Effective(doc, APIVersion)
 	want := map[string]string{"A": "runtime-a", "B": "image-b", "C": "runtime-c"}
 	if !reflect.DeepEqual(cfg.Env, want) {
 		t.Errorf("Env = %v, want %v", cfg.Env, want)
@@ -132,7 +131,7 @@ func TestEffective_FilesOverlayByPath(t *testing.T) {
 			{Path: "/home/user/.a", Content: "project-a"}, // conflicting path, ignored
 		}},
 	}
-	cfg, _ := Effective(doc)
+	cfg, _ := Effective(doc, APIVersion)
 	want := []File{
 		{Path: "/home/user/.a", Content: "runtime-a"},
 		{Path: "/home/user/.b", Content: "image-b"},
@@ -156,7 +155,7 @@ func TestEffective_LaterRuntimeFileWinsAtAPath(t *testing.T) {
 			{Path: ".a", Content: "override", CreateOnly: true},
 		}},
 	}
-	cfg, _ := Effective(doc)
+	cfg, _ := Effective(doc, APIVersion)
 	want := []File{
 		{Path: ".a", Content: "override", CreateOnly: true},
 		{Path: ".b", Content: "configured-b"},
@@ -170,7 +169,7 @@ func TestEffective_VolumesAreImageOnly(t *testing.T) {
 	doc := Document{
 		Image: ImageLayer{Volumes: []harness.Volume{{Path: "/data", Volume: harness.VolumeData}}},
 	}
-	cfg, _ := Effective(doc)
+	cfg, _ := Effective(doc, APIVersion)
 	if len(cfg.Volumes) != 1 || cfg.Volumes[0].Path != "/data" {
 		t.Errorf("Volumes = %+v", cfg.Volumes)
 	}
@@ -178,13 +177,13 @@ func TestEffective_VolumesAreImageOnly(t *testing.T) {
 
 func TestEffective_WorkingDirectorySubpathIsProjectOnly(t *testing.T) {
 	doc := Document{Project: &ProjectLayer{WorkingDirectorySubpath: "sub/dir"}}
-	cfg, _ := Effective(doc)
+	cfg, _ := Effective(doc, APIVersion)
 	if cfg.WorkingDirectorySubpath != "sub/dir" {
 		t.Errorf("WorkingDirectorySubpath = %q", cfg.WorkingDirectorySubpath)
 	}
 
 	docNoProject := Document{}
-	cfgNoProject, _ := Effective(docNoProject)
+	cfgNoProject, _ := Effective(docNoProject, APIVersion)
 	if cfgNoProject.WorkingDirectorySubpath != "" {
 		t.Errorf("WorkingDirectorySubpath = %q, want empty", cfgNoProject.WorkingDirectorySubpath)
 	}

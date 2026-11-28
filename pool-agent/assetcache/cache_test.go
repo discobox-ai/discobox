@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/imagecache"
 	"github.com/discobox-ai/discobox/pkg/layout"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/proxy"
 )
 
@@ -93,16 +95,7 @@ func newBundle(t *testing.T, seed string) bundle {
 	t.Helper()
 	config := []byte(`{"architecture":"amd64","os":"linux","seed":"` + seed + `"}`)
 	layer := []byte("layer of " + seed)
-	manifest, err := json.Marshal(map[string]any{
-		"schemaVersion": 2,
-		"mediaType":     imagecache.MediaTypeOCIManifest,
-		"config":        map[string]any{"mediaType": "application/vnd.oci.image.config.v1+json", "digest": digestOf(config), "size": len(config)},
-		"layers":        []any{map[string]any{"mediaType": "application/vnd.oci.image.layer.v1.tar", "digest": digestOf(layer), "size": len(layer)}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return bundle{config: config, layer: layer, manifest: manifest}
+	return bundle{config: config, layer: layer, manifest: manifestOver(t, config, layer)}
 }
 
 func indexOf(t *testing.T, manifests ...[]byte) []byte {
@@ -458,4 +451,57 @@ func TestThePoolReadsTheAgentLayerAndTheBoxDoesNot(t *testing.T) {
 	if _, ok, err := f.cache.AgentLayer(ctx, "sbx_none"); err != nil || ok {
 		t.Fatalf("AgentLayer of a sandbox delivered nothing = %v, %v", ok, err)
 	}
+}
+
+// The pool reads which sandbox.json versions a sandbox's agent reads from the
+// label on its agent bundle's config, once per config (ADR 26-11-24-519 §2).
+// A bundle without the label was built before it, and its agent reads the
+// legacy version alone.
+func TestThePoolReadsWhatTheAgentBundleDeclaresItReads(t *testing.T) {
+	f := newFixture(t)
+	labeled := newBundle(t, "labeled")
+	labeled.config = []byte(`{"architecture":"amd64","os":"linux","config":{"Labels":{"` + sandboxconfig.AgentReadsLabel + `":"[\"discobox.ai/sandbox/v1\",\"discobox.dev/sandbox/v1\"]"}}}`)
+	labeled.manifest = manifestOver(t, labeled.config, labeled.layer)
+	unlabeled := newBundle(t, "unlabeled")
+	f.server.add(labeled.config, labeled.layer, labeled.manifest, unlabeled.config, unlabeled.layer, unlabeled.manifest)
+	for id, agent := range map[string]bundle{"sbx_new": labeled, "sbx_old": unlabeled} {
+		if err := WriteRecord(filepath.Join(f.sandboxes, id), Delivery{
+			Agent:   Pin{Name: "discobox-agent", Digest: digestOf(agent.manifest)},
+			Bundles: []Pin{{Name: "discobox-platform", Digest: digestOf([]byte("platform"))}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx := context.Background()
+	for range 2 {
+		reads, ok, err := f.cache.AgentReads(ctx, "sbx_new")
+		if err != nil || !ok || !slices.Equal(reads, []string{sandboxconfig.APIVersion, sandboxconfig.LegacyAPIVersion}) {
+			t.Fatalf("AgentReads of a labeled agent = %q, %v, %v", reads, ok, err)
+		}
+	}
+	if n := f.server.count(serverPrefix + "/blobs/" + digestOf(labeled.config)); n != 1 {
+		t.Fatalf("the agent bundle's config was fetched %d times, want once", n)
+	}
+	reads, ok, err := f.cache.AgentReads(ctx, "sbx_old")
+	if err != nil || !ok || !slices.Equal(reads, []string{sandboxconfig.LegacyAPIVersion}) {
+		t.Fatalf("AgentReads of an unlabeled agent = %q, %v, %v; want the legacy version alone", reads, ok, err)
+	}
+	if _, ok, err := f.cache.AgentReads(ctx, "sbx_none"); err != nil || ok {
+		t.Fatalf("AgentReads of a sandbox delivered nothing = %v, %v", ok, err)
+	}
+}
+
+// manifestOver is an image manifest of config and its one layer.
+func manifestOver(t *testing.T, config, layer []byte) []byte {
+	t.Helper()
+	manifest, err := json.Marshal(map[string]any{
+		"schemaVersion": 2,
+		"mediaType":     imagecache.MediaTypeOCIManifest,
+		"config":        map[string]any{"mediaType": "application/vnd.oci.image.config.v1+json", "digest": digestOf(config), "size": len(config)},
+		"layers":        []any{map[string]any{"mediaType": "application/vnd.oci.image.layer.v1.tar", "digest": digestOf(layer), "size": len(layer)}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return manifest
 }

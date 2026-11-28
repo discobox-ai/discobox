@@ -20,7 +20,7 @@ from the in-sandbox `sandbox-agent` API.
 | `cmd/discobox-cp-relay` | wslc guest half of the control-plane channel: multiplexes the guest's stdio with `cpmux` and serves the Unix socket the agent reaches the control plane through. |
 | `.` | Root `poolagent` Go package: boot contract, identity, control-plane HTTP client (`http.go`), status reporting, the standing sandbox-agent status poller (`statuspoll.go`, ADR 0030), resource accounting (`resourcereport.go`, `storagescan.go`, `cgroup.go`), and high-level command orchestration. |
 | `server` | Pool-local HTTP server and the front that serves its listener from startup, before the router exists (`Front`: the control-plane channel's route alone until then), health/metadata endpoints, generated sandbox API route/auth adapter, the sandbox HTTP/sandbox-agent/Git proxy routes, the Git cache routes the control plane forwards clients' deliveries to (`sandbox_git_cache.go`), on-demand start (`autostart.go`), the loopback origin listener the pool proxy forwards sandboxes' origin fetches to (`NewOriginRouter`; see [Git origins](#git-origins)), and the socket it forwards their bundle fetches to (`Config.AssetListener`; see [Bundle Assets](#bundle-assets)). |
-| `assetcache` | The pool's pull-through cache of bundles (ADR 26-10-16-423 §13): each sandbox's record of what it is delivered (`delivery.json`: its agent and its ordered bundles), and each snapshot build's, kept apart from them by its `layout.SnapshotIDPrefix` ID ([Snapshots](#snapshots)), the blob store under `layout.PoolBuild`, filled through the pool's asset client ([`poolassets`](../pkg/poolassets)), the `assets.discobox.internal` handler scoped to one sandbox's bundles, the sweep, and the one layer of a sandbox's agent bundle (`AgentLayer`, `OpenAgentLayer`), which only the pool reads. See [Bundle Assets](#bundle-assets). |
+| `assetcache` | The pool's pull-through cache of bundles (ADR 26-10-16-423 §13): each sandbox's record of what it is delivered (`delivery.json`: its agent and its ordered bundles), and each snapshot build's, kept apart from them by its `layout.SnapshotIDPrefix` ID ([Snapshots](#snapshots)), the blob store under `layout.PoolBuild`, filled through the pool's asset client ([`poolassets`](../pkg/poolassets)), the `assets.discobox.internal` handler scoped to one sandbox's bundles, the sweep, and the one layer of a sandbox's agent bundle (`AgentLayer`, `OpenAgentLayer`) and the `sandbox.json` versions its config's label declares the agent reads (`AgentReads`), which only the pool reads. See [Bundle Assets](#bundle-assets). |
 | `cpmux` | Symmetric yamux session over one duplex byte stream, for guests that can only be dialed inward (wslc) and the control-plane channel. |
 | `cpchannel` | Both ends of the control-plane channel the server opens to a remote pool with no `controlPlaneUrl` ([ADR 26-10-30-875](../docs/adr/26-10-30-875-a-remote-pool-reaches-its-control-plane-over-a-channel-the-server-opens.md)): a binary WebSocket at `/api/project/{p}/pool/{p}/control-plane-channel` ([ADR 26-10-31-152](../docs/adr/26-10-31-152-the-control-plane-channel-is-a-websocket.md)), TLS 1.3 pinned to the pool's enrolled key and the server's issuer key, and the pool end (`Channel`) that serves the agent's control-plane socket over the latest channel's `cpmux` session. The server's end dials it (`Dial`) from `poolruntime`. |
 | `sandboxtoken` | Tokens the pool issues its own sandboxes, signed with the same key under their own audience (`discobox-pool-sandbox`); `origin:fetch` is accepted on the `git-origins` route alone. |
@@ -485,7 +485,16 @@ flowchart LR
   control plane's and the pool's public keys (`provider.publicKeys`), and where
   the pool serves the sandbox (`provider.pool`, `proxyagent.PoolEndpoints`),
   and whether its agent serves TLS (`agentRuntime.tls`, [The Agent's
-  TLS](#the-agents-tls)). No private key, no secret, no idle timeout. It is
+  TLS](#the-agents-tls)). Its `apiVersion` is the newest the pinned agent's
+  bundle declares it reads (`sandboxConfigFor`, from
+  `assetcache.Cache.AgentReads`; an unlabeled agent, or none placed, gets
+  `discobox.dev/sandbox/v1`), recorded beside the tree in
+  `sandbox-config.json` with an agent layer known to read it and the newest
+  that layer reads, so the bundle's config is fetched only for a layer new to
+  the sandbox; where that fetch fails for a box from before the record, the
+  layer last placed in it booted on the legacy value, which is written again
+  (ADR 26-11-24-519). A version no agent reads is
+  refused before the container it replaces is removed. No private key, no secret, no idle timeout. It is
   written through an `os.Root` (`writeRootFile`), since the sandbox can write
   the volume, which a replaced container's successor reuses. It also removes a readiness marker
   left from an earlier container, so a new one's gate waits for its own agent.
@@ -1223,7 +1232,8 @@ flowchart LR
   systemd** (`provisioner.RequireSystemd`), before anything is placed: every
   unit below runs under it ([ADR 26-11-16-619](../docs/adr/26-11-16-619-a-pool-on-a-driver-with-no-networks-fences-each-sandbox-at-the-providers-edge-and-starts-systemd-in-the-guest.md)
   §4). The create fails naming `/lib/systemd/systemd`.
-- **Every start places**: sandbox.json at `/etc/discobox`, the agent layer
+- **Every start places**: sandbox.json at `/etc/discobox`, rendered under
+  the `apiVersion` the pinned agent reads (ADR 26-11-24-519 §2), the agent layer
   when the pool's record does not say it is there, the units
   (`agentlayer.MachineUnits`: the agent's, the drop-in that runs
   `discobox-wire.service` on a machine, and `discobox-wire-in-place.service`)
@@ -1905,7 +1915,10 @@ flowchart LR
   only a new container takes a new base, and only a move of its pins — an
   upgrade, a repair, a stopped sandbox following its server — moves it. A
   moved agent alone restarts nothing: it is placed at the sandbox's next
-  start.
+  start. Either way, a create whose agent does not read the `apiVersion`
+  the container's `sandbox.json` was written with (`agentReadsWritten`)
+  rebuilds the container, running or stopped, so the new file is one it
+  reads (ADR 26-11-24-519 §3).
 - **Export** runs the base image with the extracted agent bound read-only at
   `exportAgentPath`: the export container is not the box, and nothing in the
   sandbox reaches the pool's copy.

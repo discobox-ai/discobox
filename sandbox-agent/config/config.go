@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -163,9 +164,9 @@ func unmarshalConfig(data []byte, cfg *Config) error {
 	if err := json.Unmarshal(data, &effective); err != nil {
 		return err
 	}
-	switch strings.TrimSpace(effective.APIVersion) {
-	case sandboxconfig.APIVersion, sandboxconfig.LegacyAPIVersion:
-	default:
+	// What this agent's bundle declares it reads, which its pool writes from
+	// (sandboxconfig.AgentReadsLabel).
+	if !slices.Contains(sandboxconfig.ReadAPIVersions, strings.TrimSpace(effective.APIVersion)) {
 		return fmt.Errorf("apiVersion = %q, want %q", effective.APIVersion, sandboxconfig.APIVersion)
 	}
 	*cfg = configFromEffective(effective)

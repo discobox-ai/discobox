@@ -84,7 +84,7 @@ func TestSandboxBootstrapNamesThePoolAndHoldsNoSecret(t *testing.T) {
 	if buildErr != nil {
 		t.Fatal(buildErr)
 	}
-	cfg, _ := sandboxconfig.Effective(doc)
+	cfg, _ := sandboxconfig.Effective(doc, sandboxconfig.APIVersion)
 	if cfg.Provider.PublicKeys[sandboxconfig.ControlPlanePublicKeyName] != "cp-key" || cfg.Provider.PublicKeys[sandboxconfig.PoolPublicKeyName] != r.poolPublicKey() {
 		t.Fatalf("public keys = %v", cfg.Provider.PublicKeys)
 	}
@@ -94,7 +94,7 @@ func TestSandboxBootstrapNamesThePoolAndHoldsNoSecret(t *testing.T) {
 	if cfg.Provider.Pool == nil || cfg.Provider.Pool.Proxy == "" || cfg.Provider.Pool.BuildKit == "" {
 		t.Fatalf("pool endpoints = %+v", cfg.Provider.Pool)
 	}
-	data, err := marshalSandboxDocument(doc)
+	data, err := marshalSandboxDocument(doc, sandboxconfig.APIVersion)
 	if err != nil {
 		t.Fatal(err)
 	}

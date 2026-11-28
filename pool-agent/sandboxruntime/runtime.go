@@ -629,6 +629,17 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 			if err != nil {
 				return nil, err
 			}
+			// A container keeps its sandbox.json when its pins move in place,
+			// and its agent pin can move with them or alone (deliveredMoved
+			// compares the bundles), so an agent that does not read the file,
+			// running or stopped, takes a new container, which writes one it
+			// reads (ADR 26-11-24-519 §3).
+			readsWritten := true
+			if moved != movedBase && delivery(req).PlacesAgent() {
+				if readsWritten, err = r.agentReadsWritten(ctx, sandboxID); err != nil {
+					return nil, err
+				}
+			}
 			switch {
 			case rebuild:
 				reason = "the project configuration its delivered source declares"
@@ -636,6 +647,8 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 				// The sandbox base image moved with them, which only a new
 				// container takes.
 				reason = "its pins and the sandbox base image moved"
+			case !readsWritten:
+				reason = "its agent pin moved to an agent that does not read its sandbox.json"
 			case moved == movedPins && existing.Status == StatusRunning:
 				// Restarted into them, keeping its store and what it
 				// provisioned. An upgrade restarts a running sandbox and
@@ -735,6 +748,13 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 	}
 	// The snapshot of its plan when there is one (ADR 26-10-16-423 §8).
 	imageName, snapshot := r.deliveredImage(ctx, imageName, req)
+	// What its sandbox.json is written as, settled before the container it
+	// replaces is removed: an agent that reads nothing this pool writes is
+	// refused with the sandbox keeping that container (ADR 26-11-24-519 §2).
+	bootstrapVersion, err := r.sandboxConfigFor(ctx, sandboxID)
+	if err != nil {
+		return nil, false, err
+	}
 	if replaced != nil {
 		// Only now, with the new image on the host: obtaining it is the step a
 		// re-pin fails at, and a sandbox that cannot get its new image keeps the
@@ -788,7 +808,7 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 	}
 	// The bootstrap: placed before the container exists, and the one thing the
 	// pool ever writes into the sandbox's config volume (ADR 0126 §3).
-	if err := r.writeSandboxHarnessConfig(ctx, sandboxID, imageName, req, proxyEnv, project.Project); err != nil {
+	if err := r.writeSandboxHarnessConfig(ctx, sandboxID, imageName, bootstrapVersion, req, proxyEnv, project.Project); err != nil {
 		return nil, false, err
 	}
 	secretEnv, _ := req.SecretEnv.Get()
@@ -1257,7 +1277,7 @@ func validSourceDataKey(key string) bool {
 	return true
 }
 
-func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sandboxID, resolvedImage string, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string, project *sandboxconfig.ProjectLayer) error {
+func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sandboxID, resolvedImage string, version sandboxConfigRecord, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string, project *sandboxconfig.ProjectLayer) error {
 	configDir := r.sandboxConfigRoot(sandboxID)
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return err
@@ -1272,11 +1292,14 @@ func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sa
 	if err := r.recordFileSecrets(sandboxID, doc.Image.Secrets); err != nil {
 		return err
 	}
-	data, err := marshalSandboxDocument(doc)
+	data, err := marshalSandboxDocument(doc, version.APIVersion)
 	if err != nil {
 		return err
 	}
 	if err := writeSandboxManifest(configDir, data); err != nil {
+		return err
+	}
+	if err := r.recordSandboxConfig(sandboxID, version); err != nil {
 		return err
 	}
 	// What the bootstrap told the agent is how the pool reaches it, whatever
@@ -1308,8 +1331,10 @@ type sandboxDocumentFile struct {
 	Provenance sandboxconfig.Provenance `json:"_provenance"`
 }
 
-func marshalSandboxDocument(doc sandboxconfig.Document) ([]byte, error) {
-	cfg, provenance := sandboxconfig.Effective(doc)
+// marshalSandboxDocument renders doc as sandbox.json under apiVersion, one the
+// sandbox's agent reads (sandboxConfigFor).
+func marshalSandboxDocument(doc sandboxconfig.Document, apiVersion string) ([]byte, error) {
+	cfg, provenance := sandboxconfig.Effective(doc, apiVersion)
 	return json.MarshalIndent(&sandboxDocumentFile{Config: cfg, Provenance: provenance}, "", "  ")
 }
 
