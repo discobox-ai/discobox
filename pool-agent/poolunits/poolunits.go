@@ -366,9 +366,20 @@ func (a *applier) apply(ctx context.Context) (err error) {
 	}
 	if legacy {
 		if err := a.retireLegacy(ctx); err != nil {
-			return err
+			return errors.Join(err, a.restoreLegacy(context.WithoutCancel(ctx)))
 		}
 		current = state{}
+		// Until slot a serves, the units from before slots are kept: an
+		// apply that fails after they stopped puts them back, so a failed
+		// first upgrade leaves the pool served, and the next apply retires
+		// them again. Only one that succeeds removes them.
+		defer func() {
+			if err != nil {
+				err = errors.Join(err, a.restoreLegacy(context.WithoutCancel(ctx)))
+				return
+			}
+			err = a.removeLegacy(ctx)
+		}()
 	}
 	now, err := a.fingerprint()
 	if err != nil {
@@ -589,9 +600,38 @@ func (a *applier) retireLegacy(ctx context.Context) error {
 	if _, err := a.cfg.Systemctl(ctx, "stop", legacyProxyUnit, legacyAgentUnit); err != nil {
 		return err
 	}
-	if _, err := a.cfg.Systemctl(ctx, "disable", legacyProxyUnit, legacyAgentUnit); err != nil {
-		return err
+	_, err := a.cfg.Systemctl(ctx, "disable", legacyProxyUnit, legacyAgentUnit)
+	return err
+}
+
+// restoreLegacy puts the units from before slots back after an apply that
+// retired them failed. Every socket this bundle rendered is closed first, so
+// traffic starts nothing more, and a `units start` it already began, which
+// waits on this apply, is stopped before it starts a slot beside them; the
+// slots are stopped and disabled; and the socket units' files are removed,
+// so the next apply renders them anew and binds each, the mediator's
+// included. The old units are then enabled and started again, on the binary
+// this bundle placed, which binds what no socket passes it. The mediator
+// keeps what it was passed until it restarts.
+func (a *applier) restoreLegacy(ctx context.Context) error {
+	a.log.Warn("the pool's first slot did not come up; serving from its units from before slots again", "units", []string{legacyAgentUnit, legacyProxyUnit})
+	sockets := a.ofRole(RoleAgent, RoleProxy, RoleMediator)
+	_, socketErr := a.cfg.Systemctl(ctx, append([]string{"disable", "--now"}, sockets...)...)
+	_, triggerErr := a.cfg.Systemctl(ctx, "stop", unitsInstances)
+	_, slotErr := a.cfg.Systemctl(ctx, append([]string{"disable", "--now"}, append(bundle.AgentUnits(), proxyUnits()...)...)...)
+	var removeErr error
+	for _, unit := range sockets {
+		if err := os.Remove(filepath.Join(a.cfg.SystemdDir, unit)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			removeErr = errors.Join(removeErr, err)
+		}
 	}
+	_, reloadErr := a.cfg.Systemctl(ctx, "daemon-reload")
+	_, startErr := a.cfg.Systemctl(ctx, "enable", "--now", legacyAgentUnit, legacyProxyUnit)
+	return errors.Join(socketErr, triggerErr, slotErr, removeErr, reloadErr, startErr)
+}
+
+// removeLegacy removes the units from before slots once slot a serves.
+func (a *applier) removeLegacy(ctx context.Context) error {
 	for _, unit := range []string{legacyAgentUnit, legacyProxyUnit} {
 		if err := os.Remove(filepath.Join(a.cfg.SystemdDir, unit)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err

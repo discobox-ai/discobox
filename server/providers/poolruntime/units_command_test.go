@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 	"github.com/discobox-ai/discobox/pool-agent/bundle"
 	"github.com/discobox-ai/discobox/pool-agent/provisioner"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -57,15 +58,15 @@ func TestABundleFromBeforeSlotsRestartsOnAMovedPlacementAlone(t *testing.T) {
 // other exit is the step's failure as before.
 func TestAUnitsStepRefusedForADrainIsTryLater(t *testing.T) {
 	result := provisioner.Result{Stderr: []byte("a slot still drains from the last handover")}
-	draining := unitsError(result, &provisioner.ExitError{Argv: []string{"sh"}, ExitCode: bundle.UnitsDrainingExitCode})
+	draining := unitsError(pooloutbound.Resolved{}, result, &provisioner.ExitError{Argv: []string{"sh"}, ExitCode: bundle.UnitsDrainingExitCode})
 	if !errors.Is(draining, sandbox.ErrPoolSlotDraining) {
 		t.Fatalf("a refusal for a drain = %v, want ErrPoolSlotDraining", draining)
 	}
-	stalled := unitsError(provisioner.Result{}, &provisioner.ExitError{Argv: []string{"sh"}, ExitCode: bundle.UnitsTakeOverStalledExitCode})
+	stalled := unitsError(pooloutbound.Resolved{}, provisioner.Result{}, &provisioner.ExitError{Argv: []string{"sh"}, ExitCode: bundle.UnitsTakeOverStalledExitCode})
 	if !errors.Is(stalled, sandbox.ErrPoolTakeOverStalled) || errors.Is(stalled, sandbox.ErrPoolSlotDraining) {
 		t.Fatalf("a handover whose new agent never took over = %v, want ErrPoolTakeOverStalled", stalled)
 	}
-	failed := unitsError(provisioner.Result{}, &provisioner.ExitError{Argv: []string{"sh"}, ExitCode: 1})
+	failed := unitsError(pooloutbound.Resolved{}, provisioner.Result{}, &provisioner.ExitError{Argv: []string{"sh"}, ExitCode: 1})
 	if errors.Is(failed, sandbox.ErrPoolSlotDraining) || errors.Is(failed, sandbox.ErrPoolTakeOverStalled) || failed == nil {
 		t.Fatalf("a failed units step = %v, want a failure", failed)
 	}
@@ -92,5 +93,22 @@ func TestAHandOverFailureIsNeverKept(t *testing.T) {
 	}
 	if got := HandOverFailure(errors.New("registry unreachable")); got != nil {
 		t.Fatalf("another failure = %v, want it left to the maker", got)
+	}
+}
+
+// The units step's failure is redacted as the apply's is: it runs with the
+// outbound routing's environment, whose proxy credentials it may echo, and
+// stays the drain or stall it was.
+func TestAUnitsStepFailureIsRedacted(t *testing.T) {
+	const secret = "s3cret"
+	proxyURL := "http://pool:" + secret + "@proxy.example:3128"
+	outbound := pooloutbound.Resolved{HTTP: proxyURL}
+	result := provisioner.Result{Stderr: []byte("units: dial " + proxyURL + ": refused")}
+	err := unitsError(outbound, result, &provisioner.ExitError{Argv: []string{"sh"}, ExitCode: bundle.UnitsTakeOverStalledExitCode})
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("the units step's failure carries the proxy's credential: %v", err)
+	}
+	if !errors.Is(err, sandbox.ErrPoolTakeOverStalled) {
+		t.Fatalf("a redacted stall = %v, want ErrPoolTakeOverStalled still", err)
 	}
 }

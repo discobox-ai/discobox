@@ -1020,7 +1020,7 @@ func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, 
 	}
 	steps.Step(ctx, "provisioned the pool's box in place")
 	if recorded.OutboundRevision != record.OutboundRevision {
-		if err := poolruntime.RestartPoolBuilder(ctx, guest); err != nil {
+		if err := poolruntime.RestartPoolBuilder(ctx, guest, pool.RuntimeOutbound); err != nil {
 			slog.WarnContext(ctx, "the pool's builder did not restart on its new outbound routing; the next reconcile places it again", "pool", pool.ID, "error", err)
 			sandbox.ReportBoxKept(ctx, fmt.Errorf("its builder did not restart on its new outbound routing: %w", err))
 			if pool.OutboundStatus != nil && pool.OutboundAppliedRevision != pool.Outbound.Revision() {

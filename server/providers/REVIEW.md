@@ -316,3 +316,9 @@
   still draining, a new agent that never took over) reach the server only
   through that failure; a maker that kept the box over them and settled
   clean read a stalled takeover as success.
+- Every failure of a command run in a pool's box with the outbound
+  routing's environment is redacted with it (`pooloutbound.Resolved`): the
+  apply's, the units step's (`unitsError`) and the builder restart's
+  (`RestartPoolBuilder`). Why: each runs with the outbound environment,
+  whose proxy credentials its stderr may echo into the pool's recorded
+  error.

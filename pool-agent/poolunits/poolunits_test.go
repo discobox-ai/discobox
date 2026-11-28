@@ -434,6 +434,59 @@ func TestTheUnitsFromBeforeSlotsAreRetiredOnce(t *testing.T) {
 	}
 }
 
+// A first upgrade whose slot fails to come up leaves the pool served: the
+// units from before slots are put back, their files kept, the slots and
+// their sockets stopped and disabled, and the next apply retires them again.
+func TestAFailedFirstUpgradePutsTheUnitsFromBeforeSlotsBack(t *testing.T) {
+	b := newBox(t, true)
+	legacy := filepath.Join(b.cfg.SystemdDir, legacyAgentUnit)
+	b.write(t, legacy, "[Service]\n")
+	b.write(t, filepath.Join(b.cfg.SystemdDir, legacyProxyUnit), "[Service]\n")
+	b.systemd.failStart = bundle.AgentUnit("a")
+	if err := Apply(context.Background(), b.cfg); err == nil {
+		t.Fatal("an apply whose first slot failed to start succeeded")
+	}
+	if !b.systemd.ran("enable", "--now", legacyAgentUnit, legacyProxyUnit) {
+		t.Fatalf("the units from before slots were not put back: %q", b.systemd.commands)
+	}
+	if !slices.ContainsFunc(b.systemd.commands, func(c []string) bool {
+		return c[0] == "disable" && slices.Contains(c, "--now") && slices.Contains(c, bundle.AgentUnit("a"))
+	}) {
+		t.Fatalf("the slot was left enabled beside the units it replaced: %q", b.systemd.commands)
+	}
+	if !slices.ContainsFunc(b.systemd.commands, func(c []string) bool {
+		return c[0] == "disable" && slices.Contains(c, "--now") && slices.Contains(c, "discobox-pool-ingress.socket")
+	}) {
+		t.Fatalf("the slot's sockets were left holding the ports: %q", b.systemd.commands)
+	}
+	if _, err := os.Stat(legacy); err != nil {
+		t.Fatalf("the agent's unit from before slots is gone after a failed upgrade: %v", err)
+	}
+	if !b.systemd.ran("stop", unitsInstances) {
+		t.Fatalf("a units start traffic began was left to start a slot beside them: %q", b.systemd.commands)
+	}
+	for _, socket := range b.cfg.Sockets {
+		if _, err := os.Stat(filepath.Join(b.cfg.SystemdDir, socket.Unit())); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s is left laid, so the next apply would not bind it: %v", socket.Unit(), err)
+		}
+	}
+
+	b.systemd.failStart = ""
+	b.systemd.reset()
+	b.apply(t)
+	if !b.systemd.ran("start", bundle.AgentUnit("a"), bundle.ProxyUnit("a")) {
+		t.Fatalf("the next apply did not start the first slot: %q", b.systemd.commands)
+	}
+	if _, err := os.Stat(legacy); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the agent's unit from before slots is still laid once the slot serves: %v", err)
+	}
+	if !slices.ContainsFunc(b.systemd.commands, func(c []string) bool {
+		return c[0] == "enable" && slices.Contains(c, "--now") && slices.Contains(c, "discobox-pool-buildkit.socket")
+	}) {
+		t.Fatalf("the next apply did not bind the mediator's sockets: %q", b.systemd.commands)
+	}
+}
+
 // A socket whose address moved cannot be handed over: every slot socket
 // closes first, so no traffic starts anything on them meanwhile, what served it
 // stops, the socket is bound at its new address, and the slot starts on it.
