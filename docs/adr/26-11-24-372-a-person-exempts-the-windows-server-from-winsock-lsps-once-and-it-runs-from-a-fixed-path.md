@@ -1,9 +1,10 @@
 # 26-11-24-372 — A person exempts the Windows server from Winsock LSPs once, and it runs from a fixed path
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-24
+  Accepted by the owner by merging #1646, 2026-11-25.
 - **Issue**: #1566
-- **Would amend**: [0099](0099-the-cli-downloads-the-server-it-starts.md) §5.
+- **Amends**: [0099](0099-the-cli-downloads-the-server-it-starts.md) §5.
   On Windows, a staged server runs from one fixed directory that the verified
   versioned set is linked into. It no longer runs from inside the versioned
   directory. Staging, verification, the versioned layout and the resolution

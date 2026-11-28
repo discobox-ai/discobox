@@ -79,6 +79,19 @@ type serverResolver struct {
 	// serverImages asks a server which images it runs. Nil runs the server
 	// and asks it.
 	serverImages func(ctx context.Context, server string, env []string) ([]string, error)
+	// fixedRunDir runs a staged server from its platform's fixed run
+	// directory rather than its versioned one (runPath).
+	fixedRunDir bool
+}
+
+// resolvedServer is the server resolve settled on.
+type resolvedServer struct {
+	// path is the binary: a staged set's command in its versioned directory,
+	// or a binary that is run where it is.
+	path string
+	// staged is the manifest path was staged from, and nil for a binary run
+	// where it is.
+	staged *serverstage.Manifest
 }
 
 func (a *App) serverResolver(onProgress func(serverstage.Progress)) serverResolver {
@@ -112,21 +125,43 @@ func (a *App) serverResolver(onProgress func(serverstage.Progress)) serverResolv
 		imageRoot:  stagedImagesRoot(),
 		env:        localServerEnv(a.serverURL),
 		onProgress: onProgress,
+		// Windows keys a Winsock LSP exemption by the executable's path, so
+		// the server runs from a path that stays the same across upgrades
+		// (ADR 26-11-24-372 §3). Nothing on another platform is keyed by it.
+		fixedRunDir: runtime.GOOS == "windows",
 	}
 }
 
-// resolve returns the path of the server binary to run, staging it when that is
-// what it takes.
-func (r serverResolver) resolve(ctx context.Context) (string, error) {
+// resolve returns the server binary to run, staging it when that is what it
+// takes. What is executed is runPath's answer for it.
+func (r serverResolver) resolve(ctx context.Context) (resolvedServer, error) {
 	binary, manifest, err := r.choose(ctx)
 	if err != nil || manifest == nil {
-		return binary, err
+		return resolvedServer{path: binary}, err
 	}
 	dir, err := r.stage(ctx, *manifest)
 	if err != nil {
-		return "", err
+		return resolvedServer{}, err
 	}
-	return filepath.Join(dir, manifest.Command), nil
+	return resolvedServer{path: filepath.Join(dir, manifest.Command), staged: manifest}, nil
+}
+
+// runPath is where a resolved server is executed from. On Windows a staged
+// set is linked into its platform's fixed run directory and run from there,
+// so a Winsock LSP exemption made for that path outlives upgrades (ADR
+// 26-11-24-372 §3); serverstage.Install brings the directory to this version
+// and does nothing when it already holds it. A binary named with --binary or
+// installed beside the CLI is run where it is: somebody chose that path.
+//
+// A caller replacing an older server calls this only once that one has stopped
+// answering, so nothing launches from the run directory while it changes. A
+// refresh that fails is an error, never a quiet run from the versioned path:
+// that path is not the exempted one, and #1566's failures would come back.
+func (r serverResolver) runPath(server resolvedServer) (string, error) {
+	if !r.fixedRunDir || server.staged == nil {
+		return server.path, nil
+	}
+	return serverstage.Install(r.stageRoot, *server.staged)
 }
 
 // choose decides which server resolve runs, and touches nothing to decide it:
@@ -407,6 +442,6 @@ func (r serverResolver) executableName() string {
 
 // resolveServer is the App's own resolution, which is what both `discobox admin
 // server` and the autolaunch go through.
-func (a *App) resolveServer(ctx context.Context, onProgress func(serverstage.Progress)) (string, error) {
+func (a *App) resolveServer(ctx context.Context, onProgress func(serverstage.Progress)) (resolvedServer, error) {
 	return a.serverResolver(onProgress).resolve(ctx)
 }

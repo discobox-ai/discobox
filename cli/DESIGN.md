@@ -26,6 +26,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/refreshcmd` | Running the command a token suggests for its renewal (ADR 26-09-25-122): an argument vector split as a person types it, run with no shell, no stdin, a deadline, and a bound on output, printed value trimmed. Shared by `discobox secret refresh`/`create` and the console's data source, so the command a person was shown is run one way everywhere. |
 | `internal/clipimage` | What a paste means on this machine: the OS clipboard's image (osascript, wl-paste/xclip, PowerShell from Windows and WSL), the image files a pasted path names, and the local files a paste names for the files panel's drop. The console carries them into a discobox. |
 | `internal/clipwatch` | Keeping up with the Windows clipboard while the console is open — in process on Windows, through the embedded `discobox-clipwatch` helper (installed under `%LOCALAPPDATA%\discobox\bin\<digest>`, the other builds' copies pruned) on WSL — so a dictation tool's Ctrl-V is answered with the text it pasted before it puts the clipboard back. Event-driven (`AddClipboardFormatListener`), idle at zero CPU. |
+| `internal/winlsp` | The Winsock LSP category Windows keeps for an executable (`WSCGetApplicationCategory`/`WSCSetApplicationCategory`) and starting a program elevated through UAC (`ShellExecuteExW` with `runas`), for `discobox admin server lsp-exempt` (ADR 26-11-24-372). Windows only, but for the `LSP_SYSTEM` bit. |
 | `internal/wsl` | The questions only Windows can answer when the CLI runs in a WSL distribution: whether it does, `wslpath` either way, where a Windows program is (PATH, or its fixed Windows path when the distribution does not inherit PATH), and a Windows environment variable through `cmd.exe`. Every package that crosses into Windows from WSL asks through it. |
 | `internal/termguard` | Putting the terminal back when the console dies holding it, and saying why: a second process (`discobox admin console-guard`) on a lifeline pipe, plus the runtime's crash output sent to a temporary file it names. See below. |
 | `internal/github` | Reading a GitHub issue or pull request as its page shows it — the issue, its sub-issues, its whole timeline, and for a pull request (an issue to this API, so the same read) its branches, reviewers, review threads and checks (`pull.go`) — commenting on one, closing or reopening it, and merging a pull request (by one of the ways its repository allows, naming the head commit that was read), over the REST API as the person at this machine (`GH_TOKEN`, `GITHUB_TOKEN`, then `gh auth token`; anonymous with none). A re-read of an issue nothing has happened to is one request — its `updated_at`, trusted for ten minutes with a token, since a reaction does not move it — and with no token an issue is read at most every five minutes (`AnonymousRefresh`): GitHub allows 60 anonymous requests an hour. An open pull request's checks are the exception: a check finishing moves no `updated_at`, so with a token they are read again on every re-read that is otherwise answered from the last one, and so is whether it can merge (`mergeable_state`), which moves with the base branch. With no token neither is: the re-read stays one request, and GitHub answers "unknown" to a reader it does not know, so a full read does not wait for that answer either. The checks are also not the pull request — a token that may not read them leaves the page without them, a failed read of them leaves the ones known, and a list that is not whole says so (`ChecksPartial`). A read the person asked for (`full`) is always a full one. The console's issue tab is its one user; the data source (`tui_issue.go`) turns its answers into the console's own types, making every string safe to draw on the way, since anyone who can comment on an issue writes them: names, paths, branches and diffs with `terminalSafe`, and what is written to be read (titles, bodies, commit messages) with `pageSafe`, which drops a page's invisible break hints and keeps the joiners an emoji sequence is made with. A pull request's files changed are not read from GitHub at all: they are discobox-review run in the discobox (`PullReview`, in `tui_terminal.go`), between the two commits the tab read. |
@@ -863,6 +864,54 @@ retrying.
 `discobox admin server stage` is the download on its own — before a flight, in
 an image build, on a machine being provisioned. Nothing requires it; a command
 that needs a server stages one.
+
+**On Windows a staged server runs from one fixed directory**,
+`<root>/windows-<arch>/run` (`serverstage.RunDir`, ADR 26-11-24-372 §3), not
+from its versioned one. Windows keys a Winsock LSP exemption by the
+executable's path, and the server is what a VPN's layered provider breaks: it
+unmarshals the sockets WSL hands it for each guest process's stdio. A fixed path
+keeps one exemption across upgrades. `serverstage.Install` hard-links the
+verified set into `run` (copying, stamped with the source's time, when a link
+fails), moves out of the way what that version lacks — a DLL beside the
+executable may be loaded — and does nothing for an asset that is already the
+same file, or the same size and modification time; that check also catches a
+half-finished refresh. A file that changes is renamed aside (`.replaced-`)
+before the new one takes its name, never renamed over: an older server keeps
+its image loaded while it drains, after it stops answering, and Windows will
+rename a loaded file but not replace or delete it. A later `Install` removes the
+aside files. The versioned directory stays the record: staged, verified, rolled back
+to, holding `manifest.json`. `run` has no manifest, so the legacy migration
+ignores it, and no `.staging-`/`.replaced-` marker, so the sweep does too; no
+version may be called `run`.
+
+`serverResolver.resolve` returns the binary and, for a staged one, its manifest;
+`runPath` maps that to what is executed. Only a staged set moves: `--binary` and
+a sibling run where they are. The autolaunch refreshes `run` in the switch-over gap —
+`endpoint.Command.Install`, which `EnsureRunning` calls once an older server has
+stopped answering (it may still be draining, its image loaded, which the
+move-aside above allows for) and before the launch; resolution, which can download for minutes, still happens first, while
+the old server answers. `discobox admin server` in the foreground refreshes it
+just before running. A refresh that fails is an error: running the versioned
+path instead would silently drop the exemption.
+
+`discobox admin server lsp-exempt` (Windows builds only, `server_lsp.go`) marks
+the path the CLI would run with `LSP_SYSTEM`. Reading the category needs no
+elevation; setting it does, so unless the prompt is already elevated it starts
+the CLI's hidden `lsp-exempt-elevated set|remove PATH` through `runas`, passing
+the path, because with another administrator's credentials that process is
+another user. The elevated step marks only an existing absolute
+`discobox-server.exe` (the parent checks the same before the prompt) and keeps
+every other category bit. Its window is hidden, so what went wrong reaches the
+parent as a distinct exit status (`lspExemptExit`); it writes nothing but the
+category, because any file its unelevated parent could name, a program running
+as that user could swap for a link to one only an administrator may write. The
+parent reports that status and what it reads back, never what it expected. `--check` only reads; `--remove`
+clears the bit. Only the server is marked: the CLI makes no WSL calls, and
+marking it would take the VPN off its own traffic. `discobox admin uninstall`
+does not elevate, so it lists each marked file in the run directory as kept
+and says how to clear it.
+Offering the command where the failure is recognised is the LSP detection's
+(#1567).
 
 The server's images are staged beside it (ADR 0113). The server names them:
 `serverResolver.stageImages` runs `<staged server> images`, which prints the

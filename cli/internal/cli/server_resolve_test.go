@@ -92,8 +92,8 @@ func TestResolveUsesAServerBesideTheExecutable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := filepath.Join(dir, serverBinaryName()); got != want {
-		t.Fatalf("resolved %q, want the sibling %q", got, want)
+	if want := filepath.Join(dir, serverBinaryName()); got.path != want {
+		t.Fatalf("resolved %q, want the sibling %q", got.path, want)
 	}
 }
 
@@ -142,8 +142,8 @@ func TestResolvePrefersTheNamedBinary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != named {
-		t.Fatalf("resolved %q, want the named binary %q", got, named)
+	if got.path != named {
+		t.Fatalf("resolved %q, want the named binary %q", got.path, named)
 	}
 }
 
@@ -173,8 +173,8 @@ func TestResolveStagesWhenAManifestIsNamed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := filepath.Join(root, runtime.GOOS+"-"+runtime.GOARCH, "v9.9.9", serverBinaryName()); got != want {
-		t.Fatalf("resolved %q, want the staged %q", got, want)
+	if want := filepath.Join(root, runtime.GOOS+"-"+runtime.GOARCH, "v9.9.9", serverBinaryName()); got.path != want {
+		t.Fatalf("resolved %q, want the staged %q", got.path, want)
 	}
 	if *fetches != 1 {
 		t.Fatalf("the named manifest was fetched %d times, want 1", *fetches)
@@ -460,8 +460,8 @@ func TestReleaseManifestDownloadsInsteadOfUsingDevelopmentSibling(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got == filepath.Join(install, serverBinaryName()) || *fetches != 1 {
-		t.Fatalf("resolved %s; downloads %d", got, *fetches)
+	if got.path == filepath.Join(install, serverBinaryName()) || *fetches != 1 {
+		t.Fatalf("resolved %s; downloads %d", got.path, *fetches)
 	}
 	if _, err := resolver.resolve(context.Background()); err != nil {
 		t.Fatal(err)
@@ -474,7 +474,7 @@ func TestReleaseManifestDownloadsInsteadOfUsingDevelopmentSibling(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != resolver.source.binary || *fetches != 1 {
+	if got.path != resolver.source.binary || *fetches != 1 {
 		t.Fatal("explicit development binary did not win")
 	}
 }
@@ -520,5 +520,62 @@ func TestWithDeletedMainBuildHint(t *testing.T) {
 	}
 	if withDeletedMainBuildHint(main, nil) != nil {
 		t.Error("no error became one")
+	}
+}
+
+// Where a fixed run directory is used (Windows), a staged server runs from it,
+// at one path for every version, and the versioned directory stays the record.
+func TestRunPathRunsAStagedServerFromTheFixedDirectory(t *testing.T) {
+	root := t.TempDir()
+	resolver := serverResolver{stageRoot: root, fixedRunDir: true}
+	var paths []string
+	for _, version := range []string{"v9.9.8", "v9.9.9"} {
+		manifest, _ := servedManifest(t, version)
+		resolver.source = serverSource{manifest: manifestFile(t, manifest)}
+		resolver.executable = filepath.Join(fakeInstall(t, false), "discobox")
+		server, err := resolver.resolve(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		path, err := resolver.runPath(server)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if path == server.path {
+			t.Fatalf("%s runs from its versioned directory %s", version, path)
+		}
+		paths = append(paths, path)
+	}
+	manifest, _ := servedManifest(t, "v9.9.9")
+	if want := manifest.RunCommand(root); paths[0] != paths[1] || paths[1] != want {
+		t.Fatalf("run paths %q, want both %q", paths, want)
+	}
+}
+
+// A binary somebody named, or one beside the CLI, runs where it is; and where
+// no fixed run directory is used, nothing does.
+func TestRunPathLeavesAChosenBinaryAndOtherPlatformsAlone(t *testing.T) {
+	dir := fakeInstall(t, true)
+	sibling := serverResolver{executable: filepath.Join(dir, "discobox"), stageRoot: t.TempDir(), fixedRunDir: true}
+	server, err := sibling.resolve(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path, err := sibling.runPath(server); err != nil || path != server.path {
+		t.Fatalf("a sibling runs from %q (%v), want %q", path, err, server.path)
+	}
+
+	manifest, _ := servedManifest(t, "v9.9.9")
+	staged := serverResolver{
+		source:     serverSource{manifest: manifestFile(t, manifest)},
+		executable: filepath.Join(fakeInstall(t, false), "discobox"),
+		stageRoot:  t.TempDir(),
+	}
+	server, err = staged.resolve(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path, err := staged.runPath(server); err != nil || path != server.path {
+		t.Fatalf("without a fixed run directory a staged server runs from %q (%v), want %q", path, err, server.path)
 	}
 }

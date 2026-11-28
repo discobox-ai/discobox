@@ -38,6 +38,16 @@ const (
 type Command struct {
 	Path string
 	Args []string
+	// Install, when set, puts the program where it is to run from and returns
+	// that path, which is started in Path's place: on Windows the CLI runs a
+	// staged server from one fixed directory (ADR 26-11-24-372 §3).
+	// EnsureRunning calls it once any older server has stopped answering and
+	// before the launch, so the older server is not started from, or
+	// replaced under, while it still serves. It may still be draining with
+	// its executable loaded, so Install must not need that process gone (see
+	// REVIEW.md). Resolution, which can take minutes, still happens before the
+	// older server stops; only this, a local link, is in the switch-over gap.
+	Install func() (string, error)
 }
 
 // LaunchOptions describes a local server process that can be started on demand.
@@ -136,6 +146,13 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 		}
 		replacedOlder = true
 		opts.Env = append(opts.Env, "DISCOBOX_SERVER_HANDOFF="+opts.Endpoint)
+	}
+	if command.Install != nil {
+		path, err := command.Install()
+		if err != nil {
+			return replacedOlder, err
+		}
+		command.Path = path
 	}
 	// Create before either launch path, and keep the file private. An empty
 	// record is not a failure. Each launch has its own file so an earlier

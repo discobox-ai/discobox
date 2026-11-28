@@ -43,10 +43,14 @@ the file belongs, listing every setting.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			progress := a.serverStartupLine()
-			path, err := a.resolveServer(cmd.Context(), func(report serverstage.Progress) {
+			server, err := a.resolveServer(cmd.Context(), func(report serverstage.Progress) {
 				progress.set(serverStageText(report))
 			})
 			progress.clear()
+			if err != nil {
+				return err
+			}
+			path, err := a.serverResolver(nil).runPath(server)
 			if err != nil {
 				return err
 			}
@@ -80,6 +84,7 @@ the file belongs, listing every setting.`,
 	cmd.AddCommand(a.newServerShutdownCommand())
 	cmd.AddCommand(a.newServerLogsCommand())
 	cmd.AddCommand(a.newStatusCommand())
+	a.addPlatformServerCommands(cmd)
 	return cmd
 }
 
