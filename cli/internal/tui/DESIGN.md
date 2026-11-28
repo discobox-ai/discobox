@@ -2025,6 +2025,14 @@ screen, the showing tool.
   attaching to a discobox should show you the discobox. That is what makes a diff survive quitting the
   console, and the only client-side state it needs is `ending`, which says
   which of them this window has just killed.
+- **A tool pane is named by its label** (`toolLabel`), the same however it
+  arrived. A session the poll picks up before anything has read the
+  discobox's catalog has the catalog looked up beside the open, never ahead
+  of it (`openToolExec`), so a slow catalog does not hold the session back.
+  A new pane takes its label from the catalog when it is known, and every
+  catalog that arrives renames the tool panes already open
+  (`toolsResolved`), so a pane is named by its id only until a lookup
+  succeeds.
 - A tool can carry a **config** (`ToolFile`, `tui_tools.go`), declared as
   `files:` with its default beside the declaration. The copy lives on
   this machine under `os.UserConfigDir()/discobox/tools/<tool>/<name>`, created

@@ -208,6 +208,12 @@
   misses one: escaping it in the menu missed the tab (#913). A new field of
   box-written text is escaped in the mapping that builds it; an ID the
   console sends back stays raw, and is never what it shows.
+- **A tool catalog's text is box-written too.** A tool's name, description
+  and problem come from a repository's declarations or the box's own catalog
+  listing, and the name is a pane's title and tab, the picker's row and the
+  status line; `tuiTools` escapes them as it maps the catalog, the way
+  `tuiService` does a service's. They went unescaped until a picked-up tool
+  pane started taking its label from the catalog (#1782).
 
 ## The workspace tree
 

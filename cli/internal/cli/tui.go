@@ -1612,10 +1612,10 @@ func tuiTools(catalog []tools.Definition) []tui.Tool {
 		t := tui.Tool{
 			ID:      def.ID,
 			Key:     def.Key,
-			Label:   def.Label(),
-			Detail:  def.Description,
+			Label:   terminalSafe(def.Label()),
+			Detail:  terminalSafe(def.Description),
 			Host:    def.Runs == tools.RunsHost,
-			Problem: def.Problem,
+			Problem: terminalSafe(def.Problem),
 		}
 		for _, file := range def.Files {
 			t.Files = append(t.Files, tui.ToolFile{Tool: def.ID, Name: file.Name, Home: file.Home, Default: file.Default})
