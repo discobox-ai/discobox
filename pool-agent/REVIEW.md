@@ -1077,6 +1077,12 @@ tracked in #1699, not a pattern to copy.
   recording a failure (`sandbox.ErrPoolSlotDraining`). Why: read as a
   failed provision, it marked a pool that serves as it was as one whose
   box did not apply.
+- **A handover whose new slot never took over is a failure, end to end,
+  until it takes**: the state records it (`takeOverPending`), `units apply`
+  exits `bundle.UnitsTakeOverStalledExitCode` and the server records
+  `sandbox.ErrPoolTakeOverStalled` as the pool's failure, though nothing is
+  replaced. Why: read as a drain, it showed a pool whose new connections
+  find no agent as an upgrade held back on a drain.
 - **A slot unit sets nothing that gives it its own `/run` or removes part
   of it** (`PrivateTmp=`, `ProtectSystem=`, `TemporaryFileSystem=`, … make a
   mount namespace of its own; `RuntimeDirectory=` deletes its directory as

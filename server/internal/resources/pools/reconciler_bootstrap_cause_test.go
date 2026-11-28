@@ -107,3 +107,25 @@ func TestAFailedReconcileEndsADrainStreak(t *testing.T) {
 		t.Fatal("a failed reconcile left the earlier drain streak running")
 	}
 }
+
+// A pool whose last handover's new agent never took over failed: the pass
+// records why, where its status and health show it, and is no drain to wait
+// on.
+func TestATakeOverThatStalledIsRecordedAsAFailure(t *testing.T) {
+	f := newBootstrapRetryFixture(t)
+	f.runtime.fail = fmt.Errorf("pool pool-1: %w: %w: start the pool's agent", sandbox.ErrPoolConfigApply, sandbox.ErrPoolTakeOverStalled)
+	if _, err := f.reconcileResult(); err == nil {
+		t.Fatal("a pass whose new agent never took over returned no error")
+	}
+	pool := f.pool()
+	if pool.ErrorMessage == nil || !strings.Contains(*pool.ErrorMessage, "never took over") {
+		t.Fatalf("errorMessage = %v; want it to say the new agent never took over", pool.ErrorMessage)
+	}
+	watch := f.reconciler.pools.Upgrades()
+	watch.mu.Lock()
+	_, draining := watch.draining["pool-1"]
+	watch.mu.Unlock()
+	if draining {
+		t.Fatal("a stalled takeover reads as a drain under way")
+	}
+}

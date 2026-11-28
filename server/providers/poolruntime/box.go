@@ -342,11 +342,19 @@ func PlaceBoxFiles(ctx context.Context, guest machine.Guest, files ...BoxFile) e
 
 // unitsError is the units step's failure: ErrPoolSlotDraining for a refusal
 // because a slot still drains (bundle.UnitsDrainingExitCode), which failed
-// nothing.
+// nothing, and ErrPoolTakeOverStalled for a handover whose new agent has not
+// taken over (bundle.UnitsTakeOverStalledExitCode).
 func unitsError(result provisioner.Result, err error) error {
 	err = provisionError("start the pool's agent", result, err)
-	if exit := (*provisioner.ExitError)(nil); errors.As(err, &exit) && exit.ExitCode == bundle.UnitsDrainingExitCode {
+	exit := (*provisioner.ExitError)(nil)
+	if !errors.As(err, &exit) {
+		return err
+	}
+	switch exit.ExitCode {
+	case bundle.UnitsDrainingExitCode:
 		return fmt.Errorf("%w: %w", sandbox.ErrPoolSlotDraining, err)
+	case bundle.UnitsTakeOverStalledExitCode:
+		return fmt.Errorf("%w: %w", sandbox.ErrPoolTakeOverStalled, err)
 	}
 	return err
 }

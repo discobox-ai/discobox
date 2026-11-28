@@ -492,8 +492,8 @@ func TestANewSlotThatDoesNotTakeOverLeavesTheOldToDrain(t *testing.T) {
 	b.systemd.noTakeOver = true
 	b.systemd.reset()
 	b.write(t, b.cfg.Binary, "agent v2")
-	if err := Apply(context.Background(), b.cfg); err == nil {
-		t.Fatal("an apply whose new slot did not take over succeeded")
+	if err := Apply(context.Background(), b.cfg); !errors.Is(err, ErrNotTakenOver) {
+		t.Fatalf("an apply whose new slot did not take over = %v, want ErrNotTakenOver", err)
 	}
 	for _, unit := range []string{bundle.AgentUnit("a"), bundle.ProxyUnit("a")} {
 		if b.systemd.ran("restart", bundle.AgentUnit("a"), bundle.ProxyUnit("a")) || slices.ContainsFunc(b.systemd.commands, func(c []string) bool { return c[0] == "stop" && slices.Contains(c, unit) }) {
@@ -514,13 +514,50 @@ func TestANewSlotThatDoesNotTakeOverLeavesTheOldToDrain(t *testing.T) {
 	b.systemd.reset()
 	b.write(t, b.cfg.Binary, "agent v3")
 	err := Apply(context.Background(), b.cfg)
-	if err == nil || !strings.Contains(err.Error(), "still drains") {
-		t.Fatalf("an apply over a slot still draining = %v, want it refused", err)
+	if !errors.Is(err, ErrSlotDraining) || !errors.Is(err, ErrNotTakenOver) {
+		t.Fatalf("an apply over a slot still draining, its successor not taken over = %v, want it refused as not taken over", err)
 	}
 	if slices.ContainsFunc(b.systemd.commands, func(c []string) bool {
 		return (c[0] == "stop" || c[0] == "restart" || c[0] == "start") && (slices.Contains(c, bundle.AgentUnit("a")) || slices.Contains(c, bundle.ProxyUnit("a")))
 	}) {
 		t.Fatalf("an apply over a draining slot touched it: %q", b.systemd.commands)
+	}
+}
+
+// A handover whose new slot never took over is reported by every apply
+// after it that moves nothing, until that slot says it is active: the pool
+// is not served as it should be, and nothing says so but this.
+func TestATakeOverThatStalledIsReportedUntilItTakes(t *testing.T) {
+	b := newBox(t, true)
+	b.cfg.TakeOver = 200 * time.Millisecond
+	b.apply(t)
+	b.systemd.noTakeOver = true
+	b.systemd.reset()
+	b.write(t, b.cfg.Binary, "agent v2")
+	if err := Apply(context.Background(), b.cfg); !errors.Is(err, ErrNotTakenOver) {
+		t.Fatalf("an apply whose new slot did not take over = %v, want ErrNotTakenOver", err)
+	}
+
+	// The old slot has exited; the new one is still a standby.
+	for _, unit := range []string{bundle.AgentUnit("a"), bundle.ProxyUnit("a")} {
+		b.systemd.active[unit] = false
+	}
+	b.systemd.reset()
+	if err := Apply(context.Background(), b.cfg); !errors.Is(err, ErrNotTakenOver) || errors.Is(err, ErrSlotDraining) {
+		t.Fatalf("an apply that moved nothing, the new slot a standby = %v, want ErrNotTakenOver alone", err)
+	}
+
+	// Once it says it is active, the apply succeeds and stops reporting it.
+	for _, unit := range []string{bundle.AgentUnit("b"), bundle.ProxyUnit("b")} {
+		b.systemd.status[unit] = handover.StatusActive
+	}
+	b.systemd.reset()
+	if err := Apply(context.Background(), b.cfg); err != nil {
+		t.Fatalf("an apply once the new slot took over = %v", err)
+	}
+	b.systemd.reset()
+	if err := Apply(context.Background(), b.cfg); err != nil {
+		t.Fatalf("the apply after that = %v", err)
 	}
 }
 

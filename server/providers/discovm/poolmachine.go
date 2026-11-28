@@ -501,6 +501,12 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		if errors.Is(err, sandbox.ErrPoolSlotDraining) {
 			return err
 		}
+		// A handover whose new agent never took over is the pool's failure,
+		// reported as one, but no machine is replaced over it: the old slot
+		// still serves what it held, and replacing it would cut that.
+		if errors.Is(err, sandbox.ErrPoolTakeOverStalled) {
+			return fmt.Errorf("%w: %w", sandbox.ErrPoolConfigApply, err)
+		}
 		if provisioned && !force && !made && !started {
 			// A running pool is never taken down over its bundles (ADR
 			// 26-10-24-953 §5): it keeps what it last provisioned, and the
