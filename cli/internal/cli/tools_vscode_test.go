@@ -264,6 +264,21 @@ func TestToolsVSCodeHonorsTheNamedEditor(t *testing.T) {
 	}
 }
 
+// A discobox is always Linux, but Remote-SSH, when it cannot tell, asks for the
+// remote platform, and a wrong answer fails with only "Resolver error". The
+// launch is the one place this CLI can say which answer is right.
+func TestToolsVSCodeNamesTheRemotePlatform(t *testing.T) {
+	sshFixture := vscodeFakeServer()
+	fakeVSCode(t)
+	_, _, stderr, err := runToolsVSCodeCmd(t, sshFixture, "sbx_devbox00000001")
+	if err != nil {
+		t.Fatalf("execute tools vscode: %v", err)
+	}
+	if !strings.Contains(stderr, "Linux") {
+		t.Fatalf("tools vscode stderr = %q, want it to say the discobox is Linux", stderr)
+	}
+}
+
 // builtinTool is the CLI's own declaration of a tool.
 func builtinTool(t *testing.T, id string) tools.Definition {
 	t.Helper()

@@ -92,6 +92,7 @@ type Definition struct {
 	ID          string
 	Name        string
 	Description string
+	Note        string
 	// Key is the single key the tool answers to in a picker, empty when it
 	// asks for none.
 	Key string
@@ -192,6 +193,7 @@ func (d *Definition) read(fsys fs.FS, file declared.File) string {
 		d.Runs = runs
 	}
 	d.Key = fields.String("key")
+	d.Note = fields.String("note")
 	d.Program = fields.Strings("program")
 	d.ProgramEnv = fields.String("program_env")
 	d.Args = fields.Strings("args")

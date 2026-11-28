@@ -3,6 +3,7 @@
 id: vscode
 name: vscode
 description: open the discobox in VS Code, in a window of its own
+note: the discobox runs Linux; if VS Code asks for the remote platform, choose Linux
 key: v
 runs: host
 # The builds looked for on PATH, in order. They are all the same program with
